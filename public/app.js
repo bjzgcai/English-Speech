@@ -7,9 +7,12 @@ const state = {
   startedAt: null,
   mimeType: "",
   autoStopTimer: null,
+  prepareCountdownTimer: null,
+  prepareCountdownResolve: null,
 };
 
 const MAX_RECORDING_MS = 2 * 60 * 1000;
+const PREPARE_COUNTDOWN_SECONDS = 60;
 const dimensionDetails = {
   "Pronunciation / intelligibility":
     "Measures how easily the answer can be understood, including sound clarity, word stress, rhythm, and whether pronunciation issues interfere with meaning.",
@@ -44,6 +47,14 @@ const videoModal = document.querySelector("#videoModal");
 const videoModalTitle = document.querySelector("#videoModalTitle");
 const historyVideo = document.querySelector("#historyVideo");
 const closeVideoModal = document.querySelector("#closeVideoModal");
+const prepareModal = document.querySelector("#prepareModal");
+const prepareSpinner = document.querySelector("#prepareSpinner");
+const prepareModalKicker = document.querySelector("#prepareModalKicker");
+const prepareModalTitle = document.querySelector("#prepareModalTitle");
+const prepareModalMessage = document.querySelector("#prepareModalMessage");
+const countdownDisplay = document.querySelector("#countdownDisplay");
+const countdownSeconds = document.querySelector("#countdownSeconds");
+const speakDirectlyButton = document.querySelector("#speakDirectlyButton");
 
 function setStatus(message) {
   connectionStatus.textContent = message;
@@ -52,6 +63,64 @@ function setStatus(message) {
 function setVideoLoading(isLoading) {
   videoFrame.classList.toggle("is-loading", isLoading);
   videoFrame.setAttribute("aria-busy", String(isLoading));
+}
+
+function stopPrepareCountdown() {
+  if (state.prepareCountdownTimer) {
+    window.clearInterval(state.prepareCountdownTimer);
+    state.prepareCountdownTimer = null;
+  }
+}
+
+function closePrepareModal() {
+  stopPrepareCountdown();
+  state.prepareCountdownResolve = null;
+  prepareModal.hidden = true;
+}
+
+function showGeneratingModal() {
+  stopPrepareCountdown();
+  prepareModalKicker.textContent = "Generating";
+  prepareModalTitle.textContent = "Preparing your question...";
+  prepareModalMessage.textContent = "Please wait while the assessment question is generated.";
+  prepareSpinner.hidden = false;
+  countdownDisplay.hidden = true;
+  speakDirectlyButton.hidden = true;
+  prepareModal.hidden = false;
+}
+
+function showCountdownModal(question) {
+  prepareModalKicker.textContent = "Question ready";
+  prepareModalTitle.textContent = question.question;
+  prepareModalMessage.textContent = "Take a moment to plan your answer. Recording starts when the timer reaches zero.";
+  prepareSpinner.hidden = true;
+  countdownDisplay.hidden = false;
+  speakDirectlyButton.hidden = false;
+  countdownSeconds.textContent = String(PREPARE_COUNTDOWN_SECONDS);
+  prepareModal.hidden = false;
+}
+
+function waitForPreparationCountdown(question) {
+  showCountdownModal(question);
+
+  return new Promise((resolve) => {
+    let remainingSeconds = PREPARE_COUNTDOWN_SECONDS;
+
+    state.prepareCountdownResolve = () => {
+      stopPrepareCountdown();
+      state.prepareCountdownResolve = null;
+      resolve();
+    };
+
+    state.prepareCountdownTimer = window.setInterval(() => {
+      remainingSeconds -= 1;
+      countdownSeconds.textContent = String(Math.max(remainingSeconds, 0));
+
+      if (remainingSeconds <= 0 && state.prepareCountdownResolve) {
+        state.prepareCountdownResolve();
+      }
+    }, 1000);
+  });
 }
 
 function getProfileFromForm() {
@@ -330,6 +399,7 @@ profileForm.addEventListener("submit", async (event) => {
   finishButton.disabled = true;
   saveResult.textContent = "";
   setStatus("Generating");
+  showGeneratingModal();
   questionText.textContent = "Generating a question...";
   questionMeta.textContent = "Calling OpenRouter through the local server.";
 
@@ -350,8 +420,12 @@ profileForm.addEventListener("submit", async (event) => {
     if (data.error) {
       saveResult.textContent = `LLM fallback used: ${data.error}`;
     }
+    setStatus("Thinking time");
+    await waitForPreparationCountdown(data.question);
+    closePrepareModal();
     await startRecording();
   } catch (error) {
+    closePrepareModal();
     setStatus("Error");
     questionText.textContent = "Question generation failed.";
     questionMeta.textContent = error.message;
@@ -463,6 +537,12 @@ async function finishRecording() {
 
 finishButton.addEventListener("click", finishRecording);
 
+speakDirectlyButton.addEventListener("click", () => {
+  if (state.prepareCountdownResolve) {
+    state.prepareCountdownResolve();
+  }
+});
+
 navLinks.forEach((link) => {
   link.addEventListener("click", (event) => {
     event.preventDefault();
@@ -487,6 +567,7 @@ window.addEventListener("beforeunload", () => {
   if (state.autoStopTimer) {
     window.clearTimeout(state.autoStopTimer);
   }
+  stopPrepareCountdown();
   stopStream();
 });
 

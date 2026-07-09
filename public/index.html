@@ -83,6 +83,28 @@
         </div>
         <video id="historyVideo" controls playsinline></video>
       </aside>
+
+      <div
+        class="prepare-modal"
+        id="prepareModal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="prepareModalTitle"
+        hidden
+      >
+        <div class="prepare-dialog">
+          <div class="prepare-spinner" id="prepareSpinner" aria-hidden="true"></div>
+          <p class="muted-label" id="prepareModalKicker">Generating</p>
+          <h2 id="prepareModalTitle">Preparing your question...</h2>
+          <p id="prepareModalMessage">Please wait while the assessment question is generated.</p>
+          <div class="countdown-display" id="countdownDisplay" hidden>
+            <span id="countdownSeconds">60</span>s
+          </div>
+          <button type="button" class="primary-button" id="speakDirectlyButton" hidden>
+            Speak directly
+          </button>
+        </div>
+      </div>
     </main>
 
     <script src="/app.js"></script>
