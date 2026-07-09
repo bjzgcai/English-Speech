@@ -19,6 +19,7 @@ const recordingBadge = document.querySelector("#recordingBadge");
 const questionText = document.querySelector("#questionText");
 const questionMeta = document.querySelector("#questionMeta");
 const saveResult = document.querySelector("#saveResult");
+const evaluationResult = document.querySelector("#evaluationResult");
 const connectionStatus = document.querySelector("#connectionStatus");
 const historyList = document.querySelector("#historyList");
 
@@ -56,6 +57,7 @@ function setQuestion(question) {
     .filter(Boolean)
     .join(" · ");
   saveResult.textContent = "";
+  evaluationResult.innerHTML = "";
 }
 
 function stopStream() {
@@ -82,11 +84,15 @@ async function loadHistory() {
       const title = item.question?.question || "Saved answer";
       const name = item.profile?.name || "Unnamed candidate";
       const date = new Date(item.finishedAt).toLocaleString();
+      const score =
+        item.evaluation?.status === "completed"
+          ? ` · Score ${Math.round(item.evaluation.overallScore || 0)}`
+          : "";
       return `
         <article class="history-item">
           <div>
             <h3>${escapeHtml(title)}</h3>
-            <p>${escapeHtml(name)} · ${escapeHtml(date)} · ${Math.round((item.bytes || 0) / 1024 / 1024)} MB</p>
+            <p>${escapeHtml(name)} · ${escapeHtml(date)} · ${Math.round((item.bytes || 0) / 1024 / 1024)} MB${escapeHtml(score)}</p>
           </div>
           <a href="/recordings/${encodeURIComponent(item.filename)}" target="_blank" rel="noreferrer">Open video</a>
         </article>
@@ -106,6 +112,100 @@ function escapeHtml(value) {
     };
     return map[char];
   });
+}
+
+function renderEvaluation(evaluation) {
+  if (!evaluation) {
+    evaluationResult.innerHTML = "";
+    return;
+  }
+
+  if (evaluation.status === "skipped") {
+    evaluationResult.innerHTML = `
+      <section class="evaluation-card">
+        <h3>Evaluation skipped</h3>
+        <p>${escapeHtml(evaluation.reason || "Evaluation is not configured.")}</p>
+      </section>
+    `;
+    return;
+  }
+
+  if (evaluation.status === "failed") {
+    evaluationResult.innerHTML = `
+      <section class="evaluation-card evaluation-error">
+        <h3>Evaluation failed</h3>
+        <p>${escapeHtml(evaluation.reason || "The recording was saved, but evaluation did not complete.")}</p>
+      </section>
+    `;
+    return;
+  }
+
+  const rubric = evaluation.rubric || {};
+  const dimensions = [
+    rubric.pronunciation,
+    rubric.fluency,
+    rubric.grammar,
+    rubric.vocabulary,
+    rubric.coherence,
+    rubric.visualDelivery,
+  ].filter(Boolean);
+  const tips = evaluation.improvements || [];
+  const strengths = evaluation.strengths || [];
+
+  evaluationResult.innerHTML = `
+    <section class="evaluation-card">
+      <div class="evaluation-header">
+        <div>
+          <span class="muted-label">Evaluation</span>
+          <h3>${Math.round(evaluation.overallScore || 0)} / 100</h3>
+        </div>
+        <span class="status-pill compact">${escapeHtml(evaluation.model?.evaluate || "LLM")}</span>
+      </div>
+      <p class="evaluation-summary">${escapeHtml(evaluation.summary || "")}</p>
+      <div class="score-grid">
+        ${dimensions
+          .map(
+            (item) => `
+              <article class="score-row">
+                <div>
+                  <strong>${escapeHtml(item.label || "Dimension")}</strong>
+                  <span>${Number(item.weight || 0)}%</span>
+                </div>
+                <meter min="0" max="100" value="${Number(item.score || 0)}"></meter>
+                <p>${escapeHtml(item.feedback || "")}</p>
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+      ${
+        strengths.length || tips.length
+          ? `
+            <div class="feedback-columns">
+              <div>
+                <h4>Strengths</h4>
+                <ul>${strengths.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+              </div>
+              <div>
+                <h4>Improve next</h4>
+                <ul>${tips.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+              </div>
+            </div>
+          `
+          : ""
+      }
+      ${
+        evaluation.transcript
+          ? `
+            <details class="transcript-block">
+              <summary>Transcript</summary>
+              <p>${escapeHtml(evaluation.transcript)}</p>
+            </details>
+          `
+          : ""
+      }
+    </section>
+  `;
 }
 
 profileForm.addEventListener("submit", async (event) => {
@@ -203,7 +303,8 @@ async function finishRecording() {
 
   finishButton.disabled = true;
   setStatus("Saving");
-  saveResult.textContent = "Finalizing recording and uploading it to the server...";
+  saveResult.textContent = "Finalizing recording, uploading it, and evaluating the answer...";
+  evaluationResult.innerHTML = "";
 
   const stopped = new Promise((resolve) => {
     state.recorder.addEventListener("stop", resolve, { once: true });
@@ -232,7 +333,8 @@ async function finishRecording() {
     }
 
     saveResult.innerHTML = `Saved as <a href="/recordings/${encodeURIComponent(data.filename)}" target="_blank" rel="noreferrer">${escapeHtml(data.filename)}</a>. Generate the next question when ready.`;
-    setStatus("Saved");
+    renderEvaluation(data.evaluation);
+    setStatus(data.evaluation?.status === "completed" ? "Evaluated" : "Saved");
     generateButton.disabled = false;
     await loadHistory();
   } catch (error) {

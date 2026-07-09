@@ -99,6 +99,12 @@ h1 {
   font-weight: 700;
 }
 
+.status-pill.compact {
+  min-width: auto;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(300px, 0.9fr) minmax(420px, 1.35fr);
@@ -289,6 +295,121 @@ video {
   font-weight: 700;
 }
 
+.evaluation-result {
+  margin-top: 16px;
+}
+
+.evaluation-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+  padding: 18px;
+}
+
+.evaluation-card h3 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1;
+}
+
+.evaluation-error {
+  border-color: rgba(180, 35, 52, 0.28);
+  background: #fff8f8;
+}
+
+.evaluation-header,
+.feedback-columns {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  align-items: start;
+}
+
+.evaluation-summary {
+  margin-top: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.score-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.score-row {
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.score-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.score-row div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink);
+}
+
+.score-row strong {
+  font-size: 14px;
+}
+
+.score-row span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.score-row meter {
+  width: 100%;
+  height: 10px;
+}
+
+.score-row p,
+.evaluation-card > p,
+.transcript-block p,
+.feedback-columns li {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.feedback-columns {
+  grid-template-columns: 1fr 1fr;
+  margin-top: 18px;
+}
+
+.feedback-columns h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.feedback-columns ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.transcript-block {
+  margin-top: 16px;
+}
+
+.transcript-block summary {
+  color: var(--accent-dark);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.transcript-block p {
+  margin-top: 8px;
+}
+
 .history {
   margin-top: 18px;
 }
@@ -355,6 +476,11 @@ video {
 
   .workspace,
   .control-row {
+    grid-template-columns: 1fr;
+  }
+
+  .evaluation-header,
+  .feedback-columns {
     grid-template-columns: 1fr;
   }
 
