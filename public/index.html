@@ -13,10 +13,16 @@
           <p class="eyebrow">EnglishEval</p>
           <h1>Speaking question recorder</h1>
         </div>
-        <div class="status-pill" id="connectionStatus">Idle</div>
+        <div class="topbar-actions">
+          <nav class="main-nav" aria-label="Primary">
+            <a href="/play" data-route="/play">/play</a>
+            <a href="/history" data-route="/history">/history</a>
+          </nav>
+          <div class="status-pill" id="connectionStatus" role="status" aria-live="polite">Idle</div>
+        </div>
       </header>
 
-      <section class="workspace">
+      <section class="workspace view" id="playView" data-view="/play">
         <form class="panel profile-panel" id="profileForm">
           <div class="section-heading">
             <h2>Candidate profile</h2>
@@ -30,7 +36,7 @@
 
           <label>
             Role or background
-            <input id="role" name="role" placeholder="Product manager preparing for interviews" />
+            <textarea id="role" name="role" placeholder="Product manager preparing for interviews"></textarea>
           </label>
 
           <button type="submit" class="primary-button" id="generateButton">
@@ -62,13 +68,21 @@
         </section>
       </section>
 
-      <section class="history">
+      <section class="history view" id="historyView" data-view="/history" hidden>
         <div class="section-heading">
-          <h2>Saved answers</h2>
-          <p>Each saved answer stores video plus question/profile metadata on this server.</p>
+          <h2>Evaluation history</h2>
+          <p>Open an evaluation to review dimension scores, feedback, and the saved answer video.</p>
         </div>
         <div class="history-list" id="historyList"></div>
       </section>
+
+      <aside class="video-modal" id="videoModal" aria-live="polite" hidden>
+        <div class="video-modal-header">
+          <strong id="videoModalTitle">Saved answer</strong>
+          <button type="button" id="closeVideoModal" aria-label="Close video">Close</button>
+        </div>
+        <video id="historyVideo" controls playsinline></video>
+      </aside>
     </main>
 
     <script src="/app.js"></script>

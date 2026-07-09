@@ -611,6 +611,14 @@ app.get("/api/recordings", (_req, res) => {
 
 app.use("/recordings", express.static(recordingsDir));
 
+function sendAppShell(_req, res) {
+  res.sendFile(path.join(publicDir, "index.html"));
+}
+
+app.get("/", sendAppShell);
+app.get("/play", sendAppShell);
+app.get("/history", sendAppShell);
+
 app.listen(port, () => {
   console.log(`EnglishEval is running at http://localhost:${port}`);
 });
