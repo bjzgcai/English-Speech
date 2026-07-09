@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EnglishEval</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">EnglishEval</p>
+          <h1>Speaking question recorder</h1>
+        </div>
+        <div class="status-pill" id="connectionStatus">Idle</div>
+      </header>
+
+      <section class="workspace">
+        <form class="panel profile-panel" id="profileForm">
+          <div class="section-heading">
+            <h2>Candidate profile</h2>
+            <p>Used by the LLM to generate one targeted speaking question.</p>
+          </div>
+
+          <label>
+            Name
+            <input id="name" name="name" autocomplete="name" placeholder="Alex Chen" />
+          </label>
+
+          <label>
+            Role or background
+            <input id="role" name="role" placeholder="Product manager preparing for interviews" />
+          </label>
+
+          <button type="submit" class="primary-button" id="generateButton">
+            Generate one question
+          </button>
+        </form>
+
+        <section class="panel recorder-panel">
+          <div class="question-block" id="questionBlock">
+            <span class="muted-label">Current question</span>
+            <h2 id="questionText">Enter a profile, then generate one question.</h2>
+            <p id="questionMeta">Recording starts automatically after the question is ready.</p>
+          </div>
+
+          <div class="video-frame">
+            <video id="preview" autoplay muted playsinline></video>
+            <div class="video-placeholder" id="videoPlaceholder">Camera preview</div>
+            <div class="recording-badge" id="recordingBadge">Recording</div>
+          </div>
+
+          <div class="control-row">
+            <button type="button" class="danger-button" id="finishButton" disabled>
+              Finish and save
+            </button>
+          </div>
+
+          <div class="save-result" id="saveResult" aria-live="polite"></div>
+        </section>
+      </section>
+
+      <section class="history">
+        <div class="section-heading">
+          <h2>Saved answers</h2>
+          <p>Each saved answer stores video plus question/profile metadata on this server.</p>
+        </div>
+        <div class="history-list" id="historyList"></div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
