@@ -21,6 +21,7 @@ const metadataFile = path.join(recordingsDir, "metadata.jsonl");
 const questionsDir = path.join(rootDir, "questions");
 const questionsMetadataFile = path.join(questionsDir, "metadata.jsonl");
 const openApiFile = path.join(rootDir, "openapi.yaml");
+const mockUsersFile = path.join(rootDir, "not-empty-user.json");
 const sessionCookieName = "englisheval_session";
 const sessionTtlMs = 7 * 24 * 60 * 60 * 1000;
 const evaluationRubricStandard = Object.freeze({
@@ -326,6 +327,102 @@ function mergeUserInfo(current, incoming) {
   };
 }
 
+function deterministicUuid(seed) {
+  const value = crypto.createHash("sha256").update(seed).digest("hex").slice(0, 32);
+  return `${value.slice(0, 8)}-${value.slice(8, 12)}-4${value.slice(13, 16)}-a${value.slice(17, 20)}-${value.slice(20)}`;
+}
+
+function mockPartnerUsers() {
+  if (!fs.existsSync(mockUsersFile)) return [];
+
+  let sourceUsers;
+  try {
+    sourceUsers = JSON.parse(fs.readFileSync(mockUsersFile, "utf8"));
+  } catch (error) {
+    console.warn(`Unable to read mock partner users: ${error.message}`);
+    return [];
+  }
+  if (!Array.isArray(sourceUsers)) return [];
+
+  const rubricFeedback = {
+    pronunciation: "Speech was generally clear and intelligible, with a few sounds that could be articulated more precisely.",
+    fluency: "The answer maintained a steady pace, with occasional pauses while organizing ideas.",
+    grammar: "Sentence structures were mostly accurate, with minor errors that did not obscure meaning.",
+    vocabulary: "Word choice was appropriate and sufficiently varied for the task.",
+    coherence: "The response stayed relevant and connected its main ideas in a logical order.",
+    visualDelivery: "Camera framing and posture supported a professional, engaged delivery.",
+  };
+
+  return sourceUsers.map((source, index) => {
+    const jobNumber = safeText(source["工号"]);
+    const name = safeText(source["姓名"], `Mock user ${index + 1}`);
+    const department = safeText(source["姓名.部门"]);
+    const emails = safeText(source.email)
+      .split(",")
+      .map((email) => email.trim())
+      .filter(Boolean);
+    const scoreBase = 68 + ((index * 7) % 21);
+    const rubric = Object.fromEntries(
+      evaluationRubricStandard.dimensions.map((dimension, dimensionIndex) => [
+        dimension.key,
+        {
+          label: dimension.label,
+          weight: dimension.weight,
+          score: Math.min(96, scoreBase + ((dimensionIndex * 3 + index) % 9) - 4),
+          feedback: rubricFeedback[dimension.key],
+        },
+      ]),
+    );
+    const overallScore = Math.round(
+      evaluationRubricStandard.dimensions.reduce(
+        (total, dimension) => total + (rubric[dimension.key].score * dimension.weight) / 100,
+        0,
+      ),
+    );
+    const finishedAt = new Date(Date.UTC(2026, 5, 30 - (index % 20), 2 + (index % 8), 15)).toISOString();
+    const startedAt = new Date(new Date(finishedAt).getTime() - 2 * 60 * 1000).toISOString();
+    const userId = `mock_user_${jobNumber || index + 1}`;
+    const evaluationId = deterministicUuid(`mock-evaluation-${jobNumber || index}`);
+
+    return {
+      openId: `mock_open_${jobNumber || index + 1}`,
+      unionId: `mock_union_${jobNumber || index + 1}`,
+      userId,
+      jobNumber,
+      name,
+      email: emails[0] || "",
+      orgEmail: emails[1] || "",
+      latestEvaluationAt: finishedAt,
+      evaluations: [
+        {
+          id: evaluationId,
+          questionId: deterministicUuid(`mock-question-${jobNumber || index}`),
+          startedAt,
+          finishedAt,
+          profile: { name, role: department ? `${department} student` : "Student" },
+          question: {
+            question: "Describe a technical project you worked on and explain one difficult decision you made.",
+            focus: "Clear structure, technical vocabulary, and reflection on decision-making",
+            expectedDurationSeconds: 120,
+            followUp: "What would you do differently if you started the project again?",
+          },
+          evaluation: {
+            status: "completed",
+            rubricId: evaluationRubricStandard.id,
+            rubricVersion: evaluationRubricStandard.version,
+            reason: "",
+            overallScore,
+            summary: `Mock assessment for ${name}: a clear, relevant response with practical examples and some room for greater precision.`,
+            rubric,
+            strengths: ["Relevant supporting example", "Logical answer structure"],
+            improvements: ["Use more precise technical vocabulary", "Reduce hesitation between key points"],
+          },
+        },
+      ],
+    };
+  });
+}
+
 function partnerEvaluation(record) {
   const evaluation = record?.evaluation || {};
   const rawStatus = safeText(evaluation.status);
@@ -384,7 +481,7 @@ function partnerEvaluation(record) {
 function partnerUsers() {
   const questions = readJsonLines(questionsMetadataFile);
   const recordings = readJsonLines(metadataFile);
-  const users = new Map();
+  const users = new Map(mockPartnerUsers().map((user) => [user.openId || user.userId, user]));
 
   [...questions, ...recordings].forEach((record) => {
     const incoming = recordUserInfo(record);
@@ -414,6 +511,7 @@ function partnerUsers() {
       user.evaluations.sort((left, right) => right.finishedAt.localeCompare(left.finishedAt));
       return {
         ...user,
+        job_number: user.jobNumber,
         latestEvaluationAt: user.evaluations[0]?.finishedAt || "",
       };
     })
@@ -1160,7 +1258,9 @@ app.get("/api/v1/users", requirePartnerApiKey, (req, res) => {
     filterKeys.every((key) => {
       const requested = safeText(req.query[key]).toLowerCase();
       return !requested || safeText(user[key]).toLowerCase() === requested;
-    }),
+    }) &&
+    (!safeText(req.query.job_number) ||
+      safeText(user.job_number).toLowerCase() === safeText(req.query.job_number).toLowerCase()),
   );
   const total = users.length;
   const limit = Math.min(positiveInteger(req.query.limit, 50), 200);
