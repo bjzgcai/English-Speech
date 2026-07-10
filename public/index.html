@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Practice spoken English and review communication evaluations." />
     <title>Practice | EnglishEval</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -86,7 +87,7 @@
 
           <aside class="camera-guidance" aria-label="Camera setup guidance">
             <strong>Before you begin</strong>
-            <p>Stand about one metre from the camera. Make sure the frame captures your full upper body and posture.</p>
+            <p>Camera and microphone must stay on for the entire answer. Stand about one metre away and keep your full upper body in frame.</p>
           </aside>
 
           <div class="control-row">
@@ -131,8 +132,8 @@
           <h2 id="prepareModalTitle">Preparing your question...</h2>
           <p id="prepareModalMessage">Please wait while the assessment question is generated.</p>
           <div class="prepare-camera-guidance" id="prepareCameraGuidance" hidden>
-            <strong>Set up your camera</strong>
-            <span>Stand about one metre away and make sure your full upper body and posture are visible.</span>
+            <strong id="prepareGuidanceTitle">Set up your camera and microphone</strong>
+            <span id="prepareGuidanceMessage">Both must stay on for the entire answer. Stand about one metre away and make sure your full upper body and posture are visible.</span>
           </div>
           <div class="countdown-display" id="countdownDisplay" hidden>
             <span id="countdownSeconds">60</span>s
@@ -141,9 +142,6 @@
             <button type="button" class="primary-button" id="speakDirectlyButton">
               Speak directly
             </button>
-            <!-- <button type="button" class="text-button" id="skipVideoButton">
-              Save without recording
-            </button> -->
           </div>
         </div>
       </div>
