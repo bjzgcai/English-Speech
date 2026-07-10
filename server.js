@@ -23,6 +23,78 @@ const questionsMetadataFile = path.join(questionsDir, "metadata.jsonl");
 const openApiFile = path.join(rootDir, "openapi.yaml");
 const sessionCookieName = "englisheval_session";
 const sessionTtlMs = 7 * 24 * 60 * 60 * 1000;
+const evaluationRubricStandard = Object.freeze({
+  id: "english-speaking-evaluation",
+  version: "1.0.0",
+  name: "English Speaking Evaluation",
+  scoreScale: {
+    minimum: 0,
+    maximum: 100,
+    higherIsBetter: true,
+  },
+  overallScore: {
+    method: "weighted_average",
+    formula: "sum(dimension.score * dimension.weight / 100)",
+    rounding: "nearest_integer",
+  },
+  scoreBands: [
+    { minimum: 90, maximum: 100, level: "exceptional", meaning: "Consistently effective, precise, and confident." },
+    { minimum: 80, maximum: 89, level: "strong", meaning: "Effective overall with only minor limitations." },
+    { minimum: 70, maximum: 79, level: "competent", meaning: "Generally clear and successful with noticeable room to improve." },
+    { minimum: 60, maximum: 69, level: "developing", meaning: "Meaning is usually recoverable, but weaknesses regularly affect delivery." },
+    { minimum: 0, maximum: 59, level: "needs_improvement", meaning: "Frequent limitations materially reduce clarity or task success." },
+  ],
+  dimensions: [
+    {
+      key: "pronunciation",
+      label: "Pronunciation / intelligibility",
+      weight: 25,
+      description: "Sound clarity, stress, rhythm, and how reliably a listener can understand the words.",
+      evidence: ["speech intelligibility", "sound clarity", "stress and rhythm", "transcription reliability"],
+      guidance: "Do not penalize accent when intelligibility is strong. State when evidence is limited.",
+    },
+    {
+      key: "fluency",
+      label: "Fluency",
+      weight: 15,
+      description: "Pacing, hesitation, pauses, self-correction, and the ability to sustain an answer.",
+      evidence: ["speaking rate", "pause frequency and length", "hesitation", "continuity"],
+      guidance: "Speed is not the goal; thoughtful pauses are acceptable when communication remains smooth.",
+    },
+    {
+      key: "grammar",
+      label: "Grammar",
+      weight: 20,
+      description: "Control of sentence structure, tense, agreement, and word order.",
+      evidence: ["sentence formation", "tense control", "agreement", "word order", "effect of errors on meaning"],
+      guidance: "Prioritize whether errors change or obscure meaning over isolated minor mistakes.",
+    },
+    {
+      key: "vocabulary",
+      label: "Vocabulary",
+      weight: 15,
+      description: "Range, precision, and appropriateness of word choice.",
+      evidence: ["lexical range", "word precision", "appropriateness", "repetition and vague language"],
+      guidance: "Reward precise, natural language rather than rare or unnecessarily complex words.",
+    },
+    {
+      key: "coherence",
+      label: "Coherence / task relevance",
+      weight: 10,
+      description: "Logical connection of ideas, relevance to the question, and clarity of the main point.",
+      evidence: ["task completion", "logical sequence", "connections between ideas", "clear main point"],
+      guidance: "Avoid double-counting language errors already scored under grammar, vocabulary, or fluency.",
+    },
+    {
+      key: "visualDelivery",
+      label: "Visual delivery",
+      weight: 15,
+      description: "Camera-facing posture, eye contact, facial engagement, framing, and distracting movement.",
+      evidence: ["posture", "camera eye contact", "facial engagement", "framing", "distracting movement"],
+      guidance: "Assess communication behavior only; do not score appearance or personal characteristics.",
+    },
+  ],
+});
 
 fs.mkdirSync(recordingsDir, { recursive: true });
 fs.mkdirSync(artifactsDir, { recursive: true });
@@ -254,14 +326,7 @@ function partnerEvaluation(record) {
   const evaluation = record?.evaluation || {};
   const rawStatus = safeText(evaluation.status);
   const status = ["completed", "skipped", "failed"].includes(rawStatus) ? rawStatus : "unknown";
-  const rubricKeys = [
-    "pronunciation",
-    "fluency",
-    "grammar",
-    "vocabulary",
-    "coherence",
-    "visualDelivery",
-  ];
+  const rubricKeys = evaluationRubricStandard.dimensions.map((dimension) => dimension.key);
   const rubric = Object.fromEntries(
     rubricKeys
       .filter((key) => evaluation?.rubric?.[key])
@@ -298,6 +363,8 @@ function partnerEvaluation(record) {
     },
     evaluation: {
       status,
+      rubricId: safeText(evaluation.rubricId, evaluationRubricStandard.id),
+      rubricVersion: safeText(evaluation.rubricVersion, evaluationRubricStandard.version),
       reason: safeText(evaluation.reason),
       overallScore: Number.isFinite(Number(evaluation.overallScore))
         ? Number(evaluation.overallScore)
@@ -761,44 +828,17 @@ function nonNegativeInteger(value, fallback = 0) {
 }
 
 function normalizeEvaluation(rawEvaluation) {
-  const rubric = {
-    pronunciation: {
-      label: "Pronunciation / intelligibility",
-      weight: 25,
-      score: normalizeScore(rawEvaluation?.rubric?.pronunciation?.score),
-      feedback: safeText(rawEvaluation?.rubric?.pronunciation?.feedback),
-    },
-    fluency: {
-      label: "Fluency",
-      weight: 15,
-      score: normalizeScore(rawEvaluation?.rubric?.fluency?.score),
-      feedback: safeText(rawEvaluation?.rubric?.fluency?.feedback),
-    },
-    grammar: {
-      label: "Grammar",
-      weight: 20,
-      score: normalizeScore(rawEvaluation?.rubric?.grammar?.score),
-      feedback: safeText(rawEvaluation?.rubric?.grammar?.feedback),
-    },
-    vocabulary: {
-      label: "Vocabulary",
-      weight: 15,
-      score: normalizeScore(rawEvaluation?.rubric?.vocabulary?.score),
-      feedback: safeText(rawEvaluation?.rubric?.vocabulary?.feedback),
-    },
-    coherence: {
-      label: "Coherence / task relevance",
-      weight: 10,
-      score: normalizeScore(rawEvaluation?.rubric?.coherence?.score),
-      feedback: safeText(rawEvaluation?.rubric?.coherence?.feedback),
-    },
-    visualDelivery: {
-      label: "Visual delivery",
-      weight: 15,
-      score: normalizeScore(rawEvaluation?.rubric?.visualDelivery?.score),
-      feedback: safeText(rawEvaluation?.rubric?.visualDelivery?.feedback),
-    },
-  };
+  const rubric = Object.fromEntries(
+    evaluationRubricStandard.dimensions.map((dimension) => [
+      dimension.key,
+      {
+        label: dimension.label,
+        weight: dimension.weight,
+        score: normalizeScore(rawEvaluation?.rubric?.[dimension.key]?.score),
+        feedback: safeText(rawEvaluation?.rubric?.[dimension.key]?.feedback),
+      },
+    ]),
+  );
 
   const overallScore = Object.values(rubric).reduce(
     (total, item) => total + item.score * (item.weight / 100),
@@ -806,6 +846,8 @@ function normalizeEvaluation(rawEvaluation) {
   );
 
   return {
+    rubricId: evaluationRubricStandard.id,
+    rubricVersion: evaluationRubricStandard.version,
     overallScore: normalizeScore(rawEvaluation?.overallScore || overallScore),
     summary: safeText(rawEvaluation?.summary, "Evaluation completed."),
     transcript: safeText(rawEvaluation?.transcript),
@@ -853,27 +895,29 @@ async function transcribeAudio(audioPath) {
 }
 
 function buildEvaluationPrompt({ profile, question, transcript, audioMetrics, frameCount }) {
+  const weights = evaluationRubricStandard.dimensions
+    .map((dimension) => `${dimension.key} ${dimension.weight}`)
+    .join(", ");
+  const rubricSchema = Object.fromEntries(
+    evaluationRubricStandard.dimensions.map((dimension) => [
+      dimension.key,
+      { score: 0, feedback: "" },
+    ]),
+  );
   return [
     "Evaluate this user's English speaking performance from the transcript and sampled video frames.",
     "Return strict JSON only. Do not include markdown.",
     "Use a 0-100 score for each dimension.",
-    "The weights must be: pronunciation 25, fluency 15, grammar 20, vocabulary 15, coherence 10, visualDelivery 15.",
-    "Visual delivery should assess posture, eye contact with camera, facial engagement, framing, and distracting movement.",
-    "Use the audio metrics to evaluate fluency and pacing. Pronunciation should be inferred from transcription reliability and intelligibility clues; if evidence is limited, say that in feedback.",
+    `The weights must be: ${weights}.`,
+    `Apply this rubric standard: ${JSON.stringify({ scoreBands: evaluationRubricStandard.scoreBands, dimensions: evaluationRubricStandard.dimensions })}`,
+    "Use the audio metrics to evaluate fluency and pacing. Pronunciation should be inferred from transcription reliability and intelligibility clues.",
     "Be direct, specific, and useful to the learner. Do not over-penalize accent when intelligibility is strong.",
     "Schema:",
     JSON.stringify({
       overallScore: 0,
       summary: "",
       transcript: "",
-      rubric: {
-        pronunciation: { score: 0, feedback: "" },
-        fluency: { score: 0, feedback: "" },
-        grammar: { score: 0, feedback: "" },
-        vocabulary: { score: 0, feedback: "" },
-        coherence: { score: 0, feedback: "" },
-        visualDelivery: { score: 0, feedback: "" },
-      },
+      rubric: rubricSchema,
       strengths: [],
       improvements: [],
     }),
@@ -1132,6 +1176,10 @@ app.get("/api/v1/users/:userId", requirePartnerApiKey, (req, res) => {
     return res.status(404).json({ error: "User not found." });
   }
   res.json({ user });
+});
+
+app.get("/api/v1/rubrics", requirePartnerApiKey, (_req, res) => {
+  res.json({ rubric: evaluationRubricStandard });
 });
 
 app.get("/api/me", (req, res) => {
