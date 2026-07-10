@@ -3,29 +3,32 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>EnglishEval</title>
+    <meta name="description" content="Practice spoken English and review communication evaluations." />
+    <title>Practice | EnglishEval</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main class="app-shell">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">EnglishEval</p>
-          <h1>Speaking question recorder</h1>
+    <a class="skip-link" href="#mainContent">Skip to content</a>
+    <header class="app-nav">
+      <a class="brand" href="/play" data-route="/play" aria-label="EnglishEval home">
+        <span class="brand-mark" aria-hidden="true">E</span>
+        <span>EnglishEval</span>
+      </a>
+      <div class="header-menu">
+        <nav class="main-nav" aria-label="Primary navigation">
+          <a href="/play" data-route="/play">Practice</a>
+          <a href="/history" data-route="/history">History</a>
+          <a href="/docs">Methodology</a>
+        </nav>
+        <a class="header-login" id="loginButton" href="/auth/dingtalk">Sign in</a>
+        <div class="auth-chip" id="authChip" hidden>
+          <span id="authUserName">DingTalk user</span>
+          <button type="button" id="logoutButton">Logout</button>
         </div>
-        <div class="topbar-actions">
-          <nav class="main-nav" aria-label="Primary">
-            <a href="/play" data-route="/play">/play</a>
-            <a href="/history" data-route="/history">/history</a>
-            <a href="/docs">/docs</a>
-          </nav>
-          <div class="auth-chip" id="authChip" hidden>
-            <span id="authUserName">DingTalk user</span>
-            <button type="button" id="logoutButton">Logout</button>
-          </div>
-          <div class="status-pill" id="connectionStatus" role="status" aria-live="polite">Idle</div>
-        </div>
-      </header>
+      </div>
+    </header>
+
+    <main class="app-shell" id="mainContent">
 
       <section class="login-panel" id="loginPanel" hidden>
         <div>
@@ -33,10 +36,19 @@
           <h2>Sign in before using EnglishEval</h2>
           <p>Access to question generation, recording, and history is limited to authenticated DingTalk users.</p>
         </div>
-        <a class="primary-button login-button" id="loginButton" href="/auth/dingtalk">Sign in with DingTalk</a>
+        <a class="primary-button login-button" href="/auth/dingtalk">Sign in with DingTalk</a>
       </section>
 
       <section class="workspace view" id="playView" data-view="/play">
+        <header class="view-heading play-heading">
+          <div>
+            <p class="eyebrow">Live speaking evaluation</p>
+            <h1>Practice a complete spoken response.</h1>
+            <p>Get one focused question, record your answer, and receive feedback across all six dimensions.</p>
+          </div>
+          <div class="status-pill" id="connectionStatus" role="status" aria-live="polite">Idle</div>
+        </header>
+
         <form class="panel profile-panel" id="profileForm">
           <div class="section-heading">
             <h2>Candidate profile</h2>
@@ -71,6 +83,11 @@
             <div class="recording-badge" id="recordingBadge">Recording</div>
           </div>
 
+          <aside class="camera-guidance" aria-label="Camera setup guidance">
+            <strong>Before you begin</strong>
+            <p>Stand about one metre from the camera. Make sure the frame captures your full upper body and posture.</p>
+          </aside>
+
           <div class="control-row">
             <button type="button" class="danger-button" id="finishButton" disabled>
               Finish and save
@@ -83,10 +100,11 @@
       </section>
 
       <section class="history view" id="historyView" data-view="/history" hidden>
-        <div class="section-heading">
+        <header class="view-heading history-heading">
+          <p class="eyebrow">Your progress</p>
           <h2>Evaluation history</h2>
           <p>Open an evaluation to review dimension scores, feedback, and the saved answer video.</p>
-        </div>
+        </header>
         <div class="history-list" id="historyList"></div>
       </section>
 
@@ -111,12 +129,21 @@
           <p class="muted-label" id="prepareModalKicker">Generating</p>
           <h2 id="prepareModalTitle">Preparing your question...</h2>
           <p id="prepareModalMessage">Please wait while the assessment question is generated.</p>
+          <div class="prepare-camera-guidance" id="prepareCameraGuidance" hidden>
+            <strong>Set up your camera</strong>
+            <span>Stand about one metre away and make sure your full upper body and posture are visible.</span>
+          </div>
           <div class="countdown-display" id="countdownDisplay" hidden>
             <span id="countdownSeconds">60</span>s
           </div>
-          <button type="button" class="primary-button" id="speakDirectlyButton" hidden>
-            Speak directly
-          </button>
+          <div class="prepare-actions" id="prepareActions" hidden>
+            <button type="button" class="primary-button" id="speakDirectlyButton">
+              Speak directly
+            </button>
+            <!-- <button type="button" class="text-button" id="skipVideoButton">
+              Save without recording
+            </button> -->
+          </div>
         </div>
       </div>
     </main>
