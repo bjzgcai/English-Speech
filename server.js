@@ -1053,6 +1053,9 @@ app.get("/history", sendAppShell);
 app.get("/docs", (_req, res) => {
   res.sendFile(path.join(publicDir, "docs.html"));
 });
+app.get("/prepare", (_req, res) => {
+  res.sendFile(path.join(publicDir, "prepare.html"));
+});
 
 app.listen(port, () => {
   console.log(`EnglishEval is running at http://localhost:${port}`);
