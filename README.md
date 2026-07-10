@@ -31,9 +31,12 @@ DINGTALK_APP_KEY=...
 DINGTALK_APP_SECRET=...
 APP_BASE_URL=http://localhost:3199
 SESSION_SECRET=...
+COOKIE_SECURE=false
 ```
 
 The DingTalk app callback URL must match `APP_BASE_URL` plus `/auth/dingtalk/callback`.
+`COOKIE_SECURE` is optional; when omitted, secure session cookies are enabled
+automatically for an HTTPS `APP_BASE_URL` and disabled for HTTP.
 
 The browser never receives API keys. Question generation goes through `POST /api/generate-question`.
 
@@ -52,7 +55,7 @@ The server extracts the full audio track, samples video frames at roughly one fr
 
 ## Persistent storage and ownership
 
-Generated questions are appended to `questions/metadata.jsonl` with the DingTalk OAuth `openId`. Uploaded answer videos are stored in `recordings/`, and their metadata/evaluation is appended to `recordings/metadata.jsonl` with the same `openId` plus the owned `questionId`.
+Generated questions are appended to `questions/metadata.jsonl` with the DingTalk OAuth `openId`. Answer attempts are appended to `recordings/metadata.jsonl` with the same `openId` plus the owned `questionId`. Attempts without a video are retained with `hasVideo: false` and a skipped evaluation; uploaded answer videos are stored in `recordings/` and use `hasVideo: true`.
 
 Both JSONL files and the video/artifact directories live on the server filesystem, so they survive application restarts. In production, mount `recordings/` and `questions/` on a persistent volume and include both in backups. If the app will run on multiple instances, migrate these records to a shared database/object store rather than relying on instance-local files.
 
@@ -63,3 +66,26 @@ History and video endpoints always filter by the signed-in DingTalk `openId`. Th
 Browser support for direct MP4 recording varies. The app asks for MP4 first and records WebM when the browser does not support MP4 through `MediaRecorder`. Recordings are finalized as a single browser blob because timed MP4 chunks are not reliably concatenable across implementations. The server uses bundled `ffmpeg-static` to convert non-MP4 uploads to MP4 for storage.
 
 Extracted audio and sampled frames are stored under `recordings/artifacts/`.
+
+## Deploy
+
+The included script deploys versioned releases over SSH, installs a systemd
+service, and keeps `.env`, `recordings/`, and `questions/` in shared persistent
+storage on the target host.
+
+For the initial deployment and data migration:
+
+```bash
+./deploy.sh --migrate-data
+```
+
+For later code-only deployments:
+
+```bash
+./deploy.sh
+```
+
+Defaults target `ubuntu@10.1.130.9`, installs under `/opt/englisheval`, and
+serves on `http://10.1.130.9:3199`. Override `TARGET`, `REMOTE_ROOT`,
+`APP_PORT`, `PUBLIC_BASE_URL`, or `SERVICE_NAME` in the command environment.
+The migration option deliberately refuses to overwrite non-empty remote data.

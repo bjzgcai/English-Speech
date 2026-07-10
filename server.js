@@ -6,6 +6,9 @@ const express = require("express");
 const multer = require("multer");
 const ffmpegPath = require("ffmpeg-static");
 require("dotenv").config();
+if (process.env.NODE_ENV !== "production") {
+  require("dotenv").config({ path: ".env.local", override: true });
+}
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -88,6 +91,19 @@ function createSessionToken(user) {
   return `${payload}.${signSessionPayload(payload)}`;
 }
 
+function useSecureSessionCookie() {
+  const override = safeText(process.env.COOKIE_SECURE).toLowerCase();
+  if (override === "true" || override === "false") {
+    return override === "true";
+  }
+
+  try {
+    return new URL(process.env.APP_BASE_URL).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function readSession(req) {
   const token = parseCookies(req)[sessionCookieName];
   if (!token) return null;
@@ -113,7 +129,7 @@ function setSessionCookie(res, user) {
   res.cookie(sessionCookieName, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: useSecureSessionCookie(),
     maxAge: sessionTtlMs,
     path: "/",
   });
@@ -123,7 +139,7 @@ function clearSessionCookie(res) {
   res.clearCookie(sessionCookieName, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: useSecureSessionCookie(),
     path: "/",
   });
 }
@@ -888,14 +904,10 @@ app.post("/api/generate-question", requireAuth, async (req, res) => {
 });
 
 app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: "No video file uploaded." });
-  }
-
   const questionId = safeText(req.body.questionId);
   const questionRecord = findOwnedQuestion(questionId, req.user.openId);
   if (!questionRecord) {
-    removePath(req.file.path);
+    if (req.file) removePath(req.file.path);
     return res.status(400).json({ error: "The question is missing or does not belong to this user." });
   }
 
@@ -904,6 +916,38 @@ app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, re
   const startedAt = safeText(req.body.startedAt);
   const finishedAt = new Date().toISOString();
   const id = crypto.randomUUID();
+
+  if (!req.file) {
+    const record = {
+      id,
+      hasVideo: false,
+      filename: null,
+      mimeType: null,
+      bytes: 0,
+      startedAt,
+      finishedAt,
+      openId: req.user.openId,
+      user: req.user,
+      profile,
+      questionId,
+      question,
+      evaluation: {
+        status: "skipped",
+        reason: "No video was recorded for this question.",
+      },
+    };
+
+    appendJsonLine(metadataFile, record);
+    return res.json({
+      ok: true,
+      id,
+      hasVideo: false,
+      filename: null,
+      path: null,
+      evaluation: record.evaluation,
+    });
+  }
+
   const baseName = `${finishedAt.replace(/[:.]/g, "-")}-${id}`;
   const originalExtension = getExtensionFromMime(req.file.mimetype);
   let filename = `${baseName}.mp4`;
@@ -928,6 +972,7 @@ app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, re
 
   const record = {
     id,
+    hasVideo: true,
     filename,
     mimeType: storedMimeType,
     originalMimeType: req.file.mimetype,
@@ -961,6 +1006,7 @@ app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, re
   res.json({
     ok: true,
     id,
+    hasVideo: true,
     filename,
     path: `/api/recordings/${id}/video`,
     evaluation: record.evaluation,
@@ -972,7 +1018,8 @@ app.get("/api/recordings", requireAuth, (req, res) => {
     .filter((record) => recordOpenId(record) === req.user.openId)
     .map((record) => ({
       ...record,
-      path: `/api/recordings/${record.id}/video`,
+      hasVideo: record.hasVideo !== false && Boolean(record.filename),
+      path: record.filename ? `/api/recordings/${record.id}/video` : null,
     }))
     .reverse();
 

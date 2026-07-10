@@ -46,6 +46,7 @@ const playView = document.querySelector("#playView");
 const historyView = document.querySelector("#historyView");
 const loginPanel = document.querySelector("#loginPanel");
 const loginButton = document.querySelector("#loginButton");
+const loginPanelButton = document.querySelector(".login-panel .login-button");
 const authChip = document.querySelector("#authChip");
 const authUserName = document.querySelector("#authUserName");
 const logoutButton = document.querySelector("#logoutButton");
@@ -61,7 +62,10 @@ const prepareModalTitle = document.querySelector("#prepareModalTitle");
 const prepareModalMessage = document.querySelector("#prepareModalMessage");
 const countdownDisplay = document.querySelector("#countdownDisplay");
 const countdownSeconds = document.querySelector("#countdownSeconds");
+const prepareCameraGuidance = document.querySelector("#prepareCameraGuidance");
+const prepareActions = document.querySelector("#prepareActions");
 const speakDirectlyButton = document.querySelector("#speakDirectlyButton");
+const skipVideoButton = document.querySelector("#skipVideoButton");
 
 function setStatus(message) {
   connectionStatus.textContent = message;
@@ -76,11 +80,14 @@ function updateAuthView() {
   const isSignedIn = Boolean(state.authUser);
 
   loginPanel.hidden = isSignedIn;
+  loginButton.hidden = isSignedIn;
   authChip.hidden = !isSignedIn;
   playView.hidden = !isSignedIn || normalizeRoute(window.location.pathname) === "/history";
   historyView.hidden = !isSignedIn || normalizeRoute(window.location.pathname) !== "/history";
   authUserName.textContent = state.authUser?.name || "DingTalk user";
-  loginButton.href = `/auth/dingtalk?redirect=${encodeURIComponent(window.location.pathname)}`;
+  const loginHref = `/auth/dingtalk?redirect=${encodeURIComponent(window.location.pathname)}`;
+  loginButton.href = loginHref;
+  loginPanelButton.href = loginHref;
 }
 
 async function checkAuth() {
@@ -97,6 +104,7 @@ async function checkAuth() {
       loginPanel.querySelector("p:last-child").textContent =
         "Set DINGTALK_APP_KEY and DINGTALK_APP_SECRET in the server environment.";
       loginButton.hidden = true;
+      loginPanelButton.hidden = true;
       playView.hidden = true;
       historyView.hidden = true;
       return;
@@ -134,8 +142,9 @@ function showGeneratingModal() {
   prepareModalTitle.textContent = "Preparing your question...";
   prepareModalMessage.textContent = "Please wait while the assessment question is generated.";
   prepareSpinner.hidden = false;
+  prepareCameraGuidance.hidden = true;
   countdownDisplay.hidden = true;
-  speakDirectlyButton.hidden = true;
+  prepareActions.hidden = true;
   prepareModal.hidden = false;
 }
 
@@ -144,8 +153,9 @@ function showCountdownModal(question) {
   prepareModalTitle.textContent = question.question;
   prepareModalMessage.textContent = "Take a moment to plan your answer. Recording starts when the timer reaches zero.";
   prepareSpinner.hidden = true;
+  prepareCameraGuidance.hidden = false;
   countdownDisplay.hidden = false;
-  speakDirectlyButton.hidden = false;
+  prepareActions.hidden = false;
   countdownSeconds.textContent = String(PREPARE_COUNTDOWN_SECONDS);
   prepareModal.hidden = false;
 }
@@ -156,10 +166,10 @@ function waitForPreparationCountdown(question) {
   return new Promise((resolve) => {
     let remainingSeconds = PREPARE_COUNTDOWN_SECONDS;
 
-    state.prepareCountdownResolve = () => {
+    state.prepareCountdownResolve = (action = "record") => {
       stopPrepareCountdown();
       state.prepareCountdownResolve = null;
-      resolve();
+      resolve(action);
     };
 
     state.prepareCountdownTimer = window.setInterval(() => {
@@ -374,8 +384,10 @@ function renderHistoryItem(item, index) {
   const score =
     item.evaluation?.status === "completed"
       ? `${Math.round(item.evaluation.overallScore || 0)} / 100`
-      : "Pending";
-  const videoPath = item.path || `/api/recordings/${item.id}/video`;
+      : item.hasVideo === false
+        ? "No video"
+        : "Pending";
+  const videoPath = item.path || "";
 
   return `
     <details class="history-collapse" ${index === 0 ? "open" : ""}>
@@ -384,16 +396,22 @@ function renderHistoryItem(item, index) {
         <span class="history-meta">${escapeHtml(name)} · ${escapeHtml(date)} · ${escapeHtml(score)}</span>
       </summary>
       <div class="history-detail">
-        <div class="history-actions">
-          <button
-            type="button"
-            class="secondary-button video-link"
-            data-video-src="${escapeHtml(videoPath)}"
-            data-video-title="${escapeHtml(title)}"
-          >
-            Open video
-          </button>
-        </div>
+        ${
+          item.hasVideo !== false && videoPath
+            ? `
+              <div class="history-actions">
+                <button
+                  type="button"
+                  class="secondary-button video-link"
+                  data-video-src="${escapeHtml(videoPath)}"
+                  data-video-title="${escapeHtml(title)}"
+                >
+                  Open video
+                </button>
+              </div>
+            `
+            : '<p class="no-video-label">No video was recorded for this question.</p>'
+        }
         ${item.evaluation ? renderEvaluationContent(item.evaluation) : '<p class="empty-history">No evaluation saved for this answer.</p>'}
       </div>
     </details>
@@ -411,6 +429,8 @@ function setRoute(pathname) {
   playView.hidden = !state.authUser || isHistory;
   historyView.hidden = !state.authUser || !isHistory;
   loginPanel.hidden = Boolean(state.authUser);
+  connectionStatus.hidden = isHistory;
+  document.title = isHistory ? "History | EnglishEval" : "Practice | EnglishEval";
   navLinks.forEach((link) => {
     link.classList.toggle("active", normalizeRoute(link.dataset.route) === route);
   });
@@ -486,9 +506,13 @@ profileForm.addEventListener("submit", async (event) => {
       saveResult.textContent = `LLM fallback used: ${data.error}`;
     }
     setStatus("Thinking time");
-    await waitForPreparationCountdown(data.question);
+    const preparationAction = await waitForPreparationCountdown(data.question);
     closePrepareModal();
-    await startRecording();
+    if (preparationAction === "skip-video") {
+      await saveAnswerWithoutVideo("Saved without a video recording.");
+    } else {
+      await startRecording();
+    }
   } catch (error) {
     closePrepareModal();
     setStatus("Error");
@@ -500,6 +524,41 @@ profileForm.addEventListener("submit", async (event) => {
     }
   }
 });
+
+async function saveAnswerWithoutVideo(message) {
+  if (!state.question) return;
+
+  finishButton.disabled = true;
+  generateButton.disabled = true;
+  setStatus("Saving");
+  saveResult.textContent = "Saving this question without a video recording...";
+  evaluationResult.innerHTML = "";
+
+  const formData = new FormData();
+  formData.append("questionId", state.question.id);
+  formData.append("startedAt", state.startedAt || new Date().toISOString());
+
+  try {
+    const response = await fetch("/api/save-answer", {
+      method: "POST",
+      body: formData,
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Save failed.");
+    }
+
+    saveResult.textContent = `${message} It is available in your history.`;
+    renderEvaluation(data.evaluation);
+    setStatus("Saved without video");
+    await loadHistory();
+  } catch (error) {
+    setStatus("Save failed");
+    saveResult.textContent = error.message;
+  } finally {
+    generateButton.disabled = false;
+  }
+}
 
 async function startRecording() {
   if (!state.question) return;
@@ -543,8 +602,8 @@ async function startRecording() {
     }, MAX_RECORDING_MS);
   } catch (error) {
     setStatus("Camera blocked");
-    saveResult.textContent = `Unable to start camera: ${error.message}`;
     stopStream();
+    await saveAnswerWithoutVideo(`Unable to start the camera: ${error.message}`);
   }
 }
 
@@ -618,9 +677,17 @@ logoutButton.addEventListener("click", async () => {
 
 speakDirectlyButton.addEventListener("click", () => {
   if (state.prepareCountdownResolve) {
-    state.prepareCountdownResolve();
+    state.prepareCountdownResolve("record");
   }
 });
+
+if (skipVideoButton) {
+  skipVideoButton.addEventListener("click", () => {
+    if (state.prepareCountdownResolve) {
+      state.prepareCountdownResolve("skip-video");
+    }
+  });
+}
 
 navLinks.forEach((link) => {
   link.addEventListener("click", (event) => {
