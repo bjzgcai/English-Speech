@@ -17,10 +17,24 @@
           <nav class="main-nav" aria-label="Primary">
             <a href="/play" data-route="/play">/play</a>
             <a href="/history" data-route="/history">/history</a>
+            <a href="/docs">/docs</a>
           </nav>
+          <div class="auth-chip" id="authChip" hidden>
+            <span id="authUserName">DingTalk user</span>
+            <button type="button" id="logoutButton">Logout</button>
+          </div>
           <div class="status-pill" id="connectionStatus" role="status" aria-live="polite">Idle</div>
         </div>
       </header>
+
+      <section class="login-panel" id="loginPanel" hidden>
+        <div>
+          <p class="eyebrow">DingTalk required</p>
+          <h2>Sign in before using EnglishEval</h2>
+          <p>Access to question generation, recording, and history is limited to authenticated DingTalk users.</p>
+        </div>
+        <a class="primary-button login-button" id="loginButton" href="/auth/dingtalk">Sign in with DingTalk</a>
+      </section>
 
       <section class="workspace view" id="playView" data-view="/play">
         <form class="panel profile-panel" id="profileForm">
@@ -31,12 +45,12 @@
 
           <label>
             Name
-            <input id="name" name="name" autocomplete="name" placeholder="Alex Chen" />
+            <input id="name" name="name" autocomplete="name" placeholder="Alex Chen" value="Biao" />
           </label>
 
           <label>
             Role or background
-            <textarea id="role" name="role" placeholder="Product manager preparing for interviews"></textarea>
+            <textarea id="role" name="role" placeholder="Product manager preparing for interviews">AI engeering</textarea>
           </label>
 
           <button type="submit" class="primary-button" id="generateButton">

@@ -69,6 +69,60 @@ button:disabled {
   gap: 12px;
 }
 
+.auth-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 5px 6px 5px 12px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.auth-chip button {
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--accent-dark);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.login-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--shadow);
+  padding: 22px;
+}
+
+.login-panel h2 {
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.login-panel p:not(.eyebrow) {
+  margin-top: 8px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.login-button {
+  display: inline-flex;
+  width: auto;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
 .main-nav {
   display: flex;
   gap: 4px;
@@ -809,6 +863,7 @@ video {
 
   .topbar,
   .topbar-actions,
+  .login-panel,
   .workspace,
   .history-item {
     grid-template-columns: 1fr;

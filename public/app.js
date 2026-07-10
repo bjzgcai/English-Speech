@@ -9,6 +9,8 @@ const state = {
   autoStopTimer: null,
   prepareCountdownTimer: null,
   prepareCountdownResolve: null,
+  authUser: null,
+  authReady: false,
 };
 
 const MAX_RECORDING_MS = 2 * 60 * 1000;
@@ -42,6 +44,11 @@ const connectionStatus = document.querySelector("#connectionStatus");
 const historyList = document.querySelector("#historyList");
 const playView = document.querySelector("#playView");
 const historyView = document.querySelector("#historyView");
+const loginPanel = document.querySelector("#loginPanel");
+const loginButton = document.querySelector("#loginButton");
+const authChip = document.querySelector("#authChip");
+const authUserName = document.querySelector("#authUserName");
+const logoutButton = document.querySelector("#logoutButton");
 const navLinks = document.querySelectorAll("[data-route]");
 const videoModal = document.querySelector("#videoModal");
 const videoModalTitle = document.querySelector("#videoModalTitle");
@@ -63,6 +70,49 @@ function setStatus(message) {
 function setVideoLoading(isLoading) {
   videoFrame.classList.toggle("is-loading", isLoading);
   videoFrame.setAttribute("aria-busy", String(isLoading));
+}
+
+function updateAuthView() {
+  const isSignedIn = Boolean(state.authUser);
+
+  loginPanel.hidden = isSignedIn;
+  authChip.hidden = !isSignedIn;
+  playView.hidden = !isSignedIn || normalizeRoute(window.location.pathname) === "/history";
+  historyView.hidden = !isSignedIn || normalizeRoute(window.location.pathname) !== "/history";
+  authUserName.textContent = state.authUser?.name || "DingTalk user";
+  loginButton.href = `/auth/dingtalk?redirect=${encodeURIComponent(window.location.pathname)}`;
+}
+
+async function checkAuth() {
+  try {
+    const response = await fetch("/api/me");
+    const data = await response.json();
+    state.authUser = data.user || null;
+    state.authReady = true;
+
+    if (!data.configured) {
+      setStatus("Auth missing");
+      loginPanel.hidden = false;
+      loginPanel.querySelector("h2").textContent = "DingTalk authentication is not configured";
+      loginPanel.querySelector("p:last-child").textContent =
+        "Set DINGTALK_APP_KEY and DINGTALK_APP_SECRET in the server environment.";
+      loginButton.hidden = true;
+      playView.hidden = true;
+      historyView.hidden = true;
+      return;
+    }
+
+    setStatus(state.authUser ? "Signed in" : "Sign in");
+    updateAuthView();
+    if (state.authUser && normalizeRoute(window.location.pathname) === "/history") {
+      await loadHistory();
+    }
+  } catch {
+    setStatus("Auth error");
+    loginPanel.hidden = false;
+    playView.hidden = true;
+    historyView.hidden = true;
+  }
 }
 
 function stopPrepareCountdown() {
@@ -167,6 +217,11 @@ function stopStream() {
 
 async function loadHistory() {
   const response = await fetch("/api/recordings");
+  if (response.status === 401) {
+    state.authUser = null;
+    updateAuthView();
+    return;
+  }
   const data = await response.json();
   const recordings = data.recordings || [];
 
@@ -320,7 +375,7 @@ function renderHistoryItem(item, index) {
     item.evaluation?.status === "completed"
       ? `${Math.round(item.evaluation.overallScore || 0)} / 100`
       : "Pending";
-  const videoPath = item.path || `/recordings/${item.filename}`;
+  const videoPath = item.path || `/api/recordings/${item.id}/video`;
 
   return `
     <details class="history-collapse" ${index === 0 ? "open" : ""}>
@@ -353,17 +408,22 @@ function setRoute(pathname) {
   const route = normalizeRoute(pathname);
   const isHistory = route === "/history";
 
-  playView.hidden = isHistory;
-  historyView.hidden = !isHistory;
+  playView.hidden = !state.authUser || isHistory;
+  historyView.hidden = !state.authUser || !isHistory;
+  loginPanel.hidden = Boolean(state.authUser);
   navLinks.forEach((link) => {
     link.classList.toggle("active", normalizeRoute(link.dataset.route) === route);
   });
 
-  if (isHistory) {
+  if (!state.authUser) {
+    setStatus(state.authReady ? "Sign in" : "Checking auth");
+  } else if (isHistory) {
     setStatus("History");
     loadHistory().catch(() => {
       historyList.innerHTML = '<p class="empty-history">Unable to load saved answers.</p>';
     });
+  } else {
+    setStatus("Signed in");
   }
 }
 
@@ -388,6 +448,11 @@ function closeHistoryVideo() {
 
 profileForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+
+  if (!state.authUser) {
+    window.location.href = `/auth/dingtalk?redirect=${encodeURIComponent(window.location.pathname)}`;
+    return;
+  }
 
   if (state.recorder && state.recorder.state !== "inactive") {
     saveResult.textContent = "Finish and save the current recording before generating another question.";
@@ -448,6 +513,10 @@ async function startRecording() {
       audio: true,
     });
 
+    if (state.stream.getAudioTracks().length === 0) {
+      throw new Error("No microphone audio track was provided. Check the browser's microphone permission and try again.");
+    }
+
     preview.srcObject = state.stream;
     videoPlaceholder.classList.add("hidden");
 
@@ -461,7 +530,9 @@ async function startRecording() {
       }
     });
 
-    state.recorder.start(1000);
+    // Timed MP4 chunks are not reliably concatenable across MediaRecorder
+    // implementations. Let the recorder finalize one complete file on stop.
+    state.recorder.start();
     finishButton.disabled = false;
     generateButton.disabled = true;
     recordingBadge.classList.add("visible");
@@ -505,8 +576,7 @@ async function finishRecording() {
   const videoBlob = new Blob(state.chunks, { type: blobType });
   const formData = new FormData();
   formData.append("video", videoBlob, `answer.${extension}`);
-  formData.append("profile", JSON.stringify(state.profile));
-  formData.append("question", JSON.stringify(state.question));
+  formData.append("questionId", state.question.id);
   formData.append("startedAt", state.startedAt);
 
   try {
@@ -519,7 +589,7 @@ async function finishRecording() {
       throw new Error(data.error || "Save failed.");
     }
 
-    saveResult.innerHTML = `Saved as <a href="/recordings/${encodeURIComponent(data.filename)}" target="_blank" rel="noreferrer">${escapeHtml(data.filename)}</a>. Generate the next question when ready.`;
+    saveResult.innerHTML = `Saved as <a href="${escapeHtml(data.path)}" target="_blank" rel="noreferrer">${escapeHtml(data.filename)}</a>. Generate the next question when ready.`;
     renderEvaluation(data.evaluation);
     setStatus(data.evaluation?.status === "completed" ? "Evaluated" : "Saved");
     generateButton.disabled = false;
@@ -536,6 +606,15 @@ async function finishRecording() {
 }
 
 finishButton.addEventListener("click", finishRecording);
+
+logoutButton.addEventListener("click", async () => {
+  await fetch("/auth/logout", { method: "POST" });
+  state.authUser = null;
+  stopStream();
+  navigateTo("/play");
+  updateAuthView();
+  setStatus("Sign in");
+});
 
 speakDirectlyButton.addEventListener("click", () => {
   if (state.prepareCountdownResolve) {
@@ -572,3 +651,4 @@ window.addEventListener("beforeunload", () => {
 });
 
 setRoute(window.location.pathname);
+checkAuth();

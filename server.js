@@ -14,12 +14,21 @@ const publicDir = path.join(rootDir, "public");
 const recordingsDir = path.join(rootDir, "recordings");
 const artifactsDir = path.join(recordingsDir, "artifacts");
 const metadataFile = path.join(recordingsDir, "metadata.jsonl");
+const questionsDir = path.join(rootDir, "questions");
+const questionsMetadataFile = path.join(questionsDir, "metadata.jsonl");
+const sessionCookieName = "englisheval_session";
+const sessionTtlMs = 7 * 24 * 60 * 60 * 1000;
 
 fs.mkdirSync(recordingsDir, { recursive: true });
 fs.mkdirSync(artifactsDir, { recursive: true });
+fs.mkdirSync(questionsDir, { recursive: true });
 
 app.use(express.json({ limit: "1mb" }));
-app.use(express.static(publicDir));
+app.use(
+  express.static(publicDir, {
+    index: false,
+  }),
+);
 
 const upload = multer({
   dest: path.join(recordingsDir, "tmp"),
@@ -32,14 +41,208 @@ function safeText(value, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
 }
 
-function parseJsonField(value, fallback = {}) {
-  if (!value) return fallback;
+function getBaseUrl(req) {
+  return process.env.APP_BASE_URL || `${req.protocol}://${req.get("host")}`;
+}
+
+function isDingTalkConfigured() {
+  return Boolean(process.env.DINGTALK_APP_KEY && process.env.DINGTALK_APP_SECRET);
+}
+
+function parseCookies(req) {
+  return String(req.headers.cookie || "")
+    .split(";")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .reduce((cookies, item) => {
+      const separatorIndex = item.indexOf("=");
+      if (separatorIndex === -1) return cookies;
+      const key = decodeURIComponent(item.slice(0, separatorIndex));
+      const value = decodeURIComponent(item.slice(separatorIndex + 1));
+      cookies[key] = value;
+      return cookies;
+    }, {});
+}
+
+function base64UrlEncode(value) {
+  return Buffer.from(value).toString("base64url");
+}
+
+function base64UrlDecode(value) {
+  return Buffer.from(value, "base64url").toString("utf8");
+}
+
+function signSessionPayload(payload) {
+  const secret = process.env.SESSION_SECRET || process.env.DINGTALK_APP_SECRET;
+  if (!secret) return "";
+  return crypto.createHmac("sha256", secret).update(payload).digest("base64url");
+}
+
+function createSessionToken(user) {
+  const payload = base64UrlEncode(
+    JSON.stringify({
+      user,
+      exp: Date.now() + sessionTtlMs,
+    }),
+  );
+  return `${payload}.${signSessionPayload(payload)}`;
+}
+
+function readSession(req) {
+  const token = parseCookies(req)[sessionCookieName];
+  if (!token) return null;
+
+  const [payload, signature] = token.split(".");
+  if (!payload || !signature || signature !== signSessionPayload(payload)) {
+    return null;
+  }
+
   try {
-    return JSON.parse(value);
+    const session = JSON.parse(base64UrlDecode(payload));
+    if (!session.exp || session.exp < Date.now()) {
+      return null;
+    }
+    return session.user || null;
   } catch {
-    return fallback;
+    return null;
   }
 }
+
+function setSessionCookie(res, user) {
+  const token = createSessionToken(user);
+  res.cookie(sessionCookieName, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: sessionTtlMs,
+    path: "/",
+  });
+}
+
+function clearSessionCookie(res) {
+  res.clearCookie(sessionCookieName, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+  });
+}
+
+function requireAuth(req, res, next) {
+  if (!isDingTalkConfigured()) {
+    return res.status(503).json({ error: "DingTalk authentication is not configured." });
+  }
+
+  const user = readSession(req);
+  if (!user) {
+    return res.status(401).json({ error: "DingTalk sign-in is required." });
+  }
+
+  if (!safeText(user.openId)) {
+    return res.status(403).json({
+      error: "Your DingTalk account did not provide an openId. Please sign out and sign in again.",
+    });
+  }
+
+  req.user = user;
+  next();
+}
+
+function readJsonLines(filePath) {
+  if (!fs.existsSync(filePath)) return [];
+
+  return fs
+    .readFileSync(filePath, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+function writeJsonLines(filePath, records) {
+  const temporaryFile = `${filePath}.${process.pid}.tmp`;
+  const contents = records.length
+    ? `${records.map((record) => JSON.stringify(record)).join("\n")}\n`
+    : "";
+  fs.writeFileSync(temporaryFile, contents, { mode: 0o600 });
+  fs.renameSync(temporaryFile, filePath);
+}
+
+function appendJsonLine(filePath, record) {
+  fs.appendFileSync(filePath, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+}
+
+function recordOpenId(record) {
+  return safeText(record?.openId || record?.user?.openId);
+}
+
+function removePath(targetPath) {
+  try {
+    fs.rmSync(targetPath, { recursive: true, force: true });
+  } catch (error) {
+    console.warn(`Unable to remove legacy path ${targetPath}: ${error.message}`);
+  }
+}
+
+function cleanupLegacyData() {
+  const recordings = readJsonLines(metadataFile);
+  const retainedRecordings = recordings
+    .filter((record) => recordOpenId(record))
+    .map((record) => ({ ...record, openId: recordOpenId(record) }));
+  const removedRecordings = recordings.filter((record) => !recordOpenId(record));
+
+  removedRecordings.forEach((record) => {
+    if (record.filename && path.basename(record.filename) === record.filename) {
+      removePath(path.join(recordingsDir, record.filename));
+    }
+    if (record.id) {
+      removePath(path.join(artifactsDir, String(record.id)));
+    }
+  });
+
+  const retainedFilenames = new Set(retainedRecordings.map((record) => record.filename));
+  for (const entry of fs.readdirSync(recordingsDir, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name !== path.basename(metadataFile) && !retainedFilenames.has(entry.name)) {
+      removePath(path.join(recordingsDir, entry.name));
+    }
+  }
+
+  const retainedArtifactIds = new Set(retainedRecordings.map((record) => String(record.id)));
+  for (const entry of fs.readdirSync(artifactsDir, { withFileTypes: true })) {
+    if (!retainedArtifactIds.has(entry.name)) {
+      removePath(path.join(artifactsDir, entry.name));
+    }
+  }
+
+  removePath(path.join(recordingsDir, "tmp"));
+  fs.mkdirSync(path.join(recordingsDir, "tmp"), { recursive: true });
+
+  if (recordings.length) {
+    writeJsonLines(metadataFile, retainedRecordings);
+  }
+
+  const questions = readJsonLines(questionsMetadataFile);
+  const retainedQuestions = questions
+    .filter((record) => recordOpenId(record))
+    .map((record) => ({ ...record, openId: recordOpenId(record) }));
+  if (questions.length) {
+    writeJsonLines(questionsMetadataFile, retainedQuestions);
+  }
+
+  if (removedRecordings.length || questions.length !== retainedQuestions.length) {
+    console.log(
+      `Removed ${removedRecordings.length} legacy recording(s) and ${questions.length - retainedQuestions.length} legacy question(s) without a DingTalk openId.`,
+    );
+  }
+}
+
+cleanupLegacyData();
 
 function getExtensionFromMime(mimeType) {
   if (mimeType === "video/mp4") return ".mp4";
@@ -102,19 +305,29 @@ function runFfmpeg(args) {
 }
 
 async function extractAudio(videoPath, outputPath) {
-  await runFfmpeg([
-    "-y",
-    "-i",
-    videoPath,
-    "-vn",
-    "-ac",
-    "1",
-    "-ar",
-    "16000",
-    "-b:a",
-    "64k",
-    outputPath,
-  ]);
+  try {
+    await runFfmpeg([
+      "-y",
+      "-i",
+      videoPath,
+      "-vn",
+      "-ac",
+      "1",
+      "-ar",
+      "16000",
+      "-b:a",
+      "64k",
+      outputPath,
+    ]);
+  } catch (error) {
+    const detail = String(error?.message || error);
+    if (/does not contain any stream|matches no streams|audio stream/i.test(detail)) {
+      throw new Error(
+        "The saved recording has no usable microphone audio. Check microphone permission and record the answer again.",
+      );
+    }
+    throw error;
+  }
 }
 
 async function sampleFrames(videoPath, frameDir, maxFrames = 18) {
@@ -201,6 +414,90 @@ function normalizeScore(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 0;
   return Math.max(0, Math.min(100, Math.round(number)));
+}
+
+function buildDingTalkAuthUrl(req, redirectPath = "/") {
+  const redirectUri = `${getBaseUrl(req)}/auth/dingtalk/callback`;
+  const state = base64UrlEncode(
+    JSON.stringify({
+      nonce: crypto.randomBytes(12).toString("hex"),
+      redirectPath: redirectPath.startsWith("/") ? redirectPath : "/",
+      ts: Date.now(),
+    }),
+  );
+  const params = new URLSearchParams({
+    redirect_uri: redirectUri,
+    response_type: "code",
+    client_id: process.env.DINGTALK_APP_KEY,
+    scope: "openid",
+    state,
+    prompt: "consent",
+  });
+
+  return `https://login.dingtalk.com/oauth2/auth?${params.toString()}`;
+}
+
+function parseOAuthState(value) {
+  if (!value) return { redirectPath: "/" };
+  try {
+    const state = JSON.parse(base64UrlDecode(value));
+    return {
+      redirectPath:
+        typeof state.redirectPath === "string" && state.redirectPath.startsWith("/")
+          ? state.redirectPath
+          : "/",
+    };
+  } catch {
+    return { redirectPath: "/" };
+  }
+}
+
+async function requestDingTalkUserAccessToken(code) {
+  const response = await fetch("https://api.dingtalk.com/v1.0/oauth2/userAccessToken", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      clientId: process.env.DINGTALK_APP_KEY,
+      clientSecret: process.env.DINGTALK_APP_SECRET,
+      code,
+      grantType: "authorization_code",
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`DingTalk token exchange failed: ${detail}`);
+  }
+
+  return response.json();
+}
+
+async function requestDingTalkCurrentUser(accessToken) {
+  const response = await fetch("https://api.dingtalk.com/v1.0/contact/users/me", {
+    headers: {
+      "x-acs-dingtalk-access-token": accessToken,
+    },
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`DingTalk user lookup failed: ${detail}`);
+  }
+
+  return response.json();
+}
+
+function normalizeDingTalkUser(rawUser) {
+  return {
+    openId: safeText(rawUser?.openId),
+    unionId: safeText(rawUser?.unionId),
+    userId: safeText(rawUser?.userId),
+    name: safeText(rawUser?.nick || rawUser?.name, "DingTalk user"),
+    avatarUrl: safeText(rawUser?.avatarUrl),
+    mobile: safeText(rawUser?.mobile),
+  };
 }
 
 function positiveInteger(value, fallback) {
@@ -424,8 +721,8 @@ async function evaluateSavedVideo({ videoPath, artifactBaseDir, profile, questio
 }
 
 function buildPrompt(profile) {
-  const name = safeText(profile.name, "the candidate");
-  const role = safeText(profile.role, "English learner");
+  const name = safeText(profile.name, "Biao");
+  const role = safeText(profile.role, "AI engeering");
 
   return [
     "Create one English speaking assessment question based on this candidate profile.",
@@ -441,7 +738,7 @@ function buildPrompt(profile) {
 }
 
 function fallbackQuestion(profile) {
-  const role = safeText(profile.role, "your current role");
+  const role = safeText(profile.role, "AI engeering");
   return {
     question: `Tell me about a recent challenge in ${role}. What happened, what did you do, and what was the result?`,
     focus: "Fluency, organization, detail, and past-tense narration",
@@ -450,15 +747,86 @@ function fallbackQuestion(profile) {
   };
 }
 
-app.post("/api/generate-question", async (req, res) => {
+function persistQuestion(user, profile, question, model) {
+  const record = {
+    id: crypto.randomUUID(),
+    openId: user.openId,
+    createdAt: new Date().toISOString(),
+    profile,
+    question,
+    model,
+  };
+  appendJsonLine(questionsMetadataFile, record);
+  return record;
+}
+
+function questionForClient(record) {
+  return {
+    id: record.id,
+    ...record.question,
+  };
+}
+
+function findOwnedQuestion(questionId, openId) {
+  return readJsonLines(questionsMetadataFile).find(
+    (record) => record.id === questionId && recordOpenId(record) === openId,
+  );
+}
+
+app.get("/auth/dingtalk", (req, res) => {
+  if (!isDingTalkConfigured()) {
+    return res.status(503).send("DingTalk authentication is not configured.");
+  }
+
+  res.redirect(buildDingTalkAuthUrl(req, safeText(req.query.redirect, "/")));
+});
+
+app.get("/auth/dingtalk/callback", async (req, res) => {
+  if (!isDingTalkConfigured()) {
+    return res.status(503).send("DingTalk authentication is not configured.");
+  }
+
+  const code = safeText(req.query.authCode || req.query.code);
+  if (!code) {
+    return res.status(400).send("Missing DingTalk authorization code.");
+  }
+
+  try {
+    const token = await requestDingTalkUserAccessToken(code);
+    const rawUser = await requestDingTalkCurrentUser(token.accessToken);
+    const user = normalizeDingTalkUser(rawUser);
+    if (!user.openId) {
+      return res.status(403).send("DingTalk did not return an openId for this account.");
+    }
+    setSessionCookie(res, user);
+    res.redirect(parseOAuthState(safeText(req.query.state)).redirectPath);
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
+
+app.post("/auth/logout", (_req, res) => {
+  clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
+app.get("/api/me", (req, res) => {
+  res.json({
+    configured: isDingTalkConfigured(),
+    user: readSession(req),
+  });
+});
+
+app.post("/api/generate-question", requireAuth, async (req, res) => {
   const profile = req.body?.profile || {};
   const apiKey = process.env.OPENROUTER_API_KEY;
   const model = process.env.OPENROUTER_MODEL || "deepseek/deepseek-v4-flash";
 
   if (!apiKey) {
+    const record = persistQuestion(req.user, profile, fallbackQuestion(profile), "fallback");
     return res.status(500).json({
       error: "OPENROUTER_API_KEY is not configured.",
-      question: fallbackQuestion(profile),
+      question: questionForClient(record),
     });
   }
 
@@ -508,22 +876,31 @@ app.post("/api/generate-question", async (req, res) => {
       followUp: safeText(question.followUp, ""),
     };
 
-    res.json({ question, model });
+    const record = persistQuestion(req.user, profile, question, model);
+    res.json({ question: questionForClient(record), model, user: req.user });
   } catch (error) {
+    const record = persistQuestion(req.user, profile, fallbackQuestion(profile), "fallback");
     res.status(500).json({
       error: error.message,
-      question: fallbackQuestion(profile),
+      question: questionForClient(record),
     });
   }
 });
 
-app.post("/api/save-answer", upload.single("video"), async (req, res) => {
+app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No video file uploaded." });
   }
 
-  const profile = parseJsonField(req.body.profile);
-  const question = parseJsonField(req.body.question);
+  const questionId = safeText(req.body.questionId);
+  const questionRecord = findOwnedQuestion(questionId, req.user.openId);
+  if (!questionRecord) {
+    removePath(req.file.path);
+    return res.status(400).json({ error: "The question is missing or does not belong to this user." });
+  }
+
+  const profile = questionRecord.profile;
+  const question = questionRecord.question;
   const startedAt = safeText(req.body.startedAt);
   const finishedAt = new Date().toISOString();
   const id = crypto.randomUUID();
@@ -558,7 +935,10 @@ app.post("/api/save-answer", upload.single("video"), async (req, res) => {
     bytes: fs.statSync(finalPath).size,
     startedAt,
     finishedAt,
+    openId: req.user.openId,
+    user: req.user,
     profile,
+    questionId,
     question,
   };
 
@@ -576,40 +956,45 @@ app.post("/api/save-answer", upload.single("video"), async (req, res) => {
     };
   }
 
-  fs.appendFileSync(metadataFile, `${JSON.stringify(record)}\n`);
+  appendJsonLine(metadataFile, record);
 
   res.json({
     ok: true,
     id,
     filename,
-    path: `/recordings/${filename}`,
+    path: `/api/recordings/${id}/video`,
     evaluation: record.evaluation,
   });
 });
 
-app.get("/api/recordings", (_req, res) => {
-  if (!fs.existsSync(metadataFile)) {
-    return res.json({ recordings: [] });
-  }
-
-  const recordings = fs
-    .readFileSync(metadataFile, "utf8")
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return JSON.parse(line);
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean)
+app.get("/api/recordings", requireAuth, (req, res) => {
+  const recordings = readJsonLines(metadataFile)
+    .filter((record) => recordOpenId(record) === req.user.openId)
+    .map((record) => ({
+      ...record,
+      path: `/api/recordings/${record.id}/video`,
+    }))
     .reverse();
 
   res.json({ recordings });
 });
 
-app.use("/recordings", express.static(recordingsDir));
+app.get("/api/recordings/:id/video", requireAuth, (req, res) => {
+  const record = readJsonLines(metadataFile).find(
+    (item) => item.id === req.params.id && recordOpenId(item) === req.user.openId,
+  );
+  if (!record || !record.filename || path.basename(record.filename) !== record.filename) {
+    return res.status(404).json({ error: "Recording not found." });
+  }
+
+  const videoPath = path.join(recordingsDir, record.filename);
+  if (!fs.existsSync(videoPath)) {
+    return res.status(404).json({ error: "Recording file not found." });
+  }
+
+  res.type(record.mimeType || "video/mp4");
+  res.sendFile(videoPath);
+});
 
 function sendAppShell(_req, res) {
   res.sendFile(path.join(publicDir, "index.html"));
@@ -618,6 +1003,9 @@ function sendAppShell(_req, res) {
 app.get("/", sendAppShell);
 app.get("/play", sendAppShell);
 app.get("/history", sendAppShell);
+app.get("/docs", (_req, res) => {
+  res.sendFile(path.join(publicDir, "docs.html"));
+});
 
 app.listen(port, () => {
   console.log(`EnglishEval is running at http://localhost:${port}`);
