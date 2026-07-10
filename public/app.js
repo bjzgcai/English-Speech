@@ -12,6 +12,8 @@ const state = {
   mediaRetryPending: false,
   mediaRetryAction: null,
   requiredDeviceInterrupted: null,
+  mediaRequestInProgress: false,
+  wakeLock: null,
   authUser: null,
   authReady: false,
 };
@@ -36,6 +38,8 @@ const profileForm = document.querySelector("#profileForm");
 const generateButton = document.querySelector("#generateButton");
 const finishButton = document.querySelector("#finishButton");
 const preview = document.querySelector("#preview");
+const preparePreview = document.querySelector("#preparePreview");
+const preparePreviewWrap = document.querySelector("#preparePreviewWrap");
 const videoFrame = document.querySelector(".video-frame");
 const videoPlaceholder = document.querySelector("#videoPlaceholder");
 const recordingBadge = document.querySelector("#recordingBadge");
@@ -70,6 +74,50 @@ const prepareGuidanceTitle = document.querySelector("#prepareGuidanceTitle");
 const prepareGuidanceMessage = document.querySelector("#prepareGuidanceMessage");
 const prepareActions = document.querySelector("#prepareActions");
 const speakDirectlyButton = document.querySelector("#speakDirectlyButton");
+const deviceStatus = document.querySelector("#deviceStatus");
+
+function updateDeviceStatus(status, message) {
+  deviceStatus.dataset.status = status;
+  deviceStatus.querySelectorAll("span").forEach((item) => {
+    item.classList.toggle("is-ready", status === "ready");
+    item.classList.toggle("is-error", status === "error");
+    const label = item.dataset.device === "camera" ? "Camera" : "Microphone";
+    const stateLabel = status === "ready"
+      ? "ready"
+      : status === "error"
+        ? "needs attention"
+        : status === "checking"
+          ? "checking…"
+          : "not checked";
+    item.textContent = `${label} ${stateLabel}`;
+  });
+  if (message) {
+    deviceStatus.setAttribute("aria-label", message);
+  }
+}
+
+function getMediaErrorMessage(error) {
+  if (!window.isSecureContext && !["localhost", "127.0.0.1"].includes(window.location.hostname)) {
+    return "Camera and microphone access requires a secure HTTPS connection.";
+  }
+
+  switch (error?.name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "Access was blocked. Open this site in your browser settings, allow Camera and Microphone, then return and try again.";
+    case "NotFoundError":
+    case "DevicesNotFoundError":
+      return "This phone could not find both a working camera and microphone.";
+    case "NotReadableError":
+    case "TrackStartError":
+    case "AbortError":
+      return "Another app or browser tab may be using your camera or microphone. Close it, then try again.";
+    case "OverconstrainedError":
+      return "Your camera does not support the requested video settings. Try another browser or camera.";
+    default:
+      return error?.message || "Check your browser and phone privacy settings, then try again.";
+  }
+}
 
 function setStatus(message) {
   connectionStatus.textContent = message;
@@ -146,6 +194,7 @@ function showGeneratingModal() {
   prepareModalTitle.textContent = "Preparing your question...";
   prepareModalMessage.textContent = "Please wait while the assessment question is generated.";
   prepareSpinner.hidden = false;
+  preparePreviewWrap.hidden = !state.stream;
   prepareCameraGuidance.hidden = true;
   countdownDisplay.hidden = true;
   prepareActions.hidden = true;
@@ -159,6 +208,7 @@ function showCountdownModal(question) {
   prepareModalTitle.textContent = question.question;
   prepareModalMessage.textContent = "Take a moment to plan your answer. Recording starts when the timer reaches zero.";
   prepareSpinner.hidden = true;
+  preparePreviewWrap.hidden = !state.stream;
   prepareCameraGuidance.hidden = false;
   countdownDisplay.hidden = false;
   prepareActions.hidden = false;
@@ -175,10 +225,10 @@ function showMediaRequiredModal(error, retryAction = "record") {
   prepareModalMessage.textContent =
     "EnglishEval needs both devices to record and evaluate your answer. Allow camera and microphone access in your browser, then try again.";
   prepareSpinner.hidden = true;
+  preparePreviewWrap.hidden = true;
   prepareCameraGuidance.hidden = false;
   prepareGuidanceTitle.textContent = "Camera and microphone are required";
-  prepareGuidanceMessage.textContent = error?.message ||
-    "Check your browser and system privacy settings. Both devices must remain on throughout the recording.";
+  prepareGuidanceMessage.textContent = getMediaErrorMessage(error);
   countdownDisplay.hidden = true;
   prepareActions.hidden = false;
   speakDirectlyButton.textContent = "Try camera and microphone again";
@@ -213,11 +263,30 @@ async function acquireRequiredMedia() {
     return;
   }
 
+  if (state.mediaRequestInProgress) {
+    throw new Error("The camera and microphone request is already open. Respond to the browser prompt first.");
+  }
+
   stopStream();
-  state.stream = await navigator.mediaDevices.getUserMedia({
-    video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-    audio: true,
-  });
+  state.mediaRequestInProgress = true;
+  updateDeviceStatus("checking", "Waiting for camera and microphone permission");
+  try {
+    state.stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "user" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        aspectRatio: { ideal: 16 / 9 },
+      },
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+  } finally {
+    state.mediaRequestInProgress = false;
+  }
 
   const unavailableDevice = getUnavailableRequiredDevice();
   if (unavailableDevice) {
@@ -225,14 +294,20 @@ async function acquireRequiredMedia() {
   }
 
   preview.srcObject = state.stream;
+  preparePreview.srcObject = state.stream;
   videoPlaceholder.classList.add("hidden");
+  preparePreviewWrap.hidden = false;
+  await Promise.allSettled([preview.play(), preparePreview.play()]);
+  updateDeviceStatus("ready", "Camera and microphone are ready");
 }
 
 async function requireMediaBeforeQuestion() {
   setStatus("Checking camera & mic");
   try {
+    if (!window.MediaRecorder) {
+      throw new Error("This browser can open the camera but cannot record video. Update your browser or use current Safari or Chrome.");
+    }
     await acquireRequiredMedia();
-    stopStream();
     state.mediaRetryPending = false;
     state.mediaRetryAction = null;
     resetPrepareGuidance();
@@ -240,6 +315,7 @@ async function requireMediaBeforeQuestion() {
     return true;
   } catch (error) {
     stopStream();
+    updateDeviceStatus("error", "Camera and microphone need attention");
     finishButton.disabled = true;
     generateButton.disabled = true;
     setStatus("Camera & mic required");
@@ -286,6 +362,7 @@ function getSupportedMimeType() {
     "video/webm",
   ];
 
+  if (!window.MediaRecorder || typeof MediaRecorder.isTypeSupported !== "function") return "";
   return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
 }
 
@@ -311,7 +388,28 @@ function stopStream() {
   }
   state.stream = null;
   preview.srcObject = null;
+  preparePreview.srcObject = null;
+  preparePreviewWrap.hidden = true;
   videoPlaceholder.classList.remove("hidden");
+}
+
+async function requestWakeLock() {
+  if (!navigator.wakeLock?.request || state.wakeLock) return;
+  try {
+    state.wakeLock = await navigator.wakeLock.request("screen");
+    state.wakeLock.addEventListener("release", () => {
+      state.wakeLock = null;
+    }, { once: true });
+  } catch {
+    // Wake Lock is optional; recording still works when it is unavailable.
+  }
+}
+
+async function releaseWakeLock() {
+  if (!state.wakeLock) return;
+  const lock = state.wakeLock;
+  state.wakeLock = null;
+  await lock.release().catch(() => {});
 }
 
 async function loadHistory() {
@@ -660,12 +758,14 @@ async function startRecording() {
     // Timed MP4 chunks are not reliably concatenable across MediaRecorder
     // implementations. Let the recorder finalize one complete file on stop.
     state.recorder.start();
+    await requestWakeLock();
     state.mediaRetryPending = false;
     state.mediaRetryAction = null;
     resetPrepareGuidance();
     closePrepareModal();
     finishButton.disabled = false;
     generateButton.disabled = true;
+    logoutButton.disabled = true;
     recordingBadge.classList.add("visible");
     setStatus("Recording");
     saveResult.textContent = "Recording in progress. Answer the question in English. Recording is limited to 2 minutes.";
@@ -675,8 +775,11 @@ async function startRecording() {
   } catch (error) {
     setStatus("Camera & mic required");
     stopStream();
+    await releaseWakeLock();
+    updateDeviceStatus("error", "Camera and microphone need attention");
     finishButton.disabled = true;
     generateButton.disabled = true;
+    logoutButton.disabled = false;
     saveResult.textContent = "Turn on your camera and microphone to record this answer.";
     showMediaRequiredModal(error, "record");
   }
@@ -699,8 +802,10 @@ async function finishRecording() {
     state.recorder.stop();
     await stopped;
     stopStream();
+    await releaseWakeLock();
     state.recorder = null;
     state.chunks = [];
+    logoutButton.disabled = false;
     recordingBadge.classList.remove("visible");
     showMediaRequiredModal(new Error(
       `Your ${unavailableDevice} is off. Turn it on and record the answer again; this incomplete recording will not be saved.`,
@@ -729,6 +834,7 @@ async function finishRecording() {
   await stopped;
   recordingBadge.classList.remove("visible");
   stopStream();
+  await releaseWakeLock();
 
   const blobType = state.mimeType || state.chunks[0]?.type || "video/webm";
   const extension = blobType.includes("mp4") ? "mp4" : "webm";
@@ -761,6 +867,7 @@ async function finishRecording() {
     setVideoLoading(false);
     state.recorder = null;
     state.chunks = [];
+    logoutButton.disabled = false;
   }
 }
 
@@ -794,6 +901,11 @@ speakDirectlyButton.addEventListener("click", () => {
 navLinks.forEach((link) => {
   link.addEventListener("click", (event) => {
     event.preventDefault();
+    if (state.recorder && state.recorder.state !== "inactive") {
+      setStatus("Recording");
+      saveResult.textContent = "Finish and save before leaving the recording screen.";
+      return;
+    }
     navigateTo(link.getAttribute("href"));
   });
 });
@@ -808,15 +920,37 @@ historyList.addEventListener("click", (event) => {
 closeVideoModal.addEventListener("click", closeHistoryVideo);
 
 window.addEventListener("popstate", () => {
+  if (state.recorder && state.recorder.state !== "inactive") {
+    window.history.pushState({}, "", "/");
+    setRoute("/play");
+    saveResult.textContent = "Finish and save before leaving the recording screen.";
+    return;
+  }
   setRoute(window.location.pathname);
 });
 
-window.addEventListener("beforeunload", () => {
+window.addEventListener("beforeunload", (event) => {
+  if (state.recorder && state.recorder.state !== "inactive") {
+    event.preventDefault();
+    event.returnValue = "";
+    return;
+  }
   if (state.autoStopTimer) {
     window.clearTimeout(state.autoStopTimer);
   }
   stopPrepareCountdown();
   stopStream();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!state.recorder || state.recorder.state === "inactive") return;
+  if (document.hidden) {
+    setStatus("Keep page open");
+    saveResult.textContent = "Keep this page in the foreground. Mobile browsers may pause the camera when you switch apps or lock the screen.";
+  } else if (!getUnavailableRequiredDevice()) {
+    setStatus("Recording");
+    requestWakeLock();
+  }
 });
 
 setRoute(window.location.pathname);
