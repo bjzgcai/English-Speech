@@ -848,7 +848,7 @@ function normalizeEvaluation(rawEvaluation) {
   return {
     rubricId: evaluationRubricStandard.id,
     rubricVersion: evaluationRubricStandard.version,
-    overallScore: normalizeScore(rawEvaluation?.overallScore || overallScore),
+    overallScore: normalizeScore(overallScore),
     summary: safeText(rawEvaluation?.summary, "Evaluation completed."),
     transcript: safeText(rawEvaluation?.transcript),
     rubric,

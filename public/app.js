@@ -9,6 +9,9 @@ const state = {
   autoStopTimer: null,
   prepareCountdownTimer: null,
   prepareCountdownResolve: null,
+  mediaRetryPending: false,
+  mediaRetryAction: null,
+  requiredDeviceInterrupted: null,
   authUser: null,
   authReady: false,
 };
@@ -63,9 +66,10 @@ const prepareModalMessage = document.querySelector("#prepareModalMessage");
 const countdownDisplay = document.querySelector("#countdownDisplay");
 const countdownSeconds = document.querySelector("#countdownSeconds");
 const prepareCameraGuidance = document.querySelector("#prepareCameraGuidance");
+const prepareGuidanceTitle = document.querySelector("#prepareGuidanceTitle");
+const prepareGuidanceMessage = document.querySelector("#prepareGuidanceMessage");
 const prepareActions = document.querySelector("#prepareActions");
 const speakDirectlyButton = document.querySelector("#speakDirectlyButton");
-const skipVideoButton = document.querySelector("#skipVideoButton");
 
 function setStatus(message) {
   connectionStatus.textContent = message;
@@ -149,6 +153,8 @@ function showGeneratingModal() {
 }
 
 function showCountdownModal(question) {
+  state.mediaRetryPending = false;
+  state.mediaRetryAction = null;
   prepareModalKicker.textContent = "Question ready";
   prepareModalTitle.textContent = question.question;
   prepareModalMessage.textContent = "Take a moment to plan your answer. Recording starts when the timer reaches zero.";
@@ -156,8 +162,91 @@ function showCountdownModal(question) {
   prepareCameraGuidance.hidden = false;
   countdownDisplay.hidden = false;
   prepareActions.hidden = false;
+  speakDirectlyButton.textContent = "Speak directly";
   countdownSeconds.textContent = String(PREPARE_COUNTDOWN_SECONDS);
   prepareModal.hidden = false;
+}
+
+function showMediaRequiredModal(error, retryAction = "record") {
+  state.mediaRetryPending = true;
+  state.mediaRetryAction = retryAction;
+  prepareModalKicker.textContent = "Devices required";
+  prepareModalTitle.textContent = "Turn on your camera and microphone to continue";
+  prepareModalMessage.textContent =
+    "EnglishEval needs both devices to record and evaluate your answer. Allow camera and microphone access in your browser, then try again.";
+  prepareSpinner.hidden = true;
+  prepareCameraGuidance.hidden = false;
+  prepareGuidanceTitle.textContent = "Camera and microphone are required";
+  prepareGuidanceMessage.textContent = error?.message ||
+    "Check your browser and system privacy settings. Both devices must remain on throughout the recording.";
+  countdownDisplay.hidden = true;
+  prepareActions.hidden = false;
+  speakDirectlyButton.textContent = "Try camera and microphone again";
+  prepareModal.hidden = false;
+}
+
+function resetPrepareGuidance() {
+  prepareGuidanceTitle.textContent = "Set up your camera and microphone";
+  prepareGuidanceMessage.textContent =
+    "Both must stay on for the entire answer. Stand about one metre away and make sure your full upper body and posture are visible.";
+}
+
+function getUnavailableRequiredDevice() {
+  const audioTrack = state.stream?.getAudioTracks()[0];
+  const videoTrack = state.stream?.getVideoTracks()[0];
+
+  if (!audioTrack || audioTrack.readyState !== "live" || audioTrack.muted || !audioTrack.enabled) {
+    return "microphone";
+  }
+  if (!videoTrack || videoTrack.readyState !== "live" || videoTrack.muted || !videoTrack.enabled) {
+    return "camera";
+  }
+  return null;
+}
+
+async function acquireRequiredMedia() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("This browser cannot access a camera and microphone. Use a supported browser and try again.");
+  }
+
+  if (state.stream && !getUnavailableRequiredDevice()) {
+    return;
+  }
+
+  stopStream();
+  state.stream = await navigator.mediaDevices.getUserMedia({
+    video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+    audio: true,
+  });
+
+  const unavailableDevice = getUnavailableRequiredDevice();
+  if (unavailableDevice) {
+    throw new Error(`No usable ${unavailableDevice} was provided. Check its browser permission and try again.`);
+  }
+
+  preview.srcObject = state.stream;
+  videoPlaceholder.classList.add("hidden");
+}
+
+async function requireMediaBeforeQuestion() {
+  setStatus("Checking camera & mic");
+  try {
+    await acquireRequiredMedia();
+    stopStream();
+    state.mediaRetryPending = false;
+    state.mediaRetryAction = null;
+    resetPrepareGuidance();
+    closePrepareModal();
+    return true;
+  } catch (error) {
+    stopStream();
+    finishButton.disabled = true;
+    generateButton.disabled = true;
+    setStatus("Camera & mic required");
+    saveResult.textContent = "Turn on your camera and microphone before generating a question.";
+    showMediaRequiredModal(error, "generate");
+    return false;
+  }
 }
 
 function waitForPreparationCountdown(question) {
@@ -479,10 +568,13 @@ profileForm.addEventListener("submit", async (event) => {
     return;
   }
 
-  state.profile = getProfileFromForm();
   generateButton.disabled = true;
   finishButton.disabled = true;
   saveResult.textContent = "";
+  const mediaReady = await requireMediaBeforeQuestion();
+  if (!mediaReady) return;
+
+  state.profile = getProfileFromForm();
   setStatus("Generating");
   showGeneratingModal();
   questionText.textContent = "Generating a question...";
@@ -506,59 +598,21 @@ profileForm.addEventListener("submit", async (event) => {
       saveResult.textContent = `LLM fallback used: ${data.error}`;
     }
     setStatus("Thinking time");
-    const preparationAction = await waitForPreparationCountdown(data.question);
+    await waitForPreparationCountdown(data.question);
     closePrepareModal();
-    if (preparationAction === "skip-video") {
-      await saveAnswerWithoutVideo("Saved without a video recording.");
-    } else {
-      await startRecording();
-    }
+    await startRecording();
   } catch (error) {
     closePrepareModal();
+    stopStream();
     setStatus("Error");
     questionText.textContent = "Question generation failed.";
     questionMeta.textContent = error.message;
   } finally {
-    if (!state.recorder || state.recorder.state === "inactive") {
+    if ((!state.recorder || state.recorder.state === "inactive") && !state.mediaRetryPending) {
       generateButton.disabled = false;
     }
   }
 });
-
-async function saveAnswerWithoutVideo(message) {
-  if (!state.question) return;
-
-  finishButton.disabled = true;
-  generateButton.disabled = true;
-  setStatus("Saving");
-  saveResult.textContent = "Saving this question without a video recording...";
-  evaluationResult.innerHTML = "";
-
-  const formData = new FormData();
-  formData.append("questionId", state.question.id);
-  formData.append("startedAt", state.startedAt || new Date().toISOString());
-
-  try {
-    const response = await fetch("/api/save-answer", {
-      method: "POST",
-      body: formData,
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "Save failed.");
-    }
-
-    saveResult.textContent = `${message} It is available in your history.`;
-    renderEvaluation(data.evaluation);
-    setStatus("Saved without video");
-    await loadHistory();
-  } catch (error) {
-    setStatus("Save failed");
-    saveResult.textContent = error.message;
-  } finally {
-    generateButton.disabled = false;
-  }
-}
 
 async function startRecording() {
   if (!state.question) return;
@@ -566,15 +620,29 @@ async function startRecording() {
   try {
     state.mimeType = getSupportedMimeType();
     state.chunks = [];
+    state.requiredDeviceInterrupted = null;
     setVideoLoading(false);
-    state.stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: true,
-    });
+    await acquireRequiredMedia();
 
-    if (state.stream.getAudioTracks().length === 0) {
-      throw new Error("No microphone audio track was provided. Check the browser's microphone permission and try again.");
-    }
+    const requiredTracks = [
+      ...state.stream.getAudioTracks(),
+      ...state.stream.getVideoTracks(),
+    ];
+    const handleRequiredDeviceUnavailable = () => {
+      if (!state.recorder || state.recorder.state === "inactive") return;
+      const unavailableTrack = requiredTracks.find(
+        (track) => track.readyState !== "live" || track.muted || !track.enabled,
+      );
+      if (!unavailableTrack) return;
+
+      state.requiredDeviceInterrupted = unavailableTrack.kind === "audio" ? "microphone" : "camera";
+      saveResult.textContent = `${unavailableTrack.kind === "audio" ? "Microphone" : "Camera"} turned off. Turn it back on, then record the answer again.`;
+      setStatus("Device turned off");
+    };
+    requiredTracks.forEach((track) => {
+      track.addEventListener("mute", handleRequiredDeviceUnavailable);
+      track.addEventListener("ended", handleRequiredDeviceUnavailable);
+    });
 
     preview.srcObject = state.stream;
     videoPlaceholder.classList.add("hidden");
@@ -592,6 +660,10 @@ async function startRecording() {
     // Timed MP4 chunks are not reliably concatenable across MediaRecorder
     // implementations. Let the recorder finalize one complete file on stop.
     state.recorder.start();
+    state.mediaRetryPending = false;
+    state.mediaRetryAction = null;
+    resetPrepareGuidance();
+    closePrepareModal();
     finishButton.disabled = false;
     generateButton.disabled = true;
     recordingBadge.classList.add("visible");
@@ -601,14 +673,42 @@ async function startRecording() {
       finishRecording();
     }, MAX_RECORDING_MS);
   } catch (error) {
-    setStatus("Camera blocked");
+    setStatus("Camera & mic required");
     stopStream();
-    await saveAnswerWithoutVideo(`Unable to start the camera: ${error.message}`);
+    finishButton.disabled = true;
+    generateButton.disabled = true;
+    saveResult.textContent = "Turn on your camera and microphone to record this answer.";
+    showMediaRequiredModal(error, "record");
   }
 }
 
 async function finishRecording() {
   if (!state.recorder || state.recorder.state === "inactive") return;
+
+  const unavailableDevice = state.requiredDeviceInterrupted || getUnavailableRequiredDevice();
+  if (unavailableDevice) {
+    if (state.autoStopTimer) {
+      window.clearTimeout(state.autoStopTimer);
+      state.autoStopTimer = null;
+    }
+
+    finishButton.disabled = true;
+    const stopped = new Promise((resolve) => {
+      state.recorder.addEventListener("stop", resolve, { once: true });
+    });
+    state.recorder.stop();
+    await stopped;
+    stopStream();
+    state.recorder = null;
+    state.chunks = [];
+    recordingBadge.classList.remove("visible");
+    showMediaRequiredModal(new Error(
+      `Your ${unavailableDevice} is off. Turn it on and record the answer again; this incomplete recording will not be saved.`,
+    ));
+    setStatus("Record again");
+    saveResult.textContent = `Your ${unavailableDevice} was turned off, so the incomplete recording was not saved.`;
+    return;
+  }
 
   if (state.autoStopTimer) {
     window.clearTimeout(state.autoStopTimer);
@@ -676,18 +776,20 @@ logoutButton.addEventListener("click", async () => {
 });
 
 speakDirectlyButton.addEventListener("click", () => {
+  if (state.mediaRetryPending) {
+    if (state.mediaRetryAction === "generate") {
+      state.mediaRetryPending = false;
+      state.mediaRetryAction = null;
+      profileForm.requestSubmit();
+    } else {
+      startRecording();
+    }
+    return;
+  }
   if (state.prepareCountdownResolve) {
     state.prepareCountdownResolve("record");
   }
 });
-
-if (skipVideoButton) {
-  skipVideoButton.addEventListener("click", () => {
-    if (state.prepareCountdownResolve) {
-      state.prepareCountdownResolve("skip-video");
-    }
-  });
-}
 
 navLinks.forEach((link) => {
   link.addEventListener("click", (event) => {
