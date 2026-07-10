@@ -1,0 +1,340 @@
+openapi: 3.0.3
+info:
+  title: EnglishEval Partner API
+  version: 1.0.0
+  description: |
+    Read-only access to EnglishEval user identity data and speaking-assessment
+    results. Responses intentionally exclude recorded videos, video URLs,
+    filenames, MIME metadata, extracted audio paths, sampled-frame artifacts,
+    transcripts, raw audio metrics, and internal model metadata.
+servers:
+  - url: /
+    description: Current EnglishEval server
+tags:
+  - name: Users
+    description: User identity data and assessment results
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/users:
+    get:
+      tags: [Users]
+      summary: List users and assessment results
+      description: |
+        Returns users found in persisted question or recording metadata. Each
+        user includes all persisted assessment results, but no video or artifact
+        metadata. Filters use exact, case-insensitive matching.
+      operationId: listUsers
+      parameters:
+        - $ref: '#/components/parameters/OpenId'
+        - $ref: '#/components/parameters/UserIdFilter'
+        - $ref: '#/components/parameters/JobNumber'
+        - $ref: '#/components/parameters/Email'
+        - $ref: '#/components/parameters/OrgEmail'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Matching users and their assessment results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/NotConfigured'
+  /api/v1/users/{userId}:
+    get:
+      tags: [Users]
+      summary: Get one user and assessment results
+      description: Returns one exact DingTalk organization user ID match.
+      operationId: getUser
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: DingTalk organization user ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User identity data and assessment results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No user has the requested organization user ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/NotConfigured'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+      description: The server-side `PARTNER_API_KEY` value.
+  parameters:
+    OpenId:
+      name: openId
+      in: query
+      description: Exact DingTalk application-scoped open ID
+      schema:
+        type: string
+    UserIdFilter:
+      name: userId
+      in: query
+      description: Exact DingTalk organization user ID
+      schema:
+        type: string
+    JobNumber:
+      name: jobNumber
+      in: query
+      description: Exact employee job number
+      schema:
+        type: string
+    Email:
+      name: email
+      in: query
+      description: Exact personal/work email returned in DingTalk's `email` field
+      schema:
+        type: string
+        format: email
+    OrgEmail:
+      name: orgEmail
+      in: query
+      description: Exact organization email returned in DingTalk's `org_email` field
+      schema:
+        type: string
+        format: email
+    Limit:
+      name: limit
+      in: query
+      description: Maximum users to return
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    Offset:
+      name: offset
+      in: query
+      description: Number of matching users to skip
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer API key
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotConfigured:
+      description: "PARTNER_API_KEY is not configured on the server"
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    Pagination:
+      type: object
+      required: [total, limit, offset]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+        offset:
+          type: integer
+          minimum: 0
+    UserListResponse:
+      type: object
+      required: [users, pagination]
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    UserResponse:
+      type: object
+      required: [user]
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+    User:
+      type: object
+      required:
+        - openId
+        - unionId
+        - userId
+        - jobNumber
+        - name
+        - email
+        - orgEmail
+        - latestEvaluationAt
+        - evaluations
+      properties:
+        openId:
+          type: string
+          description: DingTalk application-scoped user identifier
+        unionId:
+          type: string
+          description: DingTalk developer-scoped user identifier
+        userId:
+          type: string
+          description: DingTalk organization user identifier
+        jobNumber:
+          type: string
+          description: Employee job number
+        name:
+          type: string
+        email:
+          type: string
+          description: DingTalk `email`; empty when unavailable
+        orgEmail:
+          type: string
+          description: DingTalk `org_email`; empty when unavailable
+        latestEvaluationAt:
+          type: string
+          description: ISO-8601 finish time of the latest result; empty when none exists
+        evaluations:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvaluationAttempt'
+    EvaluationAttempt:
+      type: object
+      description: An assessment attempt with all recording and artifact fields removed.
+      required:
+        - id
+        - questionId
+        - startedAt
+        - finishedAt
+        - profile
+        - question
+        - evaluation
+      properties:
+        id:
+          type: string
+          format: uuid
+        questionId:
+          type: string
+          format: uuid
+        startedAt:
+          type: string
+        finishedAt:
+          type: string
+        profile:
+          $ref: '#/components/schemas/CandidateProfile'
+        question:
+          $ref: '#/components/schemas/Question'
+        evaluation:
+          $ref: '#/components/schemas/Evaluation'
+    CandidateProfile:
+      type: object
+      required: [name, role]
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+    Question:
+      type: object
+      required: [question, focus, expectedDurationSeconds, followUp]
+      properties:
+        question:
+          type: string
+        focus:
+          type: string
+        expectedDurationSeconds:
+          type: integer
+          nullable: true
+        followUp:
+          type: string
+    Evaluation:
+      type: object
+      required:
+        - status
+        - reason
+        - overallScore
+        - summary
+        - rubric
+        - strengths
+        - improvements
+      properties:
+        status:
+          type: string
+          enum: [completed, skipped, failed, unknown]
+        reason:
+          type: string
+        overallScore:
+          type: number
+          minimum: 0
+          maximum: 100
+          nullable: true
+        summary:
+          type: string
+        rubric:
+          $ref: '#/components/schemas/Rubric'
+        strengths:
+          type: array
+          items:
+            type: string
+        improvements:
+          type: array
+          items:
+            type: string
+    Rubric:
+      type: object
+      properties:
+        pronunciation:
+          $ref: '#/components/schemas/RubricItem'
+        fluency:
+          $ref: '#/components/schemas/RubricItem'
+        grammar:
+          $ref: '#/components/schemas/RubricItem'
+        vocabulary:
+          $ref: '#/components/schemas/RubricItem'
+        coherence:
+          $ref: '#/components/schemas/RubricItem'
+        visualDelivery:
+          $ref: '#/components/schemas/RubricItem'
+    RubricItem:
+      type: object
+      required: [label, weight, score, feedback]
+      properties:
+        label:
+          type: string
+        weight:
+          type: number
+          nullable: true
+        score:
+          type: number
+          minimum: 0
+          maximum: 100
+          nullable: true
+        feedback:
+          type: string
