@@ -13,6 +13,8 @@ servers:
 tags:
   - name: Users
     description: User identity data and assessment results
+  - name: Rubrics
+    description: Versioned scoring standards for interpreting assessment results
 security:
   - bearerAuth: []
 paths:
@@ -72,6 +74,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/NotConfigured'
+  /api/v1/rubrics:
+    get:
+      tags: [Rubrics]
+      summary: Get the active speaking-evaluation rubric
+      description: |
+        Returns the versioned scoring standard used by EnglishEval, including
+        the score scale, weighted-average formula, score bands, dimension
+        weights, evidence considered, and interpretation guidance. Partner
+        evaluation payloads reference this standard through `rubricId` and
+        `rubricVersion`.
+      operationId: getActiveRubric
+      responses:
+        '200':
+          description: Active evaluation rubric standard
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RubricStandardResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '503':
           $ref: '#/components/responses/NotConfigured'
 components:
@@ -278,6 +302,8 @@ components:
       type: object
       required:
         - status
+        - rubricId
+        - rubricVersion
         - reason
         - overallScore
         - summary
@@ -288,6 +314,12 @@ components:
         status:
           type: string
           enum: [completed, skipped, failed, unknown]
+        rubricId:
+          type: string
+          description: Identifier of the scoring standard used for this result
+        rubricVersion:
+          type: string
+          description: Semantic version of the scoring standard used for this result
         reason:
           type: string
         overallScore:
@@ -337,4 +369,96 @@ components:
           maximum: 100
           nullable: true
         feedback:
+          type: string
+    RubricStandardResponse:
+      type: object
+      required: [rubric]
+      properties:
+        rubric:
+          $ref: '#/components/schemas/RubricStandard'
+    RubricStandard:
+      type: object
+      required: [id, version, name, scoreScale, overallScore, scoreBands, dimensions]
+      properties:
+        id:
+          type: string
+          example: english-speaking-evaluation
+        version:
+          type: string
+          example: 1.0.0
+        name:
+          type: string
+          example: English Speaking Evaluation
+        scoreScale:
+          $ref: '#/components/schemas/ScoreScale'
+        overallScore:
+          $ref: '#/components/schemas/OverallScoreRule'
+        scoreBands:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScoreBand'
+        dimensions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RubricDimension'
+    ScoreScale:
+      type: object
+      required: [minimum, maximum, higherIsBetter]
+      properties:
+        minimum:
+          type: number
+          example: 0
+        maximum:
+          type: number
+          example: 100
+        higherIsBetter:
+          type: boolean
+          example: true
+    OverallScoreRule:
+      type: object
+      required: [method, formula, rounding]
+      properties:
+        method:
+          type: string
+          enum: [weighted_average]
+        formula:
+          type: string
+          example: sum(dimension.score * dimension.weight / 100)
+        rounding:
+          type: string
+          enum: [nearest_integer]
+    ScoreBand:
+      type: object
+      required: [minimum, maximum, level, meaning]
+      properties:
+        minimum:
+          type: number
+        maximum:
+          type: number
+        level:
+          type: string
+          enum: [exceptional, strong, competent, developing, needs_improvement]
+        meaning:
+          type: string
+    RubricDimension:
+      type: object
+      required: [key, label, weight, description, evidence, guidance]
+      properties:
+        key:
+          type: string
+          enum: [pronunciation, fluency, grammar, vocabulary, coherence, visualDelivery]
+        label:
+          type: string
+        weight:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: Percentage contribution to the overall score
+        description:
+          type: string
+        evidence:
+          type: array
+          items:
+            type: string
+        guidance:
           type: string
