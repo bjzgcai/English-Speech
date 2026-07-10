@@ -32,6 +32,7 @@ DINGTALK_APP_SECRET=...
 APP_BASE_URL=http://localhost:3199
 SESSION_SECRET=...
 COOKIE_SECURE=false
+PARTNER_API_KEY=replace-with-a-long-random-secret
 ```
 
 The DingTalk app callback URL must match `APP_BASE_URL` plus `/auth/dingtalk/callback`.
@@ -39,6 +40,24 @@ The DingTalk app callback URL must match `APP_BASE_URL` plus `/auth/dingtalk/cal
 automatically for an HTTPS `APP_BASE_URL` and disabled for HTTP.
 
 The browser never receives API keys. Question generation goes through `POST /api/generate-question`.
+
+## Partner API
+
+The read-only partner API exposes DingTalk user identity fields and speaking-assessment scores without exposing recorded videos, video paths, filenames, extracted audio, sampled frames, transcripts, raw audio metrics, or internal model metadata. Configure a separate integration secret as `PARTNER_API_KEY`; do not reuse the DingTalk app secret or session secret. Generate a strong key with `openssl rand -hex 32`, and expose the API only over HTTPS or a trusted private network.
+
+Swagger UI is available at `/api-docs`, and the OpenAPI 3.0 specification is available at `/openapi.yaml`.
+
+```bash
+curl \
+  -H "Authorization: Bearer $PARTNER_API_KEY" \
+  "http://localhost:3199/api/v1/users?jobNumber=EMPLOYEE_NUMBER"
+
+curl \
+  -H "Authorization: Bearer $PARTNER_API_KEY" \
+  "http://localhost:3199/api/v1/users/DINGTALK_USER_ID"
+```
+
+`GET /api/v1/users` supports exact, case-insensitive filters for `openId`, `userId`, `jobNumber`, `email`, and `orgEmail`, plus `limit` (maximum 200) and `offset`. `GET /api/v1/users/{userId}` returns one exact DingTalk organization user ID match. Existing records created before organization enrichment may have empty organization fields.
 
 Answer evaluation runs after `Finish and save` when OpenRouter settings are configured.
 
@@ -55,13 +74,13 @@ The server extracts the full audio track, samples video frames at roughly one fr
 
 ## Persistent storage and ownership
 
-Generated questions are appended to `questions/metadata.jsonl` with the DingTalk OAuth `openId`. Answer attempts are appended to `recordings/metadata.jsonl` with the same `openId` plus the owned `questionId`. Attempts without a video are retained with `hasVideo: false` and a skipped evaluation; uploaded answer videos are stored in `recordings/` and use `hasVideo: true`.
+Generated questions are appended to `questions/metadata.jsonl` with the DingTalk OAuth `openId` and an organization user snapshot containing `userId`, `jobNumber`, `email`, and `orgEmail` when the organization contact API returns them. These fields are stored both at the record's top level and in its nested `user` object. Answer attempts are appended to `recordings/metadata.jsonl` with the same user fields plus the owned `questionId`. Attempts without a video are retained with `hasVideo: false` and a skipped evaluation; uploaded answer videos are stored in `recordings/` and use `hasVideo: true`.
 
 Both JSONL files and the video/artifact directories live on the server filesystem, so they survive application restarts. In production, mount `recordings/` and `questions/` on a persistent volume and include both in backups. If the app will run on multiple instances, migrate these records to a shared database/object store rather than relying on instance-local files.
 
 History and video endpoints always filter by the signed-in DingTalk `openId`. The recordings directory is not publicly served. On startup, records, videos, evaluation artifacts, and questions without a DingTalk `openId` are deleted as legacy data.
 
-`openId` is scoped to this DingTalk application and is the identifier returned directly by the OAuth user-information endpoint. `unionId` can correlate the same person across applications under the same developer, while an organization `userId` identifies an employee inside a specific DingTalk organization and generally requires an organization-aware lookup rather than this personal OAuth response.
+`openId` is scoped to this DingTalk application and remains the ownership key returned directly by the OAuth user-information endpoint. At sign-in, the server uses `unionId` to resolve the organization `userId`, queries DingTalk user details, and normalizes DingTalk's snake_case/camelCase response fields as `userId`, `jobNumber`, `email`, and `orgEmail`. This enrichment requires the application's organization-contact permission; if the lookup is unavailable, authentication continues with empty organization fields and the server logs a warning.
 
 Browser support for direct MP4 recording varies. The app asks for MP4 first and records WebM when the browser does not support MP4 through `MediaRecorder`. Recordings are finalized as a single browser blob because timed MP4 chunks are not reliably concatenable across implementations. The server uses bundled `ffmpeg-static` to convert non-MP4 uploads to MP4 for storage.
 

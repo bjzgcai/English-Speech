@@ -5,6 +5,7 @@ const { spawn } = require("child_process");
 const express = require("express");
 const multer = require("multer");
 const ffmpegPath = require("ffmpeg-static");
+const swaggerUiDistPath = require("swagger-ui-dist").getAbsoluteFSPath();
 require("dotenv").config();
 if (process.env.NODE_ENV !== "production") {
   require("dotenv").config({ path: ".env.local", override: true });
@@ -19,6 +20,7 @@ const artifactsDir = path.join(recordingsDir, "artifacts");
 const metadataFile = path.join(recordingsDir, "metadata.jsonl");
 const questionsDir = path.join(rootDir, "questions");
 const questionsMetadataFile = path.join(questionsDir, "metadata.jsonl");
+const openApiFile = path.join(rootDir, "openapi.yaml");
 const sessionCookieName = "englisheval_session";
 const sessionTtlMs = 7 * 24 * 60 * 60 * 1000;
 
@@ -32,6 +34,7 @@ app.use(
     index: false,
   }),
 );
+app.use("/api-docs/assets", express.static(swaggerUiDistPath));
 
 const upload = multer({
   dest: path.join(recordingsDir, "tmp"),
@@ -50,6 +53,30 @@ function getBaseUrl(req) {
 
 function isDingTalkConfigured() {
   return Boolean(process.env.DINGTALK_APP_KEY && process.env.DINGTALK_APP_SECRET);
+}
+
+function secureTextEqual(left, right) {
+  const leftBuffer = Buffer.from(String(left));
+  const rightBuffer = Buffer.from(String(right));
+  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function requirePartnerApiKey(req, res, next) {
+  const configuredKey = safeText(process.env.PARTNER_API_KEY);
+  if (!configuredKey) {
+    return res.status(503).json({ error: "Partner API is not configured." });
+  }
+
+  const authorization = safeText(req.get("authorization"));
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  const providedKey = safeText(match?.[1]);
+  if (!providedKey || !secureTextEqual(providedKey, configuredKey)) {
+    res.set("WWW-Authenticate", 'Bearer realm="EnglishEval Partner API"');
+    return res.status(401).json({ error: "A valid partner API bearer token is required." });
+  }
+
+  res.set("Cache-Control", "no-store");
+  next();
 }
 
 function parseCookies(req) {
@@ -196,6 +223,130 @@ function appendJsonLine(filePath, record) {
 
 function recordOpenId(record) {
   return safeText(record?.openId || record?.user?.openId);
+}
+
+function recordUserInfo(record) {
+  const user = record?.user || {};
+  return {
+    openId: recordOpenId(record),
+    unionId: safeText(record?.unionId || user.unionId),
+    userId: safeText(record?.userId || user.userId),
+    jobNumber: safeText(record?.jobNumber || user.jobNumber),
+    name: safeText(record?.name || user.name),
+    email: safeText(record?.email || user.email),
+    orgEmail: safeText(record?.orgEmail || user.orgEmail),
+  };
+}
+
+function mergeUserInfo(current, incoming) {
+  return {
+    openId: safeText(incoming.openId) || safeText(current.openId),
+    unionId: safeText(incoming.unionId) || safeText(current.unionId),
+    userId: safeText(incoming.userId) || safeText(current.userId),
+    jobNumber: safeText(incoming.jobNumber) || safeText(current.jobNumber),
+    name: safeText(incoming.name) || safeText(current.name),
+    email: safeText(incoming.email) || safeText(current.email),
+    orgEmail: safeText(incoming.orgEmail) || safeText(current.orgEmail),
+  };
+}
+
+function partnerEvaluation(record) {
+  const evaluation = record?.evaluation || {};
+  const rawStatus = safeText(evaluation.status);
+  const status = ["completed", "skipped", "failed"].includes(rawStatus) ? rawStatus : "unknown";
+  const rubricKeys = [
+    "pronunciation",
+    "fluency",
+    "grammar",
+    "vocabulary",
+    "coherence",
+    "visualDelivery",
+  ];
+  const rubric = Object.fromEntries(
+    rubricKeys
+      .filter((key) => evaluation?.rubric?.[key])
+      .map((key) => {
+        const item = evaluation.rubric[key];
+        return [
+          key,
+          {
+            label: safeText(item?.label),
+            weight: Number.isFinite(Number(item?.weight)) ? Number(item.weight) : null,
+            score: Number.isFinite(Number(item?.score)) ? Number(item.score) : null,
+            feedback: safeText(item?.feedback),
+          },
+        ];
+      }),
+  );
+  const list = (value) =>
+    Array.isArray(value) ? value.map((item) => safeText(item)).filter(Boolean) : [];
+
+  return {
+    id: safeText(record?.id),
+    questionId: safeText(record?.questionId),
+    startedAt: safeText(record?.startedAt),
+    finishedAt: safeText(record?.finishedAt),
+    profile: {
+      name: safeText(record?.profile?.name),
+      role: safeText(record?.profile?.role),
+    },
+    question: {
+      question: safeText(record?.question?.question),
+      focus: safeText(record?.question?.focus),
+      expectedDurationSeconds: Number(record?.question?.expectedDurationSeconds) || null,
+      followUp: safeText(record?.question?.followUp),
+    },
+    evaluation: {
+      status,
+      reason: safeText(evaluation.reason),
+      overallScore: Number.isFinite(Number(evaluation.overallScore))
+        ? Number(evaluation.overallScore)
+        : null,
+      summary: safeText(evaluation.summary),
+      rubric,
+      strengths: list(evaluation.strengths),
+      improvements: list(evaluation.improvements),
+    },
+  };
+}
+
+function partnerUsers() {
+  const questions = readJsonLines(questionsMetadataFile);
+  const recordings = readJsonLines(metadataFile);
+  const users = new Map();
+
+  [...questions, ...recordings].forEach((record) => {
+    const incoming = recordUserInfo(record);
+    const key = incoming.openId || incoming.userId;
+    if (!key) return;
+
+    const current = users.get(key) || {
+      ...incoming,
+      evaluations: [],
+    };
+    const merged = {
+      ...mergeUserInfo(current, incoming),
+      evaluations: current.evaluations,
+    };
+    users.set(key, merged);
+  });
+
+  recordings.forEach((record) => {
+    const incoming = recordUserInfo(record);
+    const key = incoming.openId || incoming.userId;
+    const user = users.get(key);
+    if (user) user.evaluations.push(partnerEvaluation(record));
+  });
+
+  return [...users.values()]
+    .map((user) => {
+      user.evaluations.sort((left, right) => right.finishedAt.localeCompare(left.finishedAt));
+      return {
+        ...user,
+        latestEvaluationAt: user.evaluations[0]?.finishedAt || "",
+      };
+    })
+    .sort((left, right) => right.latestEvaluationAt.localeCompare(left.latestEvaluationAt));
 }
 
 function removePath(targetPath) {
@@ -505,11 +656,94 @@ async function requestDingTalkCurrentUser(accessToken) {
   return response.json();
 }
 
-function normalizeDingTalkUser(rawUser) {
+async function requestDingTalkAppAccessToken() {
+  const response = await fetch("https://api.dingtalk.com/v1.0/oauth2/accessToken", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      appKey: process.env.DINGTALK_APP_KEY,
+      appSecret: process.env.DINGTALK_APP_SECRET,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`DingTalk app token request failed with HTTP ${response.status}.`);
+  }
+
+  const token = await response.json();
+  if (!safeText(token?.accessToken)) {
+    throw new Error("DingTalk app token response did not include an access token.");
+  }
+  return token.accessToken;
+}
+
+async function requestDingTalkUserIdByUnionId(accessToken, unionId) {
+  const url = new URL("https://oapi.dingtalk.com/topapi/user/getbyunionid");
+  url.searchParams.set("access_token", accessToken);
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ unionid: unionId }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`DingTalk user ID lookup failed with HTTP ${response.status}.`);
+  }
+
+  const body = await response.json();
+  if (Number(body?.errcode) !== 0) {
+    throw new Error(`DingTalk user ID lookup failed with error ${body?.errcode ?? "unknown"}.`);
+  }
+
+  const userId = safeText(body?.result?.userid || body?.result?.userId);
+  if (!userId) {
+    throw new Error("DingTalk user ID lookup did not return an organization user ID.");
+  }
+  return userId;
+}
+
+async function requestDingTalkUserDetails(accessToken, userId) {
+  const response = await fetch(
+    `https://api.dingtalk.com/v1.0/contact/users/${encodeURIComponent(userId)}`,
+    {
+      headers: {
+        "x-acs-dingtalk-access-token": accessToken,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`DingTalk user details lookup failed with HTTP ${response.status}.`);
+  }
+
+  return response.json();
+}
+
+async function requestDingTalkOrganizationUser(rawUser) {
+  const unionId = safeText(rawUser?.unionId);
+  if (!unionId) return null;
+
+  const accessToken = await requestDingTalkAppAccessToken();
+  const userId =
+    safeText(rawUser?.userId) || (await requestDingTalkUserIdByUnionId(accessToken, unionId));
+  const details = await requestDingTalkUserDetails(accessToken, userId);
+  return { ...details, userId };
+}
+
+function normalizeDingTalkUser(rawUser, organizationUser = null) {
   return {
     openId: safeText(rawUser?.openId),
     unionId: safeText(rawUser?.unionId),
-    userId: safeText(rawUser?.userId),
+    userId: safeText(
+      organizationUser?.userId || organizationUser?.userid || rawUser?.userId || rawUser?.userid,
+    ),
+    jobNumber: safeText(organizationUser?.jobNumber || organizationUser?.job_number),
+    email: safeText(organizationUser?.email || rawUser?.email),
+    orgEmail: safeText(organizationUser?.orgEmail || organizationUser?.org_email),
     name: safeText(rawUser?.nick || rawUser?.name, "DingTalk user"),
     avatarUrl: safeText(rawUser?.avatarUrl),
     mobile: safeText(rawUser?.mobile),
@@ -519,6 +753,11 @@ function normalizeDingTalkUser(rawUser) {
 function positiveInteger(value, fallback) {
   const number = Number(value);
   return Number.isInteger(number) && number > 0 ? number : fallback;
+}
+
+function nonNegativeInteger(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isInteger(number) && number >= 0 ? number : fallback;
 }
 
 function normalizeEvaluation(rawEvaluation) {
@@ -767,6 +1006,11 @@ function persistQuestion(user, profile, question, model) {
   const record = {
     id: crypto.randomUUID(),
     openId: user.openId,
+    userId: user.userId,
+    jobNumber: user.jobNumber,
+    email: user.email,
+    orgEmail: user.orgEmail,
+    user,
     createdAt: new Date().toISOString(),
     profile,
     question,
@@ -810,7 +1054,13 @@ app.get("/auth/dingtalk/callback", async (req, res) => {
   try {
     const token = await requestDingTalkUserAccessToken(code);
     const rawUser = await requestDingTalkCurrentUser(token.accessToken);
-    const user = normalizeDingTalkUser(rawUser);
+    let organizationUser = null;
+    try {
+      organizationUser = await requestDingTalkOrganizationUser(rawUser);
+    } catch (error) {
+      console.warn(`Unable to enrich DingTalk user details: ${error.message}`);
+    }
+    const user = normalizeDingTalkUser(rawUser, organizationUser);
     if (!user.openId) {
       return res.status(403).send("DingTalk did not return an openId for this account.");
     }
@@ -824,6 +1074,64 @@ app.get("/auth/dingtalk/callback", async (req, res) => {
 app.post("/auth/logout", (_req, res) => {
   clearSessionCookie(res);
   res.json({ ok: true });
+});
+
+app.get("/openapi.yaml", (_req, res) => {
+  res.type("application/yaml").sendFile(openApiFile);
+});
+
+app.get(["/api-docs", "/api-docs/"], (_req, res) => {
+  res.type("html").send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>EnglishEval Partner API</title>
+    <link rel="stylesheet" href="/api-docs/assets/swagger-ui.css">
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="/api-docs/assets/swagger-ui-bundle.js"></script>
+    <script src="/api-docs/assets/swagger-ui-standalone-preset.js"></script>
+    <script>
+      SwaggerUIBundle({
+        url: "/openapi.yaml",
+        dom_id: "#swagger-ui",
+        deepLinking: true,
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        layout: "StandaloneLayout"
+      });
+    </script>
+  </body>
+</html>`);
+});
+
+app.get("/api/v1/users", requirePartnerApiKey, (req, res) => {
+  const filterKeys = ["openId", "userId", "jobNumber", "email", "orgEmail"];
+  let users = partnerUsers().filter((user) =>
+    filterKeys.every((key) => {
+      const requested = safeText(req.query[key]).toLowerCase();
+      return !requested || safeText(user[key]).toLowerCase() === requested;
+    }),
+  );
+  const total = users.length;
+  const limit = Math.min(positiveInteger(req.query.limit, 50), 200);
+  const offset = nonNegativeInteger(req.query.offset);
+  users = users.slice(offset, offset + limit);
+
+  res.json({
+    users,
+    pagination: { total, limit, offset },
+  });
+});
+
+app.get("/api/v1/users/:userId", requirePartnerApiKey, (req, res) => {
+  const requestedUserId = safeText(req.params.userId);
+  const user = partnerUsers().find((item) => item.userId === requestedUserId);
+  if (!user) {
+    return res.status(404).json({ error: "User not found." });
+  }
+  res.json({ user });
 });
 
 app.get("/api/me", (req, res) => {
@@ -927,6 +1235,10 @@ app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, re
       startedAt,
       finishedAt,
       openId: req.user.openId,
+      userId: req.user.userId,
+      jobNumber: req.user.jobNumber,
+      email: req.user.email,
+      orgEmail: req.user.orgEmail,
       user: req.user,
       profile,
       questionId,
@@ -981,6 +1293,10 @@ app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, re
     startedAt,
     finishedAt,
     openId: req.user.openId,
+    userId: req.user.userId,
+    jobNumber: req.user.jobNumber,
+    email: req.user.email,
+    orgEmail: req.user.orgEmail,
     user: req.user,
     profile,
     questionId,
