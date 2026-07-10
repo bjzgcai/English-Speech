@@ -61,7 +61,9 @@ curl \
   "http://localhost:3199/api/v1/rubrics"
 ```
 
-`GET /api/v1/users` supports exact, case-insensitive filters for `openId`, `userId`, `jobNumber`, `email`, and `orgEmail`, plus `limit` (maximum 200) and `offset`. `GET /api/v1/users/{userId}` returns one exact DingTalk organization user ID match. `GET /api/v1/rubrics` returns the active versioned scoring standard, formula, score bands, weights, evidence, and interpretation guidance. Each evaluation response includes `rubricId` and `rubricVersion` so consumers can join scores to the correct standard. Existing records created before organization enrichment may have empty organization fields.
+`GET /api/v1/users` supports exact, case-insensitive filters for `openId`, `userId`, `jobNumber` (or its `job_number` alias), `email`, and `orgEmail`, plus `limit` (maximum 200) and `offset`. User responses include both `jobNumber` and `job_number` with the same value. `GET /api/v1/users/{userId}` returns one exact DingTalk organization user ID match. `GET /api/v1/rubrics` returns the active versioned scoring standard, formula, score bands, weights, evidence, and interpretation guidance. Each evaluation response includes `rubricId` and `rubricVersion` so consumers can join scores to the correct standard. Existing records created before organization enrichment may have empty organization fields.
+
+For partner integration testing, the users in `not-empty-user.json` are also exposed through these endpoints with deterministic mock DingTalk identifiers and one mock completed assessment each. The source field `工号` maps to the API fields `job_number` and `jobNumber`. A mock detail record can be requested using the `userId` returned by the list endpoint (for example, `mock_user_251202006`).
 
 Answer evaluation runs after `Finish and save` when OpenRouter settings are configured.
 
