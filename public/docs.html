@@ -10,18 +10,19 @@
     <title>Evaluation dimensions | EnglishEval</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/docs.css" />
+    <link rel="stylesheet" href="/comments.css" />
   </head>
   <body>
     <header class="docs-nav">
-      <a class="brand" href="/play" aria-label="EnglishEval home">
+      <a class="brand" href="/examine" aria-label="EnglishEval home">
         <span class="brand-mark" aria-hidden="true">E</span>
         <span>EnglishEval</span>
       </a>
       <div class="header-menu">
         <nav aria-label="Primary navigation">
-          <a href="/play">Practice</a>
+          <a href="/examine">Examine</a>
           <a href="/history">History</a>
-          <a href="/docs" aria-current="page">Methodology</a>
+          <a href="/methodology" aria-current="page">Methodology</a>
           <a href="/prepare">Prepare</a>
         </nav>
         <a class="header-login" data-header-login href="/auth/dingtalk">Sign in</a>
@@ -149,16 +150,30 @@
       <section class="closing reveal">
         <p>Built for useful feedback</p>
         <h2>A score should explain what to practice next.</h2>
-        <a href="/play">Start an evaluation</a>
+        <a href="/examine">Start an evaluation</a>
+      </section>
+      <section class="comments-section" id="comments" data-comments-page="methodology" aria-labelledby="comments-title">
+        <div class="comments-heading">
+          <h2 id="comments-title">Share what you noticed.</h2>
+          <p>Add a perspective on the methodology or reply to another learner.</p>
+        </div>
+        <form class="comment-form" data-comment-form>
+          <p class="reply-context" data-reply-context hidden>Replying to <strong data-reply-name></strong><button type="button" data-cancel-reply>Cancel</button></p>
+          <label for="methodologyComment">Your comment</label>
+          <textarea id="methodologyComment" maxlength="1000" required data-comment-input></textarea>
+          <div class="comment-form-row"><p class="comment-feedback" role="status" data-comment-feedback></p><button class="comment-submit" type="submit" data-comment-submit>Comment</button></div>
+        </form>
+        <div class="comment-list" data-comment-list aria-live="polite"><p class="comments-empty">Loading comments...</p></div>
       </section>
     </main>
 
     <footer>
-      <a class="brand" href="/play"><span class="brand-mark" aria-hidden="true">E</span><span>EnglishEval</span></a>
+      <a class="brand" href="/examine"><span class="brand-mark" aria-hidden="true">E</span><span>EnglishEval</span></a>
       <p>Speech, presentation, and communication evaluated together.</p>
     </footer>
 
     <script src="/header-auth.js"></script>
     <script src="/docs.js"></script>
+    <script src="/comments.js"></script>
   </body>
 </html>

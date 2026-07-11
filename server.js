@@ -20,6 +20,8 @@ const artifactsDir = path.join(recordingsDir, "artifacts");
 const metadataFile = path.join(recordingsDir, "metadata.jsonl");
 const questionsDir = path.join(rootDir, "questions");
 const questionsMetadataFile = path.join(questionsDir, "metadata.jsonl");
+const commentsDir = path.join(rootDir, "comments");
+const commentsMetadataFile = path.join(commentsDir, "metadata.jsonl");
 const openApiFile = path.join(rootDir, "openapi.yaml");
 const mockUsersFile = path.join(rootDir, "not-empty-user.json");
 const sessionCookieName = "englisheval_session";
@@ -100,6 +102,7 @@ const evaluationRubricStandard = Object.freeze({
 fs.mkdirSync(recordingsDir, { recursive: true });
 fs.mkdirSync(artifactsDir, { recursive: true });
 fs.mkdirSync(questionsDir, { recursive: true });
+fs.mkdirSync(commentsDir, { recursive: true });
 
 app.use((_req, res, next) => {
   res.set("Permissions-Policy", "camera=(self), microphone=(self)");
@@ -1293,6 +1296,68 @@ app.get("/api/me", (req, res) => {
   });
 });
 
+const commentPages = new Set(["prepare", "methodology"]);
+
+function commentForClient(comment) {
+  return {
+    id: comment.id,
+    page: comment.page,
+    parentId: comment.parentId || null,
+    username: comment.username,
+    content: comment.content,
+    createdAt: comment.createdAt,
+  };
+}
+
+app.get("/api/comments", (req, res) => {
+  const page = safeText(req.query.page).toLowerCase();
+  if (!commentPages.has(page)) {
+    return res.status(400).json({ error: "A valid comment page is required." });
+  }
+
+  const comments = readJsonLines(commentsMetadataFile)
+    .filter((comment) => comment.page === page)
+    .map(commentForClient);
+  res.set("Cache-Control", "no-store");
+  res.json({ comments });
+});
+
+app.post("/api/comments", requireAuth, (req, res) => {
+  const page = safeText(req.body?.page).toLowerCase();
+  const content = safeText(req.body?.content);
+  const requestedParentId = safeText(req.body?.parentId);
+
+  if (!commentPages.has(page)) {
+    return res.status(400).json({ error: "A valid comment page is required." });
+  }
+  if (!content || content.length > 1000) {
+    return res.status(400).json({ error: "Comments must contain 1 to 1000 characters." });
+  }
+
+  let parentId = null;
+  if (requestedParentId) {
+    const requestedParent = readJsonLines(commentsMetadataFile).find(
+      (comment) => comment.id === requestedParentId && comment.page === page,
+    );
+    if (!requestedParent) {
+      return res.status(404).json({ error: "The comment you are replying to was not found." });
+    }
+    parentId = requestedParent.parentId || requestedParent.id;
+  }
+
+  const comment = {
+    id: crypto.randomUUID(),
+    page,
+    parentId,
+    openId: req.user.openId,
+    username: safeText(req.user.name, "DingTalk user"),
+    content,
+    createdAt: new Date().toISOString(),
+  };
+  appendJsonLine(commentsMetadataFile, comment);
+  res.status(201).json({ comment: commentForClient(comment) });
+});
+
 app.post("/api/generate-question", requireAuth, async (req, res) => {
   const profile = req.body?.profile || {};
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -1516,9 +1581,9 @@ function sendAppShell(_req, res) {
 }
 
 app.get("/", sendAppShell);
-app.get("/play", sendAppShell);
+app.get("/examine", sendAppShell);
 app.get("/history", sendAppShell);
-app.get("/docs", (_req, res) => {
+app.get("/methodology", (_req, res) => {
   res.sendFile(path.join(publicDir, "docs.html"));
 });
 app.get("/prepare", (_req, res) => {

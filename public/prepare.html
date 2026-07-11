@@ -11,20 +11,21 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/docs.css" />
     <link rel="stylesheet" href="/prepare.css" />
+    <link rel="stylesheet" href="/comments.css" />
   </head>
   <body>
     <a class="skip-link" href="#mainContent">Skip to content</a>
 
     <header class="docs-nav">
-      <a class="brand" href="/play" aria-label="EnglishEval home">
+      <a class="brand" href="/examine" aria-label="EnglishEval home">
         <span class="brand-mark" aria-hidden="true">E</span>
         <span>EnglishEval</span>
       </a>
       <div class="header-menu">
         <nav aria-label="Primary navigation">
-          <a href="/play">Practice</a>
+          <a href="/examine">Examine</a>
           <a href="/history">History</a>
-          <a href="/docs">Methodology</a>
+          <a href="/methodology">Methodology</a>
           <a href="/prepare" aria-current="page">Prepare</a>
         </nav>
         <a class="header-login" data-header-login href="/auth/dingtalk">Sign in</a>
@@ -54,13 +55,52 @@
         </div>
 
         <div class="method-list">
+          <article class="practice-method method-chatgpt method-recommended">
+            <div class="chatgpt-heading">
+              <div class="method-copy">
+                <span class="method-number" aria-hidden="true">01</span>
+                <p class="method-product">ChatGPT <span class="recommended-badge">Recommended</span></p>
+                <h3>Combine Voice with Custom Instructions.</h3>
+              </div>
+              <p class="method-summary">
+                Our top recommendation is ChatGPT. Voice conversations combined with Custom Instructions let you create a consistent coaching routine that waits for your full answer, gives focused feedback, and keeps the practice tailored to your goals.
+              </p>
+            </div>
+
+            <div class="chatgpt-setup">
+              <div class="setup-steps">
+                <h4>Set it up</h4>
+                <ol>
+                  <li>Open <strong>Settings</strong>.</li>
+                  <li>On web or desktop, choose <strong>Personalization</strong>. On mobile, choose <strong>Customize ChatGPT</strong>.</li>
+                  <li>Turn on customization and paste the coaching prompt.</li>
+                  <li>Start a Voice conversation and answer in English.</li>
+                </ol>
+                <div class="official-links">
+                  <a href="https://help.openai.com/en/articles/20001274/" target="_blank" rel="noreferrer">ChatGPT Voice guide</a>
+                  <a href="https://help.openai.com/en/articles/8096356-chatgpt-custom-instructions" target="_blank" rel="noreferrer">Custom Instructions guide</a>
+                </div>
+              </div>
+
+              <div class="prompt-block">
+                <div class="prompt-label">
+                  <h4>Coaching prompt</h4>
+                  <span>Copy into Custom Instructions</span>
+                </div>
+                <blockquote>
+                  You are my English speaking coach. Let me finish my full answer before giving feedback. Wait until I say, “I'm finished.” Then point out the three most important pronunciation, grammar, or word-choice problems. Give me a corrected, natural version of my answer, explain each correction briefly, and ask one follow-up question. Do not interrupt me while I am speaking. Keep the conversation in English unless I ask for Chinese.
+                </blockquote>
+              </div>
+            </div>
+          </article>
+
           <article class="practice-method method-doubao">
             <div class="method-copy">
-              <span class="method-number" aria-hidden="true">01</span>
+              <span class="method-number" aria-hidden="true">02</span>
               <p class="method-product">Doubao</p>
               <h3>Use English Practice mode.</h3>
               <p class="method-summary">
-                Doubao's English Practice mode is designed for pronunciation and grammar correction. It lets you finish your response before giving feedback, so you can speak without being interrupted.
+                Our second recommendation is Doubao. Its dedicated English Practice mode lets you finish your response before giving feedback, so you can practise speaking without being interrupted.
               </p>
               <ol>
                 <li>Open the voice interface and tap <strong>Select Scenario</strong>.</li>
@@ -92,11 +132,11 @@
               <figcaption>Select Oral practice in Yuanbao's conversation menu.</figcaption>
             </figure>
             <div class="method-copy">
-              <span class="method-number" aria-hidden="true">02</span>
+              <span class="method-number" aria-hidden="true">03</span>
               <p class="method-product">Yuanbao</p>
               <h3>Select Oral practice.</h3>
               <p class="method-summary">
-                Yuanbao also includes a dedicated Oral practice mode. Use it for spoken conversation and corrections during the session.
+                Yuanbao's advantage is its focused pronunciation and grammar scoring. Use its dedicated Oral practice mode when you want targeted scores and corrections during a spoken session.
               </p>
               <ol>
                 <li>Start a voice conversation.</li>
@@ -106,57 +146,33 @@
             </div>
           </article>
 
-          <article class="practice-method method-chatgpt">
-            <div class="chatgpt-heading">
-              <div class="method-copy">
-                <span class="method-number" aria-hidden="true">03</span>
-                <p class="method-product">ChatGPT</p>
-                <h3>Combine Voice with Custom Instructions.</h3>
-              </div>
-              <p class="method-summary">
-                ChatGPT offers Voice conversations, but it does not currently present a dedicated mode labelled Oral practice like the options above. You can create a similar coaching routine with Custom Instructions.
-              </p>
-            </div>
-
-            <div class="chatgpt-setup">
-              <div class="setup-steps">
-                <h4>Set it up</h4>
-                <ol>
-                  <li>Open <strong>Settings</strong>.</li>
-                  <li>On web or desktop, choose <strong>Personalization</strong>. On mobile, choose <strong>Customize ChatGPT</strong>.</li>
-                  <li>Turn on customization and paste the coaching prompt.</li>
-                  <li>Start a Voice conversation and answer in English.</li>
-                </ol>
-                <div class="official-links">
-                  <a href="https://help.openai.com/en/articles/20001274/" target="_blank" rel="noreferrer">ChatGPT Voice guide</a>
-                  <a href="https://help.openai.com/en/articles/8096356-chatgpt-custom-instructions" target="_blank" rel="noreferrer">Custom Instructions guide</a>
-                </div>
-              </div>
-
-              <div class="prompt-block">
-                <div class="prompt-label">
-                  <h4>Coaching prompt</h4>
-                  <span>Copy into Custom Instructions</span>
-                </div>
-                <blockquote>
-                  You are my English speaking coach. Let me finish my full answer before giving feedback. Wait until I say, “I'm finished.” Then point out the three most important pronunciation, grammar, or word-choice problems. Give me a corrected, natural version of my answer, explain each correction briefly, and ask one follow-up question. Do not interrupt me while I am speaking. Keep the conversation in English unless I ask for Chinese.
-                </blockquote>
-              </div>
-            </div>
-          </article>
         </div>
 
         <!-- Add best-practice sections below this line. -->
       </section>
+      <section class="comments-section" id="comments" data-comments-page="prepare" aria-labelledby="comments-title">
+        <div class="comments-heading">
+          <h2 id="comments-title">Share what works for you.</h2>
+          <p>Leave a preparation tip or reply to another learner. </p>
+        </div>
+        <form class="comment-form" data-comment-form>
+          <p class="reply-context" data-reply-context hidden>Replying to <strong data-reply-name></strong><button type="button" data-cancel-reply>Cancel</button></p>
+          <label for="prepareComment">Your comment</label>
+          <textarea id="prepareComment" maxlength="1000" required data-comment-input></textarea>
+          <div class="comment-form-row"><p class="comment-feedback" role="status" data-comment-feedback></p><button class="comment-submit" type="submit" data-comment-submit>Comment</button></div>
+        </form>
+        <div class="comment-list" data-comment-list aria-live="polite"><p class="comments-empty">Loading comments...</p></div>
+      </section>
     </main>
 
     <footer>
-      <a class="brand" href="/play">
+      <a class="brand" href="/examine">
         <span class="brand-mark" aria-hidden="true">E</span>
         <span>EnglishEval</span>
       </a>
       <p>Prepare clearly. Speak confidently.</p>
     </footer>
     <script src="/header-auth.js"></script>
+    <script src="/comments.js"></script>
   </body>
 </html>
