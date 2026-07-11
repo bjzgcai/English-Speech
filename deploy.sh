@@ -14,11 +14,11 @@ usage() {
 Usage: ./deploy.sh [--migrate-data]
 
 Deploy EnglishEval to the configured SSH target. Code is installed as a
-versioned release while .env, recordings, and questions remain in shared
+versioned release while .env, recordings, questions, and comments remain in shared
 persistent storage.
 
 Options:
-  --migrate-data  Copy local recordings/ and questions/ on the first migration.
+  --migrate-data  Copy local recordings/, questions/, and comments/ on the first migration.
                   The command refuses to overwrite non-empty remote data.
   -h, --help      Show this help.
 
@@ -47,10 +47,6 @@ done
   echo "Run this script from the EnglishEval repository root." >&2
   exit 1
 }
-[[ -f .env ]] || {
-  echo "Missing .env; refusing to deploy without application secrets." >&2
-  exit 1
-}
 [[ "$APP_PORT" =~ ^[0-9]+$ ]] && ((APP_PORT >= 1 && APP_PORT <= 65535)) || {
   echo "APP_PORT must be an integer from 1 to 65535." >&2
   exit 1
@@ -60,29 +56,12 @@ release_id="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD 2>/dev/null 
 release_dir="$REMOTE_ROOT/releases/$release_id"
 remote_user="$(ssh "$TARGET" 'id -un')"
 remote_group="$(ssh "$TARGET" 'id -gn')"
-temporary_env="$(mktemp)"
-cleanup() { rm -f "$temporary_env"; }
-trap cleanup EXIT
-
-cp .env "$temporary_env"
-set_env_value() {
-  local key="$1" value="$2" output
-  output="${temporary_env}.next"
-  awk -v key="$key" -v value="$value" '
-    BEGIN { found = 0 }
-    index($0, key "=") == 1 { print key "=" value; found = 1; next }
-    { print }
-    END { if (!found) print key "=" value }
-  ' "$temporary_env" > "$output"
-  mv "$output" "$temporary_env"
-}
-set_env_value PORT "$APP_PORT"
-set_env_value APP_BASE_URL "$PUBLIC_BASE_URL"
-set_env_value NODE_ENV production
-chmod 600 "$temporary_env"
-
 echo "Deploying release $release_id to $TARGET:$REMOTE_ROOT"
-ssh "$TARGET" "sudo install -d -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT' '$REMOTE_ROOT/releases' '$REMOTE_ROOT/shared' '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/backups' && mkdir -p '$release_dir'"
+ssh "$TARGET" "sudo install -d -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT' '$REMOTE_ROOT/releases' '$REMOTE_ROOT/shared' '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/backups' && mkdir -p '$release_dir'"
+ssh "$TARGET" "test -f '$REMOTE_ROOT/shared/.env'" || {
+  echo "Missing production environment at $REMOTE_ROOT/shared/.env; refusing to deploy." >&2
+  exit 1
+}
 
 rsync -az --delete \
   --exclude '.git/' \
@@ -91,14 +70,12 @@ rsync -az --delete \
   --exclude 'node_modules/' \
   --exclude 'recordings/' \
   --exclude 'questions/' \
+  --exclude 'comments/' \
   --exclude '.DS_Store' \
   ./ "$TARGET:$release_dir/"
 
-rsync -az "$temporary_env" "$TARGET:$REMOTE_ROOT/shared/.env.new"
-ssh "$TARGET" "mv '$REMOTE_ROOT/shared/.env.new' '$REMOTE_ROOT/shared/.env' && chmod 600 '$REMOTE_ROOT/shared/.env'"
-
 if [[ "$MIGRATE_DATA" == true ]]; then
-  remote_data_count="$(ssh "$TARGET" "find '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' -type f 2>/dev/null | wc -l")"
+  remote_data_count="$(ssh "$TARGET" "find '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' -type f 2>/dev/null | wc -l")"
   if [[ "$remote_data_count" != "0" ]]; then
     echo "Remote persistent storage is not empty; refusing to overwrite it." >&2
     echo "Back up and reconcile remote data manually before retrying." >&2
@@ -106,14 +83,17 @@ if [[ "$MIGRATE_DATA" == true ]]; then
   fi
 
   backup_name="before-migration-$release_id.tar.gz"
-  ssh "$TARGET" "tar -C '$REMOTE_ROOT/shared' -czf '$REMOTE_ROOT/backups/$backup_name' recordings questions"
+  ssh "$TARGET" "tar -C '$REMOTE_ROOT/shared' -czf '$REMOTE_ROOT/backups/$backup_name' recordings questions comments"
   rsync -az recordings/ "$TARGET:$REMOTE_ROOT/shared/recordings/"
   rsync -az questions/ "$TARGET:$REMOTE_ROOT/shared/questions/"
+  if [[ -d comments ]]; then
+    rsync -az comments/ "$TARGET:$REMOTE_ROOT/shared/comments/"
+  fi
   echo "Migrated local persistent data (remote backup: $REMOTE_ROOT/backups/$backup_name)."
 fi
 
 ssh "$TARGET" "cd '$release_dir' && npm ci --omit=dev --no-audit --no-fund"
-ssh "$TARGET" "ln -sfn '$REMOTE_ROOT/shared/recordings' '$release_dir/recordings' && ln -sfn '$REMOTE_ROOT/shared/questions' '$release_dir/questions' && ln -sfn '$REMOTE_ROOT/shared/.env' '$release_dir/.env'"
+ssh "$TARGET" "ln -sfn '$REMOTE_ROOT/shared/recordings' '$release_dir/recordings' && ln -sfn '$REMOTE_ROOT/shared/questions' '$release_dir/questions' && ln -sfn '$REMOTE_ROOT/shared/comments' '$release_dir/comments' && ln -sfn '$REMOTE_ROOT/shared/.env' '$release_dir/.env'"
 
 previous_release="$(ssh "$TARGET" "readlink -f '$REMOTE_ROOT/current' 2>/dev/null || true")"
 

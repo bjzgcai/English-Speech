@@ -2,5 +2,6 @@ node_modules/
 .env
 .env.local
 recordings/
+comments/
 npm-debug.log*
 .DS_Store

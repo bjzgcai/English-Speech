@@ -606,7 +606,7 @@ function renderHistoryItem(item, index) {
 }
 
 function normalizeRoute(pathname) {
-  return pathname === "/" ? "/play" : pathname;
+  return pathname === "/" ? "/examine" : pathname;
 }
 
 function setRoute(pathname) {
@@ -617,7 +617,7 @@ function setRoute(pathname) {
   historyView.hidden = !state.authUser || !isHistory;
   loginPanel.hidden = Boolean(state.authUser);
   connectionStatus.hidden = isHistory;
-  document.title = isHistory ? "History | EnglishEval" : "Practice | EnglishEval";
+  document.title = isHistory ? "History | EnglishEval" : "Examine | EnglishEval";
   navLinks.forEach((link) => {
     link.classList.toggle("active", normalizeRoute(link.dataset.route) === route);
   });
@@ -636,7 +636,7 @@ function setRoute(pathname) {
 
 function navigateTo(pathname) {
   const normalized = normalizeRoute(pathname);
-  window.history.pushState({}, "", normalized === "/play" ? "/" : normalized);
+  window.history.pushState({}, "", normalized === "/examine" ? "/" : normalized);
   setRoute(normalized);
 }
 
@@ -877,7 +877,7 @@ logoutButton.addEventListener("click", async () => {
   await fetch("/auth/logout", { method: "POST" });
   state.authUser = null;
   stopStream();
-  navigateTo("/play");
+  navigateTo("/examine");
   updateAuthView();
   setStatus("Sign in");
 });
@@ -922,7 +922,7 @@ closeVideoModal.addEventListener("click", closeHistoryVideo);
 window.addEventListener("popstate", () => {
   if (state.recorder && state.recorder.state !== "inactive") {
     window.history.pushState({}, "", "/");
-    setRoute("/play");
+    setRoute("/examine");
     saveResult.textContent = "Finish and save before leaving the recording screen.";
     return;
   }

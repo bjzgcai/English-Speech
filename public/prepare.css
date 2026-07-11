@@ -73,6 +73,28 @@
   margin-top: clamp(60px, 8vw, 104px);
 }
 
+.method-recommended {
+  margin-inline: clamp(-28px, -2vw, -12px);
+  padding-inline: clamp(18px, 2.5vw, 36px);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.recommended-badge {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--accent-dark);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
 .practice-method {
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) minmax(320px, .92fr);
