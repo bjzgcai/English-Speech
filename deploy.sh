@@ -5,7 +5,7 @@ set -Eeuo pipefail
 TARGET="${TARGET:-ubuntu@10.1.130.9}"
 REMOTE_ROOT="${REMOTE_ROOT:-/opt/englisheval}"
 APP_PORT="${APP_PORT:-3199}"
-PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-http://10.1.130.9:3199}"
+PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-}"
 SERVICE_NAME="${SERVICE_NAME:-englisheval}"
 MIGRATE_DATA=false
 
@@ -23,7 +23,8 @@ Options:
   -h, --help      Show this help.
 
 Environment overrides:
-  TARGET, REMOTE_ROOT, APP_PORT, PUBLIC_BASE_URL, SERVICE_NAME
+  TARGET, REMOTE_ROOT, APP_PORT, SERVICE_NAME
+  PUBLIC_BASE_URL (required HTTPS URL served by the TLS reverse proxy)
 EOF
 }
 
@@ -51,6 +52,10 @@ done
   echo "APP_PORT must be an integer from 1 to 65535." >&2
   exit 1
 }
+[[ "$PUBLIC_BASE_URL" == https://* ]] || {
+  echo "PUBLIC_BASE_URL must be set to the HTTPS URL exposed by the TLS reverse proxy." >&2
+  exit 1
+}
 
 release_id="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD 2>/dev/null || echo local)"
 release_dir="$REMOTE_ROOT/releases/$release_id"
@@ -60,6 +65,10 @@ echo "Deploying release $release_id to $TARGET:$REMOTE_ROOT"
 ssh "$TARGET" "sudo install -d -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT' '$REMOTE_ROOT/releases' '$REMOTE_ROOT/shared' '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/backups' && mkdir -p '$release_dir'"
 ssh "$TARGET" "test -f '$REMOTE_ROOT/shared/.env'" || {
   echo "Missing production environment at $REMOTE_ROOT/shared/.env; refusing to deploy." >&2
+  exit 1
+}
+ssh "$TARGET" "grep -Eq '^APP_BASE_URL=https://[^[:space:]]+$' '$REMOTE_ROOT/shared/.env' && grep -Eq '^COOKIE_SECURE=true$' '$REMOTE_ROOT/shared/.env'" || {
+  echo "Production .env must set an HTTPS APP_BASE_URL and COOKIE_SECURE=true." >&2
   exit 1
 }
 

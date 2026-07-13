@@ -7,7 +7,7 @@ const multer = require("multer");
 const ffmpegPath = require("ffmpeg-static");
 const swaggerUiDistPath = require("swagger-ui-dist").getAbsoluteFSPath();
 const config = require("./config");
-const { appendJsonLine, readJsonLines, writeJsonLines } = require("./storage");
+const { appendJsonLine, readJsonLines } = require("./storage");
 const { createQuestionService } = require("./questions");
 const { registerPageRoutes } = require("./routes/pages");
 
@@ -20,10 +20,11 @@ const {
   metadataFile,
   questionsMetadataFile,
   commentsMetadataFile,
-  mockUsersFile,
 } = config;
 const sessionCookieName = "englisheval_session";
 const sessionTtlMs = 7 * 24 * 60 * 60 * 1000;
+const oauthNonceCookieName = "englisheval_oauth_nonce";
+const oauthStateTtlMs = 10 * 60 * 1000;
 const evaluationRubricStandard = Object.freeze({
   id: "english-speaking-evaluation",
   version: "1.0.0",
@@ -114,6 +115,13 @@ const upload = multer({
   limits: {
     fileSize: 250 * 1024 * 1024,
   },
+  fileFilter: (_req, file, callback) => {
+    const allowedMimeTypes = new Set(["video/mp4", "video/webm", "video/ogg"]);
+    if (!allowedMimeTypes.has(file.mimetype)) {
+      return callback(new multer.MulterError("LIMIT_UNEXPECTED_FILE", file.fieldname));
+    }
+    callback(null, true);
+  },
 });
 
 function safeText(value, fallback = "") {
@@ -193,6 +201,9 @@ function createSessionToken(user) {
 
 function useSecureSessionCookie() {
   const override = safeText(process.env.COOKIE_SECURE).toLowerCase();
+  if (process.env.NODE_ENV === "production") {
+    return true;
+  }
   if (override === "true" || override === "false") {
     return override === "true";
   }
@@ -244,6 +255,25 @@ function clearSessionCookie(res) {
   });
 }
 
+function setOAuthNonceCookie(res, nonce) {
+  res.cookie(oauthNonceCookieName, nonce, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: useSecureSessionCookie(),
+    maxAge: oauthStateTtlMs,
+    path: "/auth/dingtalk/callback",
+  });
+}
+
+function clearOAuthNonceCookie(res) {
+  res.clearCookie(oauthNonceCookieName, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: useSecureSessionCookie(),
+    path: "/auth/dingtalk/callback",
+  });
+}
+
 function requireAuth(req, res, next) {
   if (!isDingTalkConfigured()) {
     return res.status(503).json({ error: "DingTalk authentication is not configured." });
@@ -291,102 +321,6 @@ function mergeUserInfo(current, incoming) {
     email: safeText(incoming.email) || safeText(current.email),
     orgEmail: safeText(incoming.orgEmail) || safeText(current.orgEmail),
   };
-}
-
-function deterministicUuid(seed) {
-  const value = crypto.createHash("sha256").update(seed).digest("hex").slice(0, 32);
-  return `${value.slice(0, 8)}-${value.slice(8, 12)}-4${value.slice(13, 16)}-a${value.slice(17, 20)}-${value.slice(20)}`;
-}
-
-function mockPartnerUsers() {
-  if (!fs.existsSync(mockUsersFile)) return [];
-
-  let sourceUsers;
-  try {
-    sourceUsers = JSON.parse(fs.readFileSync(mockUsersFile, "utf8"));
-  } catch (error) {
-    console.warn(`Unable to read mock partner users: ${error.message}`);
-    return [];
-  }
-  if (!Array.isArray(sourceUsers)) return [];
-
-  const rubricFeedback = {
-    pronunciation: "Speech was generally clear and intelligible, with a few sounds that could be articulated more precisely.",
-    fluency: "The answer maintained a steady pace, with occasional pauses while organizing ideas.",
-    grammar: "Sentence structures were mostly accurate, with minor errors that did not obscure meaning.",
-    vocabulary: "Word choice was appropriate and sufficiently varied for the task.",
-    coherence: "The response stayed relevant and connected its main ideas in a logical order.",
-    visualDelivery: "Camera framing and posture supported a professional, engaged delivery.",
-  };
-
-  return sourceUsers.map((source, index) => {
-    const jobNumber = safeText(source["工号"]);
-    const name = safeText(source["姓名"], `Mock user ${index + 1}`);
-    const department = safeText(source["姓名.部门"]);
-    const emails = safeText(source.email)
-      .split(",")
-      .map((email) => email.trim())
-      .filter(Boolean);
-    const scoreBase = 68 + ((index * 7) % 21);
-    const rubric = Object.fromEntries(
-      evaluationRubricStandard.dimensions.map((dimension, dimensionIndex) => [
-        dimension.key,
-        {
-          label: dimension.label,
-          weight: dimension.weight,
-          score: Math.min(96, scoreBase + ((dimensionIndex * 3 + index) % 9) - 4),
-          feedback: rubricFeedback[dimension.key],
-        },
-      ]),
-    );
-    const overallScore = Math.round(
-      evaluationRubricStandard.dimensions.reduce(
-        (total, dimension) => total + (rubric[dimension.key].score * dimension.weight) / 100,
-        0,
-      ),
-    );
-    const finishedAt = new Date(Date.UTC(2026, 5, 30 - (index % 20), 2 + (index % 8), 15)).toISOString();
-    const startedAt = new Date(new Date(finishedAt).getTime() - 2 * 60 * 1000).toISOString();
-    const userId = `mock_user_${jobNumber || index + 1}`;
-    const evaluationId = deterministicUuid(`mock-evaluation-${jobNumber || index}`);
-
-    return {
-      openId: `mock_open_${jobNumber || index + 1}`,
-      unionId: `mock_union_${jobNumber || index + 1}`,
-      userId,
-      jobNumber,
-      name,
-      email: emails[0] || "",
-      orgEmail: emails[1] || "",
-      latestEvaluationAt: finishedAt,
-      evaluations: [
-        {
-          id: evaluationId,
-          questionId: deterministicUuid(`mock-question-${jobNumber || index}`),
-          startedAt,
-          finishedAt,
-          profile: { name, role: department ? `${department} student` : "Student" },
-          question: {
-            question: "Describe a technical project you worked on and explain one difficult decision you made.",
-            focus: "Clear structure, technical vocabulary, and reflection on decision-making",
-            expectedDurationSeconds: 120,
-            followUp: "What would you do differently if you started the project again?",
-          },
-          evaluation: {
-            status: "completed",
-            rubricId: evaluationRubricStandard.id,
-            rubricVersion: evaluationRubricStandard.version,
-            reason: "",
-            overallScore,
-            summary: `Mock assessment for ${name}: a clear, relevant response with practical examples and some room for greater precision.`,
-            rubric,
-            strengths: ["Relevant supporting example", "Logical answer structure"],
-            improvements: ["Use more precise technical vocabulary", "Reduce hesitation between key points"],
-          },
-        },
-      ],
-    };
-  });
 }
 
 function partnerEvaluation(record) {
@@ -447,7 +381,7 @@ function partnerEvaluation(record) {
 function partnerUsers() {
   const questions = readJsonLines(questionsMetadataFile);
   const recordings = readJsonLines(metadataFile);
-  const users = new Map(mockPartnerUsers().map((user) => [user.openId || user.userId, user]));
+  const users = new Map();
 
   [...questions, ...recordings].forEach((record) => {
     const incoming = recordUserInfo(record);
@@ -490,67 +424,6 @@ function removePath(targetPath) {
   } catch (error) {
     console.warn(`Unable to remove legacy path ${targetPath}: ${error.message}`);
   }
-}
-
-function cleanupLegacyData() {
-  const recordings = readJsonLines(metadataFile);
-  const retainedRecordings = recordings
-    .filter((record) => recordOpenId(record))
-    .map((record) => ({ ...record, openId: recordOpenId(record) }));
-  const removedRecordings = recordings.filter((record) => !recordOpenId(record));
-
-  removedRecordings.forEach((record) => {
-    if (record.filename && path.basename(record.filename) === record.filename) {
-      removePath(path.join(recordingsDir, record.filename));
-    }
-    if (record.id) {
-      removePath(path.join(artifactsDir, String(record.id)));
-    }
-  });
-
-  const retainedFilenames = new Set(retainedRecordings.map((record) => record.filename));
-  for (const entry of fs.readdirSync(recordingsDir, { withFileTypes: true })) {
-    if (entry.isFile() && entry.name !== path.basename(metadataFile) && !retainedFilenames.has(entry.name)) {
-      removePath(path.join(recordingsDir, entry.name));
-    }
-  }
-
-  const retainedArtifactIds = new Set(retainedRecordings.map((record) => String(record.id)));
-  for (const entry of fs.readdirSync(artifactsDir, { withFileTypes: true })) {
-    if (!retainedArtifactIds.has(entry.name)) {
-      removePath(path.join(artifactsDir, entry.name));
-    }
-  }
-
-  removePath(path.join(recordingsDir, "tmp"));
-  fs.mkdirSync(path.join(recordingsDir, "tmp"), { recursive: true });
-
-  if (recordings.length) {
-    writeJsonLines(metadataFile, retainedRecordings);
-  }
-
-  const questions = readJsonLines(questionsMetadataFile);
-  const retainedQuestions = questions
-    .filter((record) => recordOpenId(record))
-    .map((record) => ({ ...record, openId: recordOpenId(record) }));
-  if (questions.length) {
-    writeJsonLines(questionsMetadataFile, retainedQuestions);
-  }
-
-  if (removedRecordings.length || questions.length !== retainedQuestions.length) {
-    console.log(
-      `Removed ${removedRecordings.length} legacy recording(s) and ${questions.length - retainedQuestions.length} legacy question(s) without a DingTalk openId.`,
-    );
-  }
-}
-
-cleanupLegacyData();
-
-function getExtensionFromMime(mimeType) {
-  if (mimeType === "video/mp4") return ".mp4";
-  if (mimeType === "video/webm") return ".webm";
-  if (mimeType === "video/ogg") return ".ogv";
-  return ".webm";
 }
 
 function convertToMp4(inputPath, outputPath) {
@@ -718,15 +591,33 @@ function normalizeScore(value) {
   return Math.max(0, Math.min(100, Math.round(number)));
 }
 
-function buildDingTalkAuthUrl(req, redirectPath = "/") {
-  const redirectUri = `${getBaseUrl(req)}/auth/dingtalk/callback`;
-  const state = base64UrlEncode(
-    JSON.stringify({
-      nonce: crypto.randomBytes(12).toString("hex"),
-      redirectPath: redirectPath.startsWith("/") ? redirectPath : "/",
-      ts: Date.now(),
-    }),
+function normalizeRedirectPath(value) {
+  const redirectPath = safeText(value, "/");
+  if (
+    !redirectPath.startsWith("/") ||
+    redirectPath.startsWith("//") ||
+    redirectPath.includes("\\") ||
+    /[\u0000-\u001f\u007f]/.test(redirectPath)
+  ) {
+    return "/";
+  }
+  return redirectPath;
+}
+
+function signOAuthStatePayload(payload) {
+  return signSessionPayload(`oauth:${payload}`);
+}
+
+function createOAuthState(nonce, redirectPath, now = Date.now()) {
+  const payload = base64UrlEncode(
+    JSON.stringify({ nonce, redirectPath: normalizeRedirectPath(redirectPath), ts: now }),
   );
+  return `${payload}.${signOAuthStatePayload(payload)}`;
+}
+
+function buildDingTalkAuthUrl(req, nonce, redirectPath = "/") {
+  const redirectUri = `${getBaseUrl(req)}/auth/dingtalk/callback`;
+  const state = createOAuthState(nonce, redirectPath);
   const params = new URLSearchParams({
     redirect_uri: redirectUri,
     response_type: "code",
@@ -739,18 +630,27 @@ function buildDingTalkAuthUrl(req, redirectPath = "/") {
   return `https://login.dingtalk.com/oauth2/auth?${params.toString()}`;
 }
 
-function parseOAuthState(value) {
-  if (!value) return { redirectPath: "/" };
+function parseOAuthState(value, expectedNonce, now = Date.now()) {
+  if (!value || !expectedNonce) return null;
   try {
-    const state = JSON.parse(base64UrlDecode(value));
+    const [payload, signature, extra] = value.split(".");
+    if (!payload || !signature || extra || !secureTextEqual(signature, signOAuthStatePayload(payload))) {
+      return null;
+    }
+    const state = JSON.parse(base64UrlDecode(payload));
+    if (
+      !secureTextEqual(safeText(state.nonce), expectedNonce) ||
+      !Number.isFinite(state.ts) ||
+      state.ts > now + 30_000 ||
+      now - state.ts > oauthStateTtlMs
+    ) {
+      return null;
+    }
     return {
-      redirectPath:
-        typeof state.redirectPath === "string" && state.redirectPath.startsWith("/")
-          ? state.redirectPath
-          : "/",
+      redirectPath: normalizeRedirectPath(state.redirectPath),
     };
   } catch {
-    return { redirectPath: "/" };
+    return null;
   }
 }
 
@@ -1100,7 +1000,9 @@ app.get("/auth/dingtalk", (req, res) => {
     return res.status(503).send("DingTalk authentication is not configured.");
   }
 
-  res.redirect(buildDingTalkAuthUrl(req, safeText(req.query.redirect, "/")));
+  const nonce = crypto.randomBytes(24).toString("base64url");
+  setOAuthNonceCookie(res, nonce);
+  res.redirect(buildDingTalkAuthUrl(req, nonce, req.query.redirect));
 });
 
 app.get("/auth/dingtalk/callback", async (req, res) => {
@@ -1111,6 +1013,14 @@ app.get("/auth/dingtalk/callback", async (req, res) => {
   const code = safeText(req.query.authCode || req.query.code);
   if (!code) {
     return res.status(400).send("Missing DingTalk authorization code.");
+  }
+  const oauthState = parseOAuthState(
+    safeText(req.query.state),
+    parseCookies(req)[oauthNonceCookieName],
+  );
+  clearOAuthNonceCookie(res);
+  if (!oauthState) {
+    return res.status(400).send("Invalid or expired DingTalk OAuth state.");
   }
 
   try {
@@ -1127,7 +1037,7 @@ app.get("/auth/dingtalk/callback", async (req, res) => {
       return res.status(403).send("DingTalk did not return an openId for this account.");
     }
     setSessionCookie(res, user);
-    res.redirect(parseOAuthState(safeText(req.query.state)).redirectPath);
+    res.redirect(oauthState.redirectPath);
   } catch (error) {
     res.status(500).send(error.message);
   }
@@ -1283,9 +1193,10 @@ app.post("/api/generate-question", requireAuth, async (req, res) => {
 
     if (!response.ok) {
       const detail = await response.text();
+      const record = persistQuestion(req.user, profile, fallbackQuestion(profile), "fallback");
       return res.status(response.status).json({
         error: `OpenRouter request failed: ${detail}`,
-        question: fallbackQuestion(profile),
+        question: questionForClient(record),
       });
     }
 
@@ -1361,34 +1272,25 @@ app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, re
   }
 
   const baseName = `${finishedAt.replace(/[:.]/g, "-")}-${id}`;
-  const originalExtension = getExtensionFromMime(req.file.mimetype);
-  let filename = `${baseName}.mp4`;
-  let finalPath = path.join(recordingsDir, filename);
-  let storedMimeType = "video/mp4";
-  let convertedToMp4 = req.file.mimetype !== "video/mp4";
+  const filename = `${baseName}.mp4`;
+  const finalPath = path.join(recordingsDir, filename);
 
   try {
-    if (req.file.mimetype === "video/mp4") {
-      fs.renameSync(req.file.path, finalPath);
-    } else {
-      await convertToMp4(req.file.path, finalPath);
-      fs.unlinkSync(req.file.path);
-    }
+    await convertToMp4(req.file.path, finalPath);
   } catch (error) {
-    filename = `${baseName}${originalExtension}`;
-    finalPath = path.join(recordingsDir, filename);
-    storedMimeType = req.file.mimetype;
-    convertedToMp4 = false;
-    fs.renameSync(req.file.path, finalPath);
+    removePath(req.file.path);
+    removePath(finalPath);
+    return res.status(400).json({ error: "The uploaded file is not a valid supported video." });
   }
+  removePath(req.file.path);
 
   const record = {
     id,
     hasVideo: true,
     filename,
-    mimeType: storedMimeType,
+    mimeType: "video/mp4",
     originalMimeType: req.file.mimetype,
-    convertedToMp4,
+    convertedToMp4: true,
     bytes: fs.statSync(finalPath).size,
     startedAt,
     finishedAt,
@@ -1455,11 +1357,19 @@ app.get("/api/recordings/:id/video", requireAuth, (req, res) => {
     return res.status(404).json({ error: "Recording file not found." });
   }
 
-  res.type(record.mimeType || "video/mp4");
+  res.set("X-Content-Type-Options", "nosniff");
+  res.type("video/mp4");
   res.sendFile(videoPath);
 });
 
 registerPageRoutes(app);
+
+app.use((error, _req, res, next) => {
+  if (error instanceof multer.MulterError) {
+    return res.status(400).json({ error: "Only MP4, WebM, or Ogg video uploads are supported." });
+  }
+  next(error);
+});
 
 function startServer() {
   return app.listen(port, () => {
@@ -1467,4 +1377,8 @@ function startServer() {
   });
 }
 
-module.exports = { app, startServer };
+module.exports = {
+  app,
+  startServer,
+  testHelpers: { createOAuthState, normalizeRedirectPath, parseOAuthState },
+};

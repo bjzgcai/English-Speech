@@ -2,9 +2,11 @@ const fs = require("fs");
 const path = require("path");
 
 function loadEnvironment() {
-  require("dotenv").config();
+  if (process.env.NODE_ENV === "test") return;
+
+  require("dotenv").config({ quiet: true });
   if (process.env.NODE_ENV !== "production") {
-    require("dotenv").config({ path: ".env.local", override: true });
+    require("dotenv").config({ path: ".env.local", override: true, quiet: true });
   }
 }
 
@@ -34,5 +36,4 @@ module.exports = {
   questionsMetadataFile,
   commentsMetadataFile,
   openApiFile: path.join(rootDir, "openapi.yaml"),
-  mockUsersFile: path.join(rootDir, "not-empty-user.json"),
 };

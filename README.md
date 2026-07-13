@@ -36,8 +36,8 @@ PARTNER_API_KEY=replace-with-a-long-random-secret
 ```
 
 The DingTalk app callback URL must match `APP_BASE_URL` plus `/auth/dingtalk/callback`.
-`COOKIE_SECURE` is optional; when omitted, secure session cookies are enabled
-automatically for an HTTPS `APP_BASE_URL` and disabled for HTTP.
+In production, `APP_BASE_URL` must use HTTPS and `COOKIE_SECURE` must be `true`.
+Local HTTP development may set `COOKIE_SECURE=false`.
 
 The browser never receives API keys. Question generation goes through `POST /api/generate-question`.
 
@@ -63,8 +63,6 @@ curl \
 
 `GET /api/v1/users` supports exact, case-insensitive filters for `openId`, `userId`, `jobNumber` (or its `job_number` alias), `email`, and `orgEmail`, plus `limit` (maximum 200) and `offset`. User responses include both `jobNumber` and `job_number` with the same value. `GET /api/v1/users/{userId}` returns one exact DingTalk organization user ID match. `GET /api/v1/rubrics` returns the active versioned scoring standard, formula, score bands, weights, evidence, and interpretation guidance. Each evaluation response includes `rubricId` and `rubricVersion` so consumers can join scores to the correct standard. Existing records created before organization enrichment may have empty organization fields.
 
-For partner integration testing, the users in `not-empty-user.json` are also exposed through these endpoints with deterministic mock DingTalk identifiers and one mock completed assessment each. The source field `工号` maps to the API fields `job_number` and `jobNumber`. A mock detail record can be requested using the `userId` returned by the list endpoint (for example, `mock_user_251202006`).
-
 Answer evaluation runs after `Finish and save` when OpenRouter settings are configured.
 
 The server extracts the full audio track, samples video frames at roughly one frame every five seconds capped by `EVAL_MAX_FRAMES`, then evaluates:
@@ -84,11 +82,11 @@ Generated questions are appended to `questions/metadata.jsonl` with the DingTalk
 
 Both JSONL files and the video/artifact directories live on the server filesystem, so they survive application restarts. In production, mount `recordings/` and `questions/` on a persistent volume and include both in backups. If the app will run on multiple instances, migrate these records to a shared database/object store rather than relying on instance-local files.
 
-History and video endpoints always filter by the signed-in DingTalk `openId`. The recordings directory is not publicly served. On startup, records, videos, evaluation artifacts, and questions without a DingTalk `openId` are deleted as legacy data.
+History and video endpoints always filter by the signed-in DingTalk `openId`. The recordings directory is not publicly served. Application startup never deletes or migrates persistent records; any future migration must be run explicitly with a verified backup.
 
 `openId` is scoped to this DingTalk application and remains the ownership key returned directly by the OAuth user-information endpoint. At sign-in, the server uses `unionId` to resolve the organization `userId`, queries DingTalk user details, and normalizes DingTalk's snake_case/camelCase response fields as `userId`, `jobNumber`, `email`, and `orgEmail`. This enrichment requires the application's organization-contact permission; if the lookup is unavailable, authentication continues with empty organization fields and the server logs a warning.
 
-Browser support for direct MP4 recording varies. The app asks for MP4 first and records WebM when the browser does not support MP4 through `MediaRecorder`. Recordings are finalized as a single browser blob because timed MP4 chunks are not reliably concatenable across implementations. The server uses bundled `ffmpeg-static` to convert non-MP4 uploads to MP4 for storage.
+Browser support for direct MP4 recording varies. The app asks for MP4 first and records WebM when the browser does not support MP4 through `MediaRecorder`. Recordings are finalized as a single browser blob because timed MP4 chunks are not reliably concatenable across implementations. The server validates and transcodes every accepted upload to MP4 before storage.
 
 Extracted audio and sampled frames are stored under `recordings/artifacts/`.
 
@@ -110,7 +108,9 @@ For later code-only deployments:
 ./deploy.sh
 ```
 
-Defaults target `ubuntu@10.1.130.9`, installs under `/opt/englisheval`, and
-serves on `http://10.1.130.9:3199`. Override `TARGET`, `REMOTE_ROOT`,
-`APP_PORT`, `PUBLIC_BASE_URL`, or `SERVICE_NAME` in the command environment.
-The migration option deliberately refuses to overwrite non-empty remote data.
+Defaults target `ubuntu@10.1.130.9` and installs under `/opt/englisheval`.
+`PUBLIC_BASE_URL` is required and must be the HTTPS URL exposed by a trusted TLS
+reverse proxy; the production `.env` must use the same HTTPS `APP_BASE_URL` and
+set `COOKIE_SECURE=true`. Override `TARGET`, `REMOTE_ROOT`, `APP_PORT`, or
+`SERVICE_NAME` in the command environment. The migration option deliberately
+refuses to overwrite non-empty remote data.
