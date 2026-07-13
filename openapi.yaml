@@ -25,9 +25,7 @@ paths:
       description: |
         Returns users found in persisted question or recording metadata. Each
         user includes all persisted assessment results, but no video or artifact
-        metadata. Deterministic mock users sourced from `not-empty-user.json` are
-        included for partner integration testing. Filters use exact,
-        case-insensitive matching.
+        metadata. Filters use exact, case-insensitive matching.
       operationId: listUsers
       parameters:
         - $ref: '#/components/parameters/OpenId'
@@ -243,10 +241,10 @@ components:
           description: DingTalk organization user identifier
         jobNumber:
           type: string
-          description: Employee job number; mapped from `工号` for mock users
+          description: Employee job number
         job_number:
           type: string
-          description: Snake-case alias of `jobNumber`; mapped from `工号` for mock users
+          description: Snake-case alias of `jobNumber`
         name:
           type: string
         email:
