@@ -80,7 +80,7 @@ The server extracts the full audio track, samples video frames at roughly one fr
 
 Generated questions are appended to `questions/metadata.jsonl` with the DingTalk OAuth `openId` and an organization user snapshot containing `userId`, `jobNumber`, `email`, and `orgEmail` when the organization contact API returns them. These fields are stored both at the record's top level and in its nested `user` object. Answer attempts are appended to `recordings/metadata.jsonl` with the same user fields plus the owned `questionId`. Attempts without a video are retained with `hasVideo: false` and a skipped evaluation; uploaded answer videos are stored in `recordings/` and use `hasVideo: true`.
 
-Both JSONL files and the video/artifact directories live on the server filesystem, so they survive application restarts. In production, mount `recordings/` and `questions/` on a persistent volume and include both in backups. If the app will run on multiple instances, migrate these records to a shared database/object store rather than relying on instance-local files.
+The JSONL files and the video/artifact directories live on the server filesystem, so they survive application restarts. Privacy acknowledgements are stored separately in `consents/metadata.jsonl` by DingTalk `openId` and policy version. In production, mount `recordings/`, `questions/`, and `consents/` on persistent storage and include them in backups. If the app will run on multiple instances, migrate these records to a shared database/object store rather than relying on instance-local files.
 
 History and video endpoints always filter by the signed-in DingTalk `openId`. The recordings directory is not publicly served. Application startup never deletes or migrates persistent records; any future migration must be run explicitly with a verified backup.
 
@@ -93,7 +93,7 @@ Extracted audio and sampled frames are stored under `recordings/artifacts/`.
 ## Deploy
 
 The included script deploys versioned releases over SSH, installs a systemd
-service, and keeps `.env`, `recordings/`, and `questions/` in shared persistent
+service, and keeps `.env`, `recordings/`, `questions/`, `comments/`, and `consents/` in shared persistent
 storage on the target host.
 
 For the initial deployment and data migration:

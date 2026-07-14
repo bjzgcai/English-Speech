@@ -52,3 +52,53 @@ test("DingTalk login sets a nonce cookie and rejects tampered callback state", a
   assert.equal(callbackResponse.status, 400);
   assert.match(await callbackResponse.text(), /Invalid or expired/);
 });
+
+test("question generation is blocked until the current privacy policy is accepted", async (context) => {
+  const server = app.listen(0);
+  context.after(() => new Promise((resolve) => server.close(resolve)));
+  await new Promise((resolve) => server.once("listening", resolve));
+
+  const user = { openId: `privacy-test-${Date.now()}`, name: "Privacy test user" };
+  const session = testHelpers.createSessionToken(user);
+  const response = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/generate-question`,
+    {
+      method: "POST",
+      headers: {
+        Cookie: `englisheval_session=${session}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ profile: { name: "Test", role: "Tester" } }),
+    },
+  );
+
+  assert.equal(response.status, 403);
+  const body = await response.json();
+  assert.equal(body.code, "PRIVACY_CONSENT_REQUIRED");
+  assert.equal(body.privacyUrl, "/privacy");
+});
+
+test("privacy consent endpoint rejects incomplete acknowledgement", async (context) => {
+  const server = app.listen(0);
+  context.after(() => new Promise((resolve) => server.close(resolve)));
+  await new Promise((resolve) => server.once("listening", resolve));
+
+  const session = testHelpers.createSessionToken({
+    openId: `privacy-partial-${Date.now()}`,
+    name: "Privacy test user",
+  });
+  const response = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/privacy-consent`,
+    {
+      method: "POST",
+      headers: {
+        Cookie: `englisheval_session=${session}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ privacyAgreed: true, sensitiveInfoAgreed: false }),
+    },
+  );
+
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /Both privacy acknowledgements/);
+});

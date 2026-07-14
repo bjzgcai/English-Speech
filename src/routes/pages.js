@@ -19,9 +19,11 @@ SwaggerUIBundle({url:"/openapi.yaml",dom_id:"#swagger-ui",deepLinking:true,prese
   const sendAppShell = (_req, res) => res.sendFile(path.join(publicDir, "index.html"));
   app.get("/", sendAppShell);
   app.get("/examine", sendAppShell);
+  app.get("/practice", sendAppShell);
   app.get("/history", sendAppShell);
   app.get("/methodology", (_req, res) => res.sendFile(path.join(publicDir, "docs.html")));
   app.get("/prepare", (_req, res) => res.sendFile(path.join(publicDir, "prepare.html")));
+  app.get("/privacy", (_req, res) => res.sendFile(path.join(publicDir, "privacy.html")));
 }
 
 module.exports = { registerPageRoutes };

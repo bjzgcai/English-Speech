@@ -3,6 +3,7 @@ node_modules/
 .env.local
 recordings/
 comments/
+consents/
 not-empty-user.json
 npm-debug.log*
 .DS_Store

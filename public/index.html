@@ -70,6 +70,10 @@
           <button type="submit" class="primary-button" id="generateButton">
             Check camera &amp; generate question
           </button>
+          <p class="privacy-note">
+            Generating a question and recording an answer are subject to our
+            <a href="/privacy" target="_blank" rel="noreferrer">隐私政策</a>.
+          </p>
         </form>
 
         <section class="panel recorder-panel">
@@ -153,6 +157,44 @@
             <button type="button" class="primary-button" id="speakDirectlyButton">
               Speak directly
             </button>
+          </div>
+        </div>
+      </div>
+
+      <div
+        class="privacy-consent-modal"
+        id="privacyConsentModal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="privacyConsentTitle"
+        aria-describedby="privacyConsentSummary"
+        hidden
+      >
+        <div class="privacy-consent-dialog">
+          <p class="muted-label">Before your first evaluation</p>
+          <h2 id="privacyConsentTitle">请先阅读并确认隐私授权</h2>
+          <p id="privacyConsentSummary" class="privacy-consent-summary">
+            为生成题目、录制回答并完成英语口语评估，我们需要处理您的候选人资料、摄像头视频、麦克风音频，以及由此生成的转写文本、抽帧画面和评分结果。
+          </p>
+
+          <div class="privacy-consent-highlight">
+            <strong>重要提示</strong>
+            <p>音视频可能包含您的声音、面部形象和周围环境，泄露或不当使用可能对您的个人权益产生影响。相关内容将提交给配置的模型服务完成题目生成、转写与评估；具体处理方式、保存规则和可能的跨境处理请查看完整政策。</p>
+          </div>
+
+          <label class="consent-check">
+            <input type="checkbox" id="privacyPolicyAgree" />
+            <span>我已阅读并同意 <a href="/privacy" target="_blank" rel="noreferrer">《EnglishEval 隐私政策》</a>。</span>
+          </label>
+          <label class="consent-check">
+            <input type="checkbox" id="sensitiveInfoAgree" />
+            <span>我单独同意为英语评估处理我的音频、视频及其中的声音和面部画面，并按政策所述提交给外部模型服务处理（包括可能的境外处理）。</span>
+          </label>
+
+          <p class="privacy-consent-error" id="privacyConsentError" role="alert" hidden></p>
+          <div class="privacy-consent-actions">
+            <button type="button" class="secondary-button" id="declinePrivacyButton">暂不使用</button>
+            <button type="button" class="primary-button" id="acceptPrivacyButton" disabled>同意并继续</button>
           </div>
         </div>
       </div>
