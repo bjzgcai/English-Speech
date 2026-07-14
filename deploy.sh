@@ -62,13 +62,22 @@ release_dir="$REMOTE_ROOT/releases/$release_id"
 remote_user="$(ssh "$TARGET" 'id -un')"
 remote_group="$(ssh "$TARGET" 'id -gn')"
 echo "Deploying release $release_id to $TARGET:$REMOTE_ROOT"
-ssh "$TARGET" "sudo install -d -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT' '$REMOTE_ROOT/releases' '$REMOTE_ROOT/shared' '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' '$REMOTE_ROOT/backups' && mkdir -p '$release_dir'"
+ssh "$TARGET" "sudo install -d -m 0750 -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT' '$REMOTE_ROOT/releases' '$REMOTE_ROOT/shared' && sudo install -d -m 0700 -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' '$REMOTE_ROOT/backups' && mkdir -p '$release_dir'"
 ssh "$TARGET" "test -f '$REMOTE_ROOT/shared/.env'" || {
   echo "Missing production environment at $REMOTE_ROOT/shared/.env; refusing to deploy." >&2
   exit 1
 }
 ssh "$TARGET" "grep -Eq '^APP_BASE_URL=https://[^[:space:]]+$' '$REMOTE_ROOT/shared/.env' && grep -Eq '^COOKIE_SECURE=true$' '$REMOTE_ROOT/shared/.env'" || {
   echo "Production .env must set an HTTPS APP_BASE_URL and COOKIE_SECURE=true." >&2
+  exit 1
+}
+ssh "$TARGET" "grep -Eq '^RECORDING_RETENTION_DAYS=[0-9]+$' '$REMOTE_ROOT/shared/.env' && grep -Eq '^BACKUP_AGE_RECIPIENT=age1[[:alnum:]]+$' '$REMOTE_ROOT/shared/.env'" || {
+  echo "Production .env must set a non-negative RECORDING_RETENTION_DAYS and an age BACKUP_AGE_RECIPIENT." >&2
+  echo "Keep the corresponding age identity offline; never place it on the production server." >&2
+  exit 1
+}
+ssh "$TARGET" "command -v age >/dev/null" || {
+  echo "The production server must have the age command installed before encrypted backups can run." >&2
   exit 1
 }
 
@@ -92,8 +101,6 @@ if [[ "$MIGRATE_DATA" == true ]]; then
     exit 1
   fi
 
-  backup_name="before-migration-$release_id.tar.gz"
-  ssh "$TARGET" "tar -C '$REMOTE_ROOT/shared' -czf '$REMOTE_ROOT/backups/$backup_name' recordings questions comments consents"
   rsync -az recordings/ "$TARGET:$REMOTE_ROOT/shared/recordings/"
   rsync -az questions/ "$TARGET:$REMOTE_ROOT/shared/questions/"
   if [[ -d comments ]]; then
@@ -102,19 +109,22 @@ if [[ "$MIGRATE_DATA" == true ]]; then
   if [[ -d consents ]]; then
     rsync -az consents/ "$TARGET:$REMOTE_ROOT/shared/consents/"
   fi
-  echo "Migrated local persistent data (remote backup: $REMOTE_ROOT/backups/$backup_name)."
+  echo "Migrated local persistent data. Encrypted backup runs before retention below."
 fi
 
 ssh "$TARGET" "cd '$release_dir' && npm ci --omit=dev --no-audit --no-fund"
 ssh "$TARGET" "ln -sfn '$REMOTE_ROOT/shared/recordings' '$release_dir/recordings' && ln -sfn '$REMOTE_ROOT/shared/questions' '$release_dir/questions' && ln -sfn '$REMOTE_ROOT/shared/comments' '$release_dir/comments' && ln -sfn '$REMOTE_ROOT/shared/consents' '$release_dir/consents' && ln -sfn '$REMOTE_ROOT/shared/.env' '$release_dir/.env'"
+ssh "$TARGET" "chmod 0600 '$REMOTE_ROOT/shared/.env' && find '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' -type d -exec chmod 0700 {} + && find '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' -type f -exec chmod 0600 {} +"
 
 previous_release="$(ssh "$TARGET" "readlink -f '$REMOTE_ROOT/current' 2>/dev/null || true")"
 
-ssh "$TARGET" "sudo tee '/etc/systemd/system/$SERVICE_NAME.service' >/dev/null <<'UNIT'
+ssh "$TARGET" "set -eu
+sudo tee '/etc/systemd/system/$SERVICE_NAME.service' >/dev/null <<'UNIT'
 [Unit]
 Description=EnglishEval web service
 After=network-online.target
 Wants=network-online.target
+ConditionPathIsMountPoint=$REMOTE_ROOT/shared/recordings
 
 [Service]
 Type=simple
@@ -125,16 +135,57 @@ EnvironmentFile=$REMOTE_ROOT/shared/.env
 ExecStart=/usr/bin/node $REMOTE_ROOT/current/server.js
 Restart=on-failure
 RestartSec=3
+TimeoutStopSec=5min
 NoNewPrivileges=true
 PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=$REMOTE_ROOT/shared/recordings $REMOTE_ROOT/shared/questions $REMOTE_ROOT/shared/comments $REMOTE_ROOT/shared/consents
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target
 UNIT
+sudo tee '/etc/systemd/system/$SERVICE_NAME-recording-maintenance.service' >/dev/null <<'UNIT'
+[Unit]
+Description=Encrypted EnglishEval recording backup and optional recording retention
+ConditionPathIsMountPoint=$REMOTE_ROOT/shared/recordings
+
+[Service]
+Type=oneshot
+User=$remote_user
+Group=$remote_group
+EnvironmentFile=$REMOTE_ROOT/shared/.env
+Environment=APP_ROOT=$REMOTE_ROOT/current
+Environment=RECORDINGS_DIR=$REMOTE_ROOT/shared/recordings
+Environment=BACKUP_DIR=$REMOTE_ROOT/backups
+ExecStartPre=+/usr/bin/systemctl stop $SERVICE_NAME.service
+ExecStart=$REMOTE_ROOT/current/scripts/maintain-recordings.sh
+ExecStopPost=+/usr/bin/systemctl start $SERVICE_NAME.service
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=$REMOTE_ROOT/shared/recordings $REMOTE_ROOT/shared/questions $REMOTE_ROOT/shared/comments $REMOTE_ROOT/shared/consents $REMOTE_ROOT/backups
+UMask=0077
+UNIT
+sudo tee '/etc/systemd/system/$SERVICE_NAME-recording-maintenance.timer' >/dev/null <<'UNIT'
+[Unit]
+Description=Daily EnglishEval encrypted recording backup and optional recording retention
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
 ln -sfn '$release_dir' '$REMOTE_ROOT/current'
 sudo systemctl daemon-reload
 sudo systemctl enable --now '$SERVICE_NAME.service'
-sudo systemctl restart '$SERVICE_NAME.service'
+sudo systemctl enable --now '$SERVICE_NAME-recording-maintenance.timer'
+sudo systemctl start '$SERVICE_NAME-recording-maintenance.service'
 if command -v ufw >/dev/null && sudo ufw status | grep -q '^Status: active'; then
   sudo ufw allow '$APP_PORT/tcp' >/dev/null
 fi"

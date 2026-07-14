@@ -39,6 +39,19 @@ The DingTalk app callback URL must match `APP_BASE_URL` plus `/auth/dingtalk/cal
 In production, `APP_BASE_URL` must use HTTPS and `COOKIE_SECURE` must be `true`.
 Local HTTP development may set `COOKIE_SECURE=false`.
 
+Recording protection and production maintenance use:
+
+```bash
+RECORDING_RETENTION_DAYS=0
+BACKUP_RETENTION_DAYS=30
+BACKUP_AGE_RECIPIENT=<public-age-recipient>
+```
+
+`RECORDING_RETENTION_DAYS=0` disables live-recording expiration, so videos and
+their extracted evaluation artifacts are preserved indefinitely. Encrypted
+backup snapshots expire independently according to `BACKUP_RETENTION_DAYS` (30
+days by default).
+
 The browser never receives API keys. Question generation goes through `POST /api/generate-question`.
 
 ## Partner API
@@ -80,15 +93,79 @@ The server extracts the full audio track, samples video frames at roughly one fr
 
 Generated questions are appended to `questions/metadata.jsonl` with the DingTalk OAuth `openId` and an organization user snapshot containing `userId`, `jobNumber`, `email`, and `orgEmail` when the organization contact API returns them. These fields are stored both at the record's top level and in its nested `user` object. Answer attempts are appended to `recordings/metadata.jsonl` with the same user fields plus the owned `questionId`. Attempts without a video are retained with `hasVideo: false` and a skipped evaluation; uploaded answer videos are stored in `recordings/` and use `hasVideo: true`.
 
-The JSONL files and the video/artifact directories live on the server filesystem, so they survive application restarts. Privacy acknowledgements are stored separately in `consents/metadata.jsonl` by DingTalk `openId` and policy version. In production, mount `recordings/`, `questions/`, and `consents/` on persistent storage and include them in backups. If the app will run on multiple instances, migrate these records to a shared database/object store rather than relying on instance-local files.
+The JSONL files and the video/artifact directories live on the server filesystem, so they survive application restarts. Privacy acknowledgements are stored separately in `consents/metadata.jsonl` by DingTalk `openId` and policy version. In production, mount `recordings/`, `questions/`, and `consents/` on persistent storage. If the app will run on multiple instances, migrate these records to a shared database/object store rather than relying on instance-local files.
 
 History and video endpoints always filter by the signed-in DingTalk `openId`. The recordings directory is not publicly served. Application startup never deletes or migrates persistent records; any future migration must be run explicitly with a verified backup.
+
+The production service applies a `0077` umask. Persistent directories are mode
+`0700`, and data files are mode `0600`, limiting access to the service account.
+The daily recording-maintenance unit briefly stops the application, creates an
+encrypted backup, skips live-recording deletion when retention is disabled, and
+starts the application again.
 
 `openId` is scoped to this DingTalk application and remains the ownership key returned directly by the OAuth user-information endpoint. At sign-in, the server uses `unionId` to resolve the organization `userId`, queries DingTalk user details, and normalizes DingTalk's snake_case/camelCase response fields as `userId`, `jobNumber`, `email`, and `orgEmail`. This enrichment requires the application's organization-contact permission; if the lookup is unavailable, authentication continues with empty organization fields and the server logs a warning.
 
 Browser support for direct MP4 recording varies. The app asks for MP4 first and records WebM when the browser does not support MP4 through `MediaRecorder`. Recordings are finalized as a single browser blob because timed MP4 chunks are not reliably concatenable across implementations. The server validates and transcodes every accepted upload to MP4 before storage.
 
 Extracted audio and sampled frames are stored under `recordings/artifacts/`.
+
+## Encrypted recording backups
+
+Backups use [age](https://age-encryption.org/) public-key encryption. Generate
+the key on a trusted administrator workstation, not on production:
+
+```bash
+age-keygen -o englisheval-backup-identity.txt
+```
+
+Keep that identity file offline and outside this repository. Copy only the
+printed public recipient into production's original
+`/opt/englisheval/shared/.env` as `BACKUP_AGE_RECIPIENT`. Never copy the identity
+file or a local `.env` to production.
+
+Production must have the `age` command installed. Deployment refuses to proceed
+without `age`, an explicit non-negative retention setting, and a native age recipient. The
+maintenance timer runs daily around 03:15 and writes encrypted snapshots to
+`/opt/englisheval/backups`. It never creates a plaintext archive.
+
+To test recovery, restore into a new empty staging directory rather than over
+the live persistent data:
+
+```bash
+./scripts/restore-recordings-backup.sh \
+  recordings-YYYYMMDDTHHMMSSZ.tar.gz.age \
+  /secure/offline/englisheval-backup-identity.txt \
+  /tmp/englisheval-restore-test
+```
+
+Verify the restored metadata and videos before considering any manual recovery.
+The restore script deliberately refuses to write into a non-empty directory.
+
+These encrypted archives protect backups, but the live recording volume should
+also be encrypted. Production uses an 8 GB LUKS2 container at
+`/opt/englisheval/recordings.luks`, mounted at the existing recordings path.
+The binary unlock key remains on a protected administrator device and must
+never be copied to the server or repository. Make a second offline copy of this
+key; losing every copy permanently loses access to the live encrypted
+recordings.
+
+After a production reboot, unlock the recordings and start EnglishEval from the
+administrator Mac:
+
+```bash
+LUKS_KEY_FILE=/secure/offline/path ./ops/unlock-production-recordings.sh
+```
+
+To stop the app and lock the recording volume deliberately:
+
+```bash
+./ops/lock-production-recordings.sh
+```
+
+The application and recording-maintenance services have mount conditions and
+will not start against the empty underlying mountpoint. The server can boot and
+accept SSH without the recording key; an administrator must run the unlock
+script before EnglishEval becomes available.
 
 ## Deploy
 

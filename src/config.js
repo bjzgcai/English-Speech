@@ -1,6 +1,10 @@
 const fs = require("fs");
 const path = require("path");
 
+// Files created by Node and child processes such as ffmpeg must never be
+// readable by other local users. systemd applies the same mask in production.
+process.umask(0o077);
+
 function loadEnvironment() {
   if (process.env.NODE_ENV === "test") return;
 
@@ -16,6 +20,7 @@ const rootDir = path.resolve(__dirname, "..");
 const publicDir = path.join(rootDir, "public");
 const recordingsDir = path.join(rootDir, "recordings");
 const artifactsDir = path.join(recordingsDir, "artifacts");
+const recordingTmpDir = path.join(recordingsDir, "tmp");
 const metadataFile = path.join(recordingsDir, "metadata.jsonl");
 const questionsDir = path.join(rootDir, "questions");
 const questionsMetadataFile = path.join(questionsDir, "metadata.jsonl");
@@ -24,8 +29,16 @@ const commentsMetadataFile = path.join(commentsDir, "metadata.jsonl");
 const consentsDir = path.join(rootDir, "consents");
 const consentsMetadataFile = path.join(consentsDir, "metadata.jsonl");
 
-for (const directory of [recordingsDir, artifactsDir, questionsDir, commentsDir, consentsDir]) {
-  fs.mkdirSync(directory, { recursive: true });
+for (const directory of [
+  recordingsDir,
+  artifactsDir,
+  recordingTmpDir,
+  questionsDir,
+  commentsDir,
+  consentsDir,
+]) {
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  fs.chmodSync(directory, 0o700);
 }
 
 module.exports = {
@@ -34,6 +47,7 @@ module.exports = {
   publicDir,
   recordingsDir,
   artifactsDir,
+  recordingTmpDir,
   metadataFile,
   questionsMetadataFile,
   commentsMetadataFile,

@@ -17,6 +17,7 @@ const {
   publicDir,
   recordingsDir,
   artifactsDir,
+  recordingTmpDir,
   metadataFile,
   questionsMetadataFile,
   commentsMetadataFile,
@@ -113,7 +114,7 @@ app.use(
 app.use("/api-docs/assets", express.static(swaggerUiDistPath));
 
 const upload = multer({
-  dest: path.join(recordingsDir, "tmp"),
+  dest: recordingTmpDir,
   limits: {
     fileSize: 250 * 1024 * 1024,
   },
@@ -1343,11 +1344,15 @@ app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, re
   const baseName = `${finishedAt.replace(/[:.]/g, "-")}-${id}`;
   const filename = `${baseName}.mp4`;
   const finalPath = path.join(recordingsDir, filename);
+  const convertedPath = path.join(recordingTmpDir, filename);
 
   try {
-    await convertToMp4(req.file.path, finalPath);
+    await convertToMp4(req.file.path, convertedPath);
+    fs.chmodSync(convertedPath, 0o600);
+    fs.renameSync(convertedPath, finalPath);
   } catch (error) {
     removePath(req.file.path);
+    removePath(convertedPath);
     removePath(finalPath);
     return res.status(400).json({ error: "The uploaded file is not a valid supported video." });
   }
