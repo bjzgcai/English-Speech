@@ -1,0 +1,20 @@
+[Unit]
+Description=Encrypted EnglishEval recording backup and optional recording retention
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+EnvironmentFile=/opt/englisheval/shared/.env
+Environment=APP_ROOT=/opt/englisheval/security-tools
+Environment=RECORDINGS_DIR=/opt/englisheval/shared/recordings
+Environment=BACKUP_DIR=/opt/englisheval/backups
+ExecStartPre=+/usr/bin/systemctl stop englisheval.service
+ExecStart=/opt/englisheval/security-tools/scripts/maintain-recordings.sh
+ExecStopPost=+/usr/bin/systemctl start englisheval.service
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/englisheval/shared/recordings /opt/englisheval/backups
+UMask=0077
