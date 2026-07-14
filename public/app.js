@@ -65,6 +65,7 @@ const videoModalTitle = document.querySelector("#videoModalTitle");
 const historyVideo = document.querySelector("#historyVideo");
 const closeVideoModal = document.querySelector("#closeVideoModal");
 const prepareModal = document.querySelector("#prepareModal");
+const prepareDialog = prepareModal.querySelector(".prepare-dialog");
 const prepareSpinner = document.querySelector("#prepareSpinner");
 const prepareModalKicker = document.querySelector("#prepareModalKicker");
 const prepareModalTitle = document.querySelector("#prepareModalTitle");
@@ -242,6 +243,7 @@ function closePrepareModal() {
 
 function showGeneratingModal() {
   stopPrepareCountdown();
+  prepareDialog.classList.remove("is-countdown");
   prepareModalKicker.textContent = "Generating";
   prepareModalTitle.textContent = "Preparing your question...";
   prepareModalMessage.textContent = "Please wait while the assessment question is generated.";
@@ -256,6 +258,7 @@ function showGeneratingModal() {
 function showCountdownModal(question) {
   state.mediaRetryPending = false;
   state.mediaRetryAction = null;
+  prepareDialog.classList.add("is-countdown");
   prepareModalKicker.textContent = "Question ready";
   prepareModalTitle.textContent = question.question;
   prepareModalMessage.textContent = "Take a moment to plan your answer. Recording starts when the timer reaches zero.";
@@ -272,6 +275,7 @@ function showCountdownModal(question) {
 function showMediaRequiredModal(error, retryAction = "record") {
   state.mediaRetryPending = true;
   state.mediaRetryAction = retryAction;
+  prepareDialog.classList.remove("is-countdown");
   prepareModalKicker.textContent = "Devices required";
   prepareModalTitle.textContent = "Turn on your camera and microphone to continue";
   prepareModalMessage.textContent =
