@@ -26,6 +26,10 @@ body {
   font-family: "Avenir Next", Avenir, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
 }
 
+body.modal-open {
+  overflow: hidden;
+}
+
 .skip-link {
   position: fixed;
   top: 8px;
@@ -345,6 +349,20 @@ label {
   color: #28342d;
   font-size: 14px;
   font-weight: 750;
+}
+
+.privacy-note {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.privacy-note a,
+.consent-check a {
+  color: var(--accent-dark);
+  font-weight: 800;
+  text-underline-offset: 3px;
 }
 
 input,
@@ -978,6 +996,94 @@ video {
   padding: 18px;
 }
 
+.privacy-consent-modal {
+  position: fixed;
+  z-index: 55;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  background: rgba(17, 27, 21, 0.72);
+  backdrop-filter: blur(10px);
+  padding: 24px;
+}
+
+.privacy-consent-dialog {
+  width: min(680px, 100%);
+  max-height: min(820px, calc(100dvh - 48px));
+  overflow-y: auto;
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 34px 100px rgba(5, 18, 11, 0.32);
+  padding: clamp(26px, 5vw, 48px);
+}
+
+.privacy-consent-dialog h2 {
+  max-width: 560px;
+  font-size: clamp(30px, 5vw, 48px);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+}
+
+.privacy-consent-summary {
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.privacy-consent-highlight {
+  margin: 24px 0;
+  border-left: 3px solid var(--danger);
+  background: #f8eeee;
+  padding: 16px 18px;
+}
+
+.privacy-consent-highlight strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #7a1723;
+  font-size: 13px;
+}
+
+.privacy-consent-highlight p {
+  color: #56383c;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.consent-check {
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin: 0;
+  padding: 13px 0;
+  border-top: 1px solid var(--line);
+  font-weight: 600;
+  line-height: 1.55;
+}
+
+.consent-check input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.privacy-consent-error {
+  margin-top: 14px;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.privacy-consent-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+
 .prepare-dialog {
   width: min(620px, 100%);
   border: 1px solid #c8d1c9;
@@ -1252,6 +1358,21 @@ video {
   .prepare-modal {
     align-items: end;
     padding: 10px 10px max(10px, env(safe-area-inset-bottom));
+  }
+
+  .privacy-consent-modal {
+    align-items: end;
+    padding: 10px 10px max(10px, env(safe-area-inset-bottom));
+  }
+
+  .privacy-consent-dialog {
+    max-height: calc(100dvh - 20px - env(safe-area-inset-bottom));
+    padding: 26px 20px;
+  }
+
+  .privacy-consent-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
   }
 
   .prepare-dialog {

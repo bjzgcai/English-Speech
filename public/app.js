@@ -16,6 +16,8 @@ const state = {
   wakeLock: null,
   authUser: null,
   authReady: false,
+  privacyConsent: null,
+  privacyConsentResolve: null,
 };
 
 const MAX_RECORDING_MS = 2 * 60 * 1000;
@@ -75,6 +77,56 @@ const prepareGuidanceMessage = document.querySelector("#prepareGuidanceMessage")
 const prepareActions = document.querySelector("#prepareActions");
 const speakDirectlyButton = document.querySelector("#speakDirectlyButton");
 const deviceStatus = document.querySelector("#deviceStatus");
+const privacyConsentModal = document.querySelector("#privacyConsentModal");
+const privacyPolicyAgree = document.querySelector("#privacyPolicyAgree");
+const sensitiveInfoAgree = document.querySelector("#sensitiveInfoAgree");
+const privacyConsentError = document.querySelector("#privacyConsentError");
+const declinePrivacyButton = document.querySelector("#declinePrivacyButton");
+const acceptPrivacyButton = document.querySelector("#acceptPrivacyButton");
+
+function updatePrivacyAcceptButton() {
+  acceptPrivacyButton.disabled = !(privacyPolicyAgree.checked && sensitiveInfoAgree.checked);
+}
+
+function closePrivacyConsentModal(agreed) {
+  privacyConsentModal.hidden = true;
+  document.body.classList.remove("modal-open");
+  const resolve = state.privacyConsentResolve;
+  state.privacyConsentResolve = null;
+  if (!agreed) {
+    privacyPolicyAgree.checked = false;
+    sensitiveInfoAgree.checked = false;
+    updatePrivacyAcceptButton();
+  }
+  resolve?.(agreed);
+}
+
+function requestPrivacyConsent() {
+  privacyConsentError.hidden = true;
+  privacyConsentError.textContent = "";
+  privacyConsentModal.hidden = false;
+  document.body.classList.add("modal-open");
+  window.setTimeout(() => privacyPolicyAgree.focus(), 0);
+  return new Promise((resolve) => {
+    state.privacyConsentResolve = resolve;
+  });
+}
+
+async function ensurePrivacyConsent() {
+  if (state.privacyConsent === true) return true;
+
+  try {
+    const response = await fetch("/api/privacy-consent", { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Unable to check privacy consent.");
+    state.privacyConsent = data.agreed === true;
+  } catch (error) {
+    saveResult.textContent = error.message;
+    return false;
+  }
+
+  return state.privacyConsent || requestPrivacyConsent();
+}
 
 function updateDeviceStatus(status, message) {
   deviceStatus.dataset.status = status;
@@ -606,7 +658,7 @@ function renderHistoryItem(item, index) {
 }
 
 function normalizeRoute(pathname) {
-  return pathname === "/" ? "/examine" : pathname;
+  return pathname === "/" || pathname === "/practice" ? "/examine" : pathname;
 }
 
 function setRoute(pathname) {
@@ -667,6 +719,13 @@ profileForm.addEventListener("submit", async (event) => {
   }
 
   generateButton.disabled = true;
+  const privacyReady = await ensurePrivacyConsent();
+  if (!privacyReady) {
+    generateButton.disabled = false;
+    setStatus("Privacy consent required");
+    return;
+  }
+
   finishButton.disabled = true;
   saveResult.textContent = "";
   const mediaReady = await requireMediaBeforeQuestion();
@@ -876,10 +935,45 @@ finishButton.addEventListener("click", finishRecording);
 logoutButton.addEventListener("click", async () => {
   await fetch("/auth/logout", { method: "POST" });
   state.authUser = null;
+  state.privacyConsent = null;
   stopStream();
   navigateTo("/examine");
   updateAuthView();
   setStatus("Sign in");
+});
+
+privacyPolicyAgree.addEventListener("change", updatePrivacyAcceptButton);
+sensitiveInfoAgree.addEventListener("change", updatePrivacyAcceptButton);
+
+declinePrivacyButton.addEventListener("click", () => {
+  closePrivacyConsentModal(false);
+});
+
+acceptPrivacyButton.addEventListener("click", async () => {
+  if (!privacyPolicyAgree.checked || !sensitiveInfoAgree.checked) return;
+
+  acceptPrivacyButton.disabled = true;
+  declinePrivacyButton.disabled = true;
+  privacyConsentError.hidden = true;
+  try {
+    const response = await fetch("/api/privacy-consent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ privacyAgreed: true, sensitiveInfoAgreed: true }),
+    });
+    const data = await response.json();
+    if (!response.ok || data.agreed !== true) {
+      throw new Error(data.error || "Unable to save your privacy consent.");
+    }
+    state.privacyConsent = true;
+    closePrivacyConsentModal(true);
+  } catch (error) {
+    privacyConsentError.textContent = error.message;
+    privacyConsentError.hidden = false;
+    acceptPrivacyButton.disabled = false;
+  } finally {
+    declinePrivacyButton.disabled = false;
+  }
 });
 
 speakDirectlyButton.addEventListener("click", () => {

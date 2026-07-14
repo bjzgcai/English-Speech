@@ -20,11 +20,13 @@ const {
   metadataFile,
   questionsMetadataFile,
   commentsMetadataFile,
+  consentsMetadataFile,
 } = config;
 const sessionCookieName = "englisheval_session";
 const sessionTtlMs = 7 * 24 * 60 * 60 * 1000;
 const oauthNonceCookieName = "englisheval_oauth_nonce";
 const oauthStateTtlMs = 10 * 60 * 1000;
+const privacyPolicyVersion = "2026-07-14";
 const evaluationRubricStandard = Object.freeze({
   id: "english-speaking-evaluation",
   version: "1.0.0",
@@ -291,6 +293,30 @@ function requireAuth(req, res, next) {
   }
 
   req.user = user;
+  next();
+}
+
+function findCurrentPrivacyConsent(openId) {
+  return readJsonLines(consentsMetadataFile)
+    .reverse()
+    .find(
+      (record) =>
+        safeText(record.openId) === safeText(openId) &&
+        record.policyVersion === privacyPolicyVersion &&
+        record.privacyAgreed === true &&
+        record.sensitiveInfoAgreed === true,
+    );
+}
+
+function requirePrivacyConsent(req, res, next) {
+  if (!findCurrentPrivacyConsent(req.user.openId)) {
+    return res.status(403).json({
+      code: "PRIVACY_CONSENT_REQUIRED",
+      error: "Please review and agree to the privacy policy before generating a question.",
+      policyVersion: privacyPolicyVersion,
+      privacyUrl: "/privacy",
+    });
+  }
   next();
 }
 
@@ -1089,6 +1115,49 @@ app.get("/api/me", (req, res) => {
   });
 });
 
+app.get("/api/privacy-consent", requireAuth, (req, res) => {
+  const consent = findCurrentPrivacyConsent(req.user.openId);
+  res.set("Cache-Control", "no-store");
+  res.json({
+    agreed: Boolean(consent),
+    policyVersion: privacyPolicyVersion,
+    acceptedAt: consent?.acceptedAt || null,
+  });
+});
+
+app.post("/api/privacy-consent", requireAuth, (req, res) => {
+  if (req.body?.privacyAgreed !== true || req.body?.sensitiveInfoAgreed !== true) {
+    return res.status(400).json({
+      error: "Both privacy acknowledgements are required to use the speaking evaluation.",
+    });
+  }
+
+  const existingConsent = findCurrentPrivacyConsent(req.user.openId);
+  if (existingConsent) {
+    return res.json({
+      agreed: true,
+      policyVersion: privacyPolicyVersion,
+      acceptedAt: existingConsent.acceptedAt,
+    });
+  }
+
+  const consent = {
+    id: crypto.randomUUID(),
+    openId: req.user.openId,
+    userId: safeText(req.user.userId),
+    policyVersion: privacyPolicyVersion,
+    privacyAgreed: true,
+    sensitiveInfoAgreed: true,
+    acceptedAt: new Date().toISOString(),
+  };
+  appendJsonLine(consentsMetadataFile, consent);
+  res.status(201).json({
+    agreed: true,
+    policyVersion: consent.policyVersion,
+    acceptedAt: consent.acceptedAt,
+  });
+});
+
 const commentPages = new Set(["prepare", "methodology"]);
 
 function commentForClient(comment) {
@@ -1151,7 +1220,7 @@ app.post("/api/comments", requireAuth, (req, res) => {
   res.status(201).json({ comment: commentForClient(comment) });
 });
 
-app.post("/api/generate-question", requireAuth, async (req, res) => {
+app.post("/api/generate-question", requireAuth, requirePrivacyConsent, async (req, res) => {
   const profile = req.body?.profile || {};
   const apiKey = process.env.OPENROUTER_API_KEY;
   const model = process.env.OPENROUTER_MODEL || "deepseek/deepseek-v4-flash";
@@ -1380,5 +1449,5 @@ function startServer() {
 module.exports = {
   app,
   startServer,
-  testHelpers: { createOAuthState, normalizeRedirectPath, parseOAuthState },
+  testHelpers: { createOAuthState, createSessionToken, normalizeRedirectPath, parseOAuthState },
 };
