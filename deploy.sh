@@ -24,7 +24,7 @@ Options:
 
 Environment overrides:
   TARGET, REMOTE_ROOT, APP_PORT, SERVICE_NAME
-  PUBLIC_BASE_URL (required HTTPS URL served by the TLS reverse proxy)
+  PUBLIC_BASE_URL (required HTTP or HTTPS URL exposed by the app or reverse proxy)
 EOF
 }
 
@@ -48,12 +48,16 @@ done
   echo "Run this script from the EnglishEval repository root." >&2
   exit 1
 }
+[[ -f .env && -f .env.prod ]] || {
+  echo "Both .env (shared settings) and .env.prod (production overrides) are required." >&2
+  exit 1
+}
 [[ "$APP_PORT" =~ ^[0-9]+$ ]] && ((APP_PORT >= 1 && APP_PORT <= 65535)) || {
   echo "APP_PORT must be an integer from 1 to 65535." >&2
   exit 1
 }
-[[ "$PUBLIC_BASE_URL" == https://* ]] || {
-  echo "PUBLIC_BASE_URL must be set to the HTTPS URL exposed by the TLS reverse proxy." >&2
+[[ "$PUBLIC_BASE_URL" == http://* || "$PUBLIC_BASE_URL" == https://* ]] || {
+  echo "PUBLIC_BASE_URL must be set to the HTTP or HTTPS URL exposed by the app or reverse proxy." >&2
   exit 1
 }
 
@@ -63,16 +67,20 @@ remote_user="$(ssh "$TARGET" 'id -un')"
 remote_group="$(ssh "$TARGET" 'id -gn')"
 echo "Deploying release $release_id to $TARGET:$REMOTE_ROOT"
 ssh "$TARGET" "sudo install -d -m 0750 -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT' '$REMOTE_ROOT/releases' '$REMOTE_ROOT/shared' && sudo install -d -m 0700 -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' '$REMOTE_ROOT/backups' && mkdir -p '$release_dir'"
-ssh "$TARGET" "test -f '$REMOTE_ROOT/shared/.env'" || {
-  echo "Missing production environment at $REMOTE_ROOT/shared/.env; refusing to deploy." >&2
+rsync -az .env "$TARGET:$REMOTE_ROOT/shared/.env"
+rsync -az .env.prod "$TARGET:$REMOTE_ROOT/shared/.env.prod"
+ssh "$TARGET" "chmod 0600 '$REMOTE_ROOT/shared/.env' '$REMOTE_ROOT/shared/.env.prod'"
+
+ssh "$TARGET" "grep -Eq '^DINGTALK_APP_KEY=.+$' '$REMOTE_ROOT/shared/.env' && grep -Eq '^DINGTALK_APP_SECRET=.+$' '$REMOTE_ROOT/shared/.env'" || {
+  echo "Shared .env must set DINGTALK_APP_KEY and DINGTALK_APP_SECRET." >&2
   exit 1
 }
-ssh "$TARGET" "grep -Eq '^APP_BASE_URL=https://[^[:space:]]+$' '$REMOTE_ROOT/shared/.env' && grep -Eq '^COOKIE_SECURE=true$' '$REMOTE_ROOT/shared/.env'" || {
-  echo "Production .env must set an HTTPS APP_BASE_URL and COOKIE_SECURE=true." >&2
+ssh "$TARGET" "grep -Eq '^APP_BASE_URL=https?://[^[:space:]]+$' '$REMOTE_ROOT/shared/.env.prod' && grep -Eq '^COOKIE_SECURE=(true|false)$' '$REMOTE_ROOT/shared/.env.prod'" || {
+  echo "Production .env.prod must set an HTTP or HTTPS APP_BASE_URL and COOKIE_SECURE=true or false." >&2
   exit 1
 }
-ssh "$TARGET" "grep -Eq '^RECORDING_RETENTION_DAYS=[0-9]+$' '$REMOTE_ROOT/shared/.env' && grep -Eq '^BACKUP_AGE_RECIPIENT=age1[[:alnum:]]+$' '$REMOTE_ROOT/shared/.env'" || {
-  echo "Production .env must set a non-negative RECORDING_RETENTION_DAYS and an age BACKUP_AGE_RECIPIENT." >&2
+ssh "$TARGET" "grep -Eq '^RECORDING_RETENTION_DAYS=[0-9]+$' '$REMOTE_ROOT/shared/.env.prod' && grep -Eq '^BACKUP_AGE_RECIPIENT=age1[[:alnum:]]+$' '$REMOTE_ROOT/shared/.env.prod'" || {
+  echo "Production .env.prod must set a non-negative RECORDING_RETENTION_DAYS and an age BACKUP_AGE_RECIPIENT." >&2
   echo "Keep the corresponding age identity offline; never place it on the production server." >&2
   exit 1
 }
@@ -85,6 +93,7 @@ rsync -az --delete \
   --exclude '.git/' \
   --exclude '.env' \
   --exclude '.env.local' \
+  --exclude '.env.prod' \
   --exclude 'node_modules/' \
   --exclude 'recordings/' \
   --exclude 'questions/' \
@@ -112,9 +121,20 @@ if [[ "$MIGRATE_DATA" == true ]]; then
   echo "Migrated local persistent data. Encrypted backup runs before retention below."
 fi
 
-ssh "$TARGET" "cd '$release_dir' && npm ci --omit=dev --no-audit --no-fund"
-ssh "$TARGET" "ln -sfn '$REMOTE_ROOT/shared/recordings' '$release_dir/recordings' && ln -sfn '$REMOTE_ROOT/shared/questions' '$release_dir/questions' && ln -sfn '$REMOTE_ROOT/shared/comments' '$release_dir/comments' && ln -sfn '$REMOTE_ROOT/shared/consents' '$release_dir/consents' && ln -sfn '$REMOTE_ROOT/shared/.env' '$release_dir/.env'"
-ssh "$TARGET" "chmod 0600 '$REMOTE_ROOT/shared/.env' && find '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' -type d -exec chmod 0700 {} + && find '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' -type f -exec chmod 0600 {} +"
+ssh "$TARGET" "set -eu
+cd '$release_dir'
+npm ci --omit=dev --no-audit --no-fund --ignore-scripts
+current_ffmpeg='$REMOTE_ROOT/current/node_modules/ffmpeg-static'
+release_ffmpeg='$release_dir/node_modules/ffmpeg-static'
+if test -x \"\$current_ffmpeg/ffmpeg\" && test \"\$(node -p \"require('\$current_ffmpeg/package.json').version\")\" = \"\$(node -p \"require('\$release_ffmpeg/package.json').version\")\"; then
+  cp \"\$current_ffmpeg/ffmpeg\" \"\$current_ffmpeg/ffmpeg.README\" \"\$current_ffmpeg/ffmpeg.LICENSE\" \"\$release_ffmpeg/\"
+  chmod 0755 \"\$release_ffmpeg/ffmpeg\"
+else
+  cd \"\$release_ffmpeg\"
+  node install.js
+fi"
+ssh "$TARGET" "ln -sfn '$REMOTE_ROOT/shared/recordings' '$release_dir/recordings' && ln -sfn '$REMOTE_ROOT/shared/questions' '$release_dir/questions' && ln -sfn '$REMOTE_ROOT/shared/comments' '$release_dir/comments' && ln -sfn '$REMOTE_ROOT/shared/consents' '$release_dir/consents' && ln -sfn '$REMOTE_ROOT/shared/.env' '$release_dir/.env' && ln -sfn '$REMOTE_ROOT/shared/.env.prod' '$release_dir/.env.prod'"
+ssh "$TARGET" "chmod 0600 '$REMOTE_ROOT/shared/.env' '$REMOTE_ROOT/shared/.env.prod' && find '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' \\( -name lost+found -prune \\) -o -type d -exec chmod 0700 {} + && find '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' \\( -name lost+found -prune \\) -o -type f -exec chmod 0600 {} +"
 
 previous_release="$(ssh "$TARGET" "readlink -f '$REMOTE_ROOT/current' 2>/dev/null || true")"
 
@@ -132,6 +152,7 @@ User=$remote_user
 Group=$remote_group
 WorkingDirectory=$REMOTE_ROOT/current
 EnvironmentFile=$REMOTE_ROOT/shared/.env
+EnvironmentFile=$REMOTE_ROOT/shared/.env.prod
 Environment=NODE_ENV=production
 ExecStart=/usr/bin/node $REMOTE_ROOT/current/server.js
 Restart=on-failure
@@ -157,6 +178,7 @@ Type=oneshot
 User=$remote_user
 Group=$remote_group
 EnvironmentFile=$REMOTE_ROOT/shared/.env
+EnvironmentFile=$REMOTE_ROOT/shared/.env.prod
 Environment=APP_ROOT=$REMOTE_ROOT/current
 Environment=RECORDINGS_DIR=$REMOTE_ROOT/shared/recordings
 Environment=BACKUP_DIR=$REMOTE_ROOT/backups
@@ -198,6 +220,12 @@ if ! ssh "$TARGET" "curl --fail --silent --show-error --max-time 10 'http://127.
   else
     ssh "$TARGET" "sudo systemctl stop '$SERVICE_NAME.service'"
   fi
+  exit 1
+fi
+
+auth_status="$(ssh "$TARGET" "curl --silent --show-error --max-time 10 --output /dev/null --write-out '%{http_code}' 'http://127.0.0.1:$APP_PORT/auth/dingtalk'")"
+if [[ "$auth_status" != "302" ]]; then
+  echo "DingTalk authentication check failed with HTTP $auth_status." >&2
   exit 1
 fi
 

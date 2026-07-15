@@ -172,8 +172,10 @@ script before EnglishEval becomes available.
 ## Deploy
 
 The included script deploys versioned releases over SSH, installs a systemd
-service, and keeps `.env`, `recordings/`, `questions/`, `comments/`, and `consents/` in shared persistent
-storage on the target host.
+service, and keeps `.env`, `.env.prod`, `recordings/`, `questions/`, `comments/`, and `consents/` in shared persistent
+storage on the target host. `.env` contains settings shared by development and
+production, while `.env.local` and `.env.prod` override environment-specific
+values. Deployment never copies `.env.local`.
 
 For the initial deployment and data migration:
 
@@ -188,8 +190,8 @@ For later code-only deployments:
 ```
 
 Defaults target `ubuntu@10.1.130.9` and installs under `/opt/englisheval`.
-`PUBLIC_BASE_URL` is required and must be the HTTPS URL exposed by a trusted TLS
-reverse proxy; the production `.env` must use the same HTTPS `APP_BASE_URL` and
-set `COOKIE_SECURE=true`. Override `TARGET`, `REMOTE_ROOT`, `APP_PORT`, or
-`SERVICE_NAME` in the command environment. The migration option deliberately
-refuses to overwrite non-empty remote data.
+`PUBLIC_BASE_URL` is required and must match the HTTP or HTTPS URL in
+`.env.prod`. Plain HTTP deployments must set `COOKIE_SECURE=false`; HTTPS
+deployments should set it to `true`. Override `TARGET`, `REMOTE_ROOT`,
+`APP_PORT`, or `SERVICE_NAME` in the command environment. The migration option
+deliberately refuses to overwrite non-empty remote data.

@@ -9,7 +9,9 @@ function loadEnvironment() {
   if (process.env.NODE_ENV === "test") return;
 
   require("dotenv").config({ quiet: true });
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV === "production") {
+    require("dotenv").config({ path: ".env.prod", override: true, quiet: true });
+  } else {
     require("dotenv").config({ path: ".env.local", override: true, quiet: true });
   }
 }
