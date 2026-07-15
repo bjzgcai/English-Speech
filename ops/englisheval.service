@@ -1,0 +1,26 @@
+[Unit]
+Description=EnglishEval web service
+After=network-online.target
+Wants=network-online.target
+ConditionPathIsMountPoint=/opt/englisheval/shared/recordings
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/englisheval/current
+EnvironmentFile=/opt/englisheval/shared/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node /opt/englisheval/current/server.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=5min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/englisheval/shared/recordings /opt/englisheval/shared/questions /opt/englisheval/shared/comments /opt/englisheval/shared/consents
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

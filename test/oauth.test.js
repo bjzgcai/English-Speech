@@ -102,3 +102,16 @@ test("privacy consent endpoint rejects incomplete acknowledgement", async (conte
   assert.equal(response.status, 400);
   assert.match((await response.json()).error, /Both privacy acknowledgements/);
 });
+
+test("privacy policy is available at both public routes", async (context) => {
+  const server = app.listen(0);
+  context.after(() => new Promise((resolve) => server.close(resolve)));
+  await new Promise((resolve) => server.once("listening", resolve));
+
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  for (const route of ["/privacy", "/policy"]) {
+    const response = await fetch(`${baseUrl}${route}`);
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /Privacy/i);
+  }
+});

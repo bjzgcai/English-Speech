@@ -23,7 +23,9 @@ SwaggerUIBundle({url:"/openapi.yaml",dom_id:"#swagger-ui",deepLinking:true,prese
   app.get("/history", sendAppShell);
   app.get("/methodology", (_req, res) => res.sendFile(path.join(publicDir, "docs.html")));
   app.get("/prepare", (_req, res) => res.sendFile(path.join(publicDir, "prepare.html")));
-  app.get("/privacy", (_req, res) => res.sendFile(path.join(publicDir, "privacy.html")));
+  app.get(["/privacy", "/policy"], (_req, res) =>
+    res.sendFile(path.join(publicDir, "privacy.html")),
+  );
 }
 
 module.exports = { registerPageRoutes };

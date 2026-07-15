@@ -132,6 +132,7 @@ User=$remote_user
 Group=$remote_group
 WorkingDirectory=$REMOTE_ROOT/current
 EnvironmentFile=$REMOTE_ROOT/shared/.env
+Environment=NODE_ENV=production
 ExecStart=/usr/bin/node $REMOTE_ROOT/current/server.js
 Restart=on-failure
 RestartSec=3
