@@ -27,6 +27,23 @@ test("OAuth redirects remain local", () => {
   assert.equal(testHelpers.normalizeRedirectPath("https://attacker.example"), "/");
 });
 
+test("an explicit cookie security setting supports HTTP production", () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousCookieSecure = process.env.COOKIE_SECURE;
+  try {
+    process.env.NODE_ENV = "production";
+    process.env.COOKIE_SECURE = "false";
+    assert.equal(testHelpers.useSecureSessionCookie(), false);
+
+    delete process.env.COOKIE_SECURE;
+    assert.equal(testHelpers.useSecureSessionCookie(), true);
+  } finally {
+    process.env.NODE_ENV = previousNodeEnv;
+    if (previousCookieSecure === undefined) delete process.env.COOKIE_SECURE;
+    else process.env.COOKIE_SECURE = previousCookieSecure;
+  }
+});
+
 test("DingTalk login sets a nonce cookie and rejects tampered callback state", async (context) => {
   const server = app.listen(0);
   context.after(() => new Promise((resolve) => server.close(resolve)));

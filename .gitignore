@@ -1,6 +1,7 @@
 node_modules/
 .env
 .env.local
+.env.prod
 luks-recordings.key
 luks-recordings-header.img
 englisheval-backup-identity.txt

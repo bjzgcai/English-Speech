@@ -213,11 +213,11 @@ function createSessionToken(user) {
 
 function useSecureSessionCookie() {
   const override = safeText(process.env.COOKIE_SECURE).toLowerCase();
-  if (process.env.NODE_ENV === "production") {
-    return true;
-  }
   if (override === "true" || override === "false") {
     return override === "true";
+  }
+  if (process.env.NODE_ENV === "production") {
+    return true;
   }
 
   try {
@@ -1464,5 +1464,6 @@ module.exports = {
     modelMessageText,
     normalizeRedirectPath,
     parseOAuthState,
+    useSecureSessionCookie,
   },
 };
