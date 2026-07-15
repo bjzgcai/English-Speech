@@ -739,7 +739,7 @@ profileForm.addEventListener("submit", async (event) => {
   setStatus("Generating");
   showGeneratingModal();
   questionText.textContent = "Generating a question...";
-  questionMeta.textContent = "Calling OpenRouter through the local server.";
+  questionMeta.textContent = "Calling the internally deployed model through the local server.";
 
   try {
     const response = await fetch("/api/generate-question", {

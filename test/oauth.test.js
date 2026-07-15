@@ -112,6 +112,8 @@ test("privacy policy is available at both public routes", async (context) => {
   for (const route of ["/privacy", "/policy"]) {
     const response = await fetch(`${baseUrl}${route}`);
     assert.equal(response.status, 200);
-    assert.match(await response.text(), /Privacy/i);
+    const policy = await response.text();
+    assert.match(policy, /Privacy/i);
+    assert.doesNotMatch(policy, /OpenRouter|境外处理/);
   }
 });
