@@ -10,6 +10,7 @@ const config = require("./config");
 const { appendJsonLine, readJsonLines } = require("./storage");
 const { createQuestionService } = require("./questions");
 const { registerPageRoutes } = require("./routes/pages");
+const { buildMockPartnerUsers } = require("./mock-evaluations");
 
 const app = express();
 const {
@@ -417,7 +418,9 @@ function partnerEvaluation(record) {
 function partnerUsers() {
   const questions = readJsonLines(questionsMetadataFile);
   const recordings = readJsonLines(metadataFile);
-  const users = new Map();
+  const users = new Map(
+    buildMockPartnerUsers(evaluationRubricStandard).map((user) => [user.openId, user]),
+  );
 
   [...questions, ...recordings].forEach((record) => {
     const incoming = recordUserInfo(record);
