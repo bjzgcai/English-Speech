@@ -13,13 +13,15 @@ Open `http://localhost:3199`.
 
 ## Configuration
 
-The app reads OpenRouter settings from `.env`:
+The app reads the internal OpenAI-compatible model gateway settings from `.env`:
 
 ```bash
-OPENROUTER_API_KEY=...
-OPENROUTER_MODEL=deepseek/deepseek-v4-flash
-OPENROUTER_TRANSCRIBE_MODEL=openai/gpt-4o-transcribe
-OPENROUTER_EVAL_MODEL=google/gemini-3.5-flash
+INTERNAL_LLM_API_KEY=...
+INTERNAL_LLM_CHAT_COMPLETIONS_URL=https://llm.zgci.org/hub/v1/chat/completions
+INTERNAL_LLM_TRANSCRIPTIONS_URL=https://llm.zgci.org/hub/v1/audio/transcriptions
+INTERNAL_LLM_QUESTION_MODEL=glm
+INTERNAL_LLM_TRANSCRIBE_MODEL=qwen-asr
+INTERNAL_LLM_EVAL_MODEL=smart-router
 EVAL_MAX_FRAMES=18
 ```
 
@@ -76,7 +78,7 @@ curl \
 
 `GET /api/v1/users` supports exact, case-insensitive filters for `openId`, `userId`, `jobNumber` (or its `job_number` alias), `email`, and `orgEmail`, plus `limit` (maximum 200) and `offset`. User responses include both `jobNumber` and `job_number` with the same value. `GET /api/v1/users/{userId}` returns one exact DingTalk organization user ID match. `GET /api/v1/rubrics` returns the active versioned scoring standard, formula, score bands, weights, evidence, and interpretation guidance. Each evaluation response includes `rubricId` and `rubricVersion` so consumers can join scores to the correct standard. Existing records created before organization enrichment may have empty organization fields.
 
-Answer evaluation runs after `Finish and save` when OpenRouter settings are configured.
+Answer evaluation runs after `Finish and save` when the internal model gateway is configured.
 
 The server extracts the full audio track, samples video frames at roughly one frame every five seconds capped by `EVAL_MAX_FRAMES`, then evaluates:
 

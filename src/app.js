@@ -27,7 +27,16 @@ const sessionCookieName = "englisheval_session";
 const sessionTtlMs = 7 * 24 * 60 * 60 * 1000;
 const oauthNonceCookieName = "englisheval_oauth_nonce";
 const oauthStateTtlMs = 10 * 60 * 1000;
-const privacyPolicyVersion = "2026-07-14";
+const privacyPolicyVersion = "2026-07-15";
+const internalLlmChatCompletionsUrl =
+  process.env.INTERNAL_LLM_CHAT_COMPLETIONS_URL ||
+  "https://llm.zgci.org/hub/v1/chat/completions";
+const internalLlmTranscriptionsUrl =
+  process.env.INTERNAL_LLM_TRANSCRIPTIONS_URL ||
+  "https://llm.zgci.org/hub/v1/audio/transcriptions";
+const internalLlmQuestionModel = process.env.INTERNAL_LLM_QUESTION_MODEL || "glm";
+const internalLlmTranscribeModel = process.env.INTERNAL_LLM_TRANSCRIBE_MODEL || "qwen-asr";
+const internalLlmEvalModel = process.env.INTERNAL_LLM_EVAL_MODEL || "smart-router";
 const evaluationRubricStandard = Object.freeze({
   id: "english-speaking-evaluation",
   version: "1.0.0",
@@ -612,6 +621,10 @@ function extractJsonObject(value) {
   return JSON.parse(text.slice(start, end + 1));
 }
 
+function modelMessageText(message) {
+  return safeText(message?.content) || safeText(message?.reasoning_content);
+}
+
 function normalizeScore(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 0;
@@ -854,28 +867,25 @@ function normalizeEvaluation(rawEvaluation) {
       ? rawEvaluation.improvements.map((item) => safeText(item)).filter(Boolean).slice(0, 4)
       : [],
     model: {
-      transcribe: process.env.OPENROUTER_TRANSCRIBE_MODEL || "openai/gpt-4o-transcribe",
-      evaluate: process.env.OPENROUTER_EVAL_MODEL || "google/gemini-3.5-flash",
+      transcribe: internalLlmTranscribeModel,
+      evaluate: internalLlmEvalModel,
     },
   };
 }
 
 async function transcribeAudio(audioPath) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  const model = process.env.OPENROUTER_TRANSCRIBE_MODEL || "openai/gpt-4o-transcribe";
+  const apiKey = process.env.INTERNAL_LLM_API_KEY;
   const formData = new FormData();
   const file = new Blob([fs.readFileSync(audioPath)], { type: "audio/mpeg" });
 
-  formData.append("model", model);
+  formData.append("model", internalLlmTranscribeModel);
   formData.append("file", file, path.basename(audioPath));
   formData.append("language", "en");
 
-  const response = await fetch("https://openrouter.ai/api/v1/audio/transcriptions", {
+  const response = await fetch(internalLlmTranscriptionsUrl, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      "HTTP-Referer": "http://localhost",
-      "X-Title": "EnglishEval",
     },
     body: formData,
   });
@@ -926,8 +936,7 @@ function buildEvaluationPrompt({ profile, question, transcript, audioMetrics, fr
 }
 
 async function evaluateAnswer({ profile, question, transcript, audioMetrics, framePaths }) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  const model = process.env.OPENROUTER_EVAL_MODEL || "google/gemini-3.5-flash";
+  const apiKey = process.env.INTERNAL_LLM_API_KEY;
   const content = [
     {
       type: "text",
@@ -947,18 +956,15 @@ async function evaluateAnswer({ profile, question, transcript, audioMetrics, fra
     })),
   ];
 
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+  const response = await fetch(internalLlmChatCompletionsUrl, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
-      "HTTP-Referer": "http://localhost",
-      "X-Title": "EnglishEval",
     },
     body: JSON.stringify({
-      model,
+      model: internalLlmEvalModel,
       temperature: 0.2,
-      response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
@@ -979,16 +985,16 @@ async function evaluateAnswer({ profile, question, transcript, audioMetrics, fra
   }
 
   const payload = await response.json();
-  const outputText = payload.choices?.[0]?.message?.content || "";
+  const outputText = modelMessageText(payload.choices?.[0]?.message);
 
   return normalizeEvaluation(extractJsonObject(outputText));
 }
 
 async function evaluateSavedVideo({ videoPath, artifactBaseDir, profile, question }) {
-  if (!process.env.OPENROUTER_API_KEY) {
+  if (!process.env.INTERNAL_LLM_API_KEY) {
     return {
       status: "skipped",
-      reason: "OPENROUTER_API_KEY is not configured.",
+      reason: "INTERNAL_LLM_API_KEY is not configured.",
     };
   }
 
@@ -1223,28 +1229,25 @@ app.post("/api/comments", requireAuth, (req, res) => {
 
 app.post("/api/generate-question", requireAuth, requirePrivacyConsent, async (req, res) => {
   const profile = req.body?.profile || {};
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  const model = process.env.OPENROUTER_MODEL || "deepseek/deepseek-v4-flash";
+  const apiKey = process.env.INTERNAL_LLM_API_KEY;
 
   if (!apiKey) {
     const record = persistQuestion(req.user, profile, fallbackQuestion(profile), "fallback");
     return res.status(500).json({
-      error: "OPENROUTER_API_KEY is not configured.",
+      error: "INTERNAL_LLM_API_KEY is not configured.",
       question: questionForClient(record),
     });
   }
 
   try {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    const response = await fetch(internalLlmChatCompletionsUrl, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        "HTTP-Referer": "http://localhost",
-        "X-Title": "EnglishEval",
       },
       body: JSON.stringify({
-        model,
+        model: internalLlmQuestionModel,
         temperature: 0.8,
         response_format: { type: "json_object" },
         messages: [
@@ -1265,7 +1268,7 @@ app.post("/api/generate-question", requireAuth, requirePrivacyConsent, async (re
       const detail = await response.text();
       const record = persistQuestion(req.user, profile, fallbackQuestion(profile), "fallback");
       return res.status(response.status).json({
-        error: `OpenRouter request failed: ${detail}`,
+        error: `Internal model request failed: ${detail}`,
         question: questionForClient(record),
       });
     }
@@ -1281,8 +1284,8 @@ app.post("/api/generate-question", requireAuth, requirePrivacyConsent, async (re
       followUp: safeText(question.followUp, ""),
     };
 
-    const record = persistQuestion(req.user, profile, question, model);
-    res.json({ question: questionForClient(record), model, user: req.user });
+    const record = persistQuestion(req.user, profile, question, internalLlmQuestionModel);
+    res.json({ question: questionForClient(record), model: internalLlmQuestionModel, user: req.user });
   } catch (error) {
     const record = persistQuestion(req.user, profile, fallbackQuestion(profile), "fallback");
     res.status(500).json({
@@ -1454,5 +1457,12 @@ function startServer() {
 module.exports = {
   app,
   startServer,
-  testHelpers: { createOAuthState, createSessionToken, normalizeRedirectPath, parseOAuthState },
+  testHelpers: {
+    createOAuthState,
+    createSessionToken,
+    extractJsonObject,
+    modelMessageText,
+    normalizeRedirectPath,
+    parseOAuthState,
+  },
 };
