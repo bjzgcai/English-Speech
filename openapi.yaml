@@ -23,9 +23,10 @@ paths:
       tags: [Users]
       summary: List users and assessment results
       description: |
-        Returns users found in persisted question or recording metadata. Each
-        user includes all persisted assessment results, but no video or artifact
-        metadata. Filters use exact, case-insensitive matching.
+        Returns users found in persisted question or recording metadata, plus 28
+        deterministic synthetic users for integration testing. Each user includes
+        all assessment results, but no video or artifact metadata. Filters use
+        exact, case-insensitive matching.
       operationId: listUsers
       parameters:
         - $ref: '#/components/parameters/OpenId'
