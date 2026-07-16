@@ -25,5 +25,13 @@ test("builds 28 deterministic synthetic completed evaluations", () => {
   assert.equal(users.every((user) => user.evaluations.length === 1), true);
   assert.equal(users.every((user) => user.evaluations[0].evaluation.status === "completed"), true);
   assert.deepEqual(users, buildMockPartnerUsers(rubric));
-  assert.match(users[0].email, /@example\.com$/);
+  assert.deepEqual(
+    { name: users[0].name, jobNumber: users[0].jobNumber },
+    { name: "宋尚文", jobNumber: "251202006" },
+  );
+  assert.deepEqual(
+    { name: users[27].name, jobNumber: users[27].jobNumber },
+    { name: "闫沐西", jobNumber: "242205036" },
+  );
+  assert.equal(users.every((user) => user.email === ""), true);
 });

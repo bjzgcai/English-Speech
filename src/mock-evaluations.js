@@ -1,6 +1,37 @@
 const crypto = require("crypto");
 
-const MOCK_USER_COUNT = 28;
+const mockRoster = Object.freeze([
+  { name: "宋尚文", jobNumber: "251202006" },
+  { name: "孙海然", jobNumber: "252303024" },
+  { name: "吴彬", jobNumber: "252702023" },
+  { name: "武震卿", jobNumber: "240806010" },
+  { name: "曾辉", jobNumber: "253104047" },
+  { name: "王蕴杰", jobNumber: "250402002" },
+  { name: "庄禹", jobNumber: "252306045" },
+  { name: "徐鹏鑫", jobNumber: "250806017" },
+  { name: "杨茂林", jobNumber: "251705012" },
+  { name: "张永伟", jobNumber: "250303040" },
+  { name: "田钦中", jobNumber: "252901006" },
+  { name: "许安杰", jobNumber: "240102011" },
+  { name: "张禧阳", jobNumber: "240806011" },
+  { name: "张益宁", jobNumber: "242303034" },
+  { name: "黄勋", jobNumber: "241705014" },
+  { name: "连仕杰", jobNumber: "241906054" },
+  { name: "沈思成", jobNumber: "242303043" },
+  { name: "曾翊晨", jobNumber: "241805016" },
+  { name: "罗佳聪", jobNumber: "250105002" },
+  { name: "袁良卿", jobNumber: "251903005" },
+  { name: "黄相衡", jobNumber: "250302032" },
+  { name: "梁浩哲", jobNumber: "252303029" },
+  { name: "荚左龙", jobNumber: "250404012" },
+  { name: "孙崇景", jobNumber: "252705030" },
+  { name: "郭医铭", jobNumber: "252303027" },
+  { name: "李锐", jobNumber: "250301033" },
+  { name: "涂沛妍", jobNumber: "241506051" },
+  { name: "闫沐西", jobNumber: "242205036" },
+]);
+
+const MOCK_USER_COUNT = mockRoster.length;
 
 const feedback = Object.freeze({
   pronunciation: "Speech was clear overall, with a few sounds that could be articulated more precisely.",
@@ -17,11 +48,8 @@ function deterministicUuid(seed) {
 }
 
 function buildMockPartnerUsers(evaluationRubricStandard) {
-  return Array.from({ length: MOCK_USER_COUNT }, (_, index) => {
+  return mockRoster.map(({ name, jobNumber }, index) => {
     const number = index + 1;
-    const suffix = String(number).padStart(2, "0");
-    const jobNumber = `MOCK${String(number).padStart(4, "0")}`;
-    const name = `Mock User ${suffix}`;
     const scoreBase = 68 + ((index * 7) % 21);
     const rubric = Object.fromEntries(
       evaluationRubricStandard.dimensions.map((dimension, dimensionIndex) => [
@@ -50,7 +78,7 @@ function buildMockPartnerUsers(evaluationRubricStandard) {
       userId: `mock_user_${jobNumber}`,
       jobNumber,
       name,
-      email: `mock.user.${suffix}@example.com`,
+      email: "",
       orgEmail: "",
       latestEvaluationAt: finishedAt,
       evaluations: [
