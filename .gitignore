@@ -8,6 +8,7 @@ englisheval-backup-identity.txt
 recordings/
 backups/
 comments/
+questions/
 consents/
 not-empty-user.json
 npm-debug.log*
