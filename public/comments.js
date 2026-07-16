@@ -11,6 +11,7 @@
   const replyName = section.querySelector("[data-reply-name]");
   const cancelReply = section.querySelector("[data-cancel-reply]");
   const feedback = section.querySelector("[data-comment-feedback]");
+  const floatingButton = document.querySelector("[data-comment-fab]");
   let authUser = null;
   let comments = [];
   let parentId = null;
@@ -90,6 +91,10 @@
   });
 
   cancelReply.addEventListener("click", clearReply);
+
+  floatingButton?.addEventListener("click", () => {
+    window.setTimeout(() => textarea.focus({ preventScroll: true }), 450);
+  });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
