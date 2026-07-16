@@ -48,10 +48,6 @@ done
   echo "Run this script from the EnglishEval repository root." >&2
   exit 1
 }
-[[ -f .env && -f .env.prod ]] || {
-  echo "Both .env (shared settings) and .env.prod (production overrides) are required." >&2
-  exit 1
-}
 [[ "$APP_PORT" =~ ^[0-9]+$ ]] && ((APP_PORT >= 1 && APP_PORT <= 65535)) || {
   echo "APP_PORT must be an integer from 1 to 65535." >&2
   exit 1
@@ -67,8 +63,10 @@ remote_user="$(ssh "$TARGET" 'id -un')"
 remote_group="$(ssh "$TARGET" 'id -gn')"
 echo "Deploying release $release_id to $TARGET:$REMOTE_ROOT"
 ssh "$TARGET" "sudo install -d -m 0750 -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT' '$REMOTE_ROOT/releases' '$REMOTE_ROOT/shared' && sudo install -d -m 0700 -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' '$REMOTE_ROOT/backups' && mkdir -p '$release_dir'"
-rsync -az .env "$TARGET:$REMOTE_ROOT/shared/.env"
-rsync -az .env.prod "$TARGET:$REMOTE_ROOT/shared/.env.prod"
+ssh "$TARGET" "test -f '$REMOTE_ROOT/shared/.env' && test -f '$REMOTE_ROOT/shared/.env.prod'" || {
+  echo "Production environment files must already exist under $REMOTE_ROOT/shared; refusing to upload local credentials." >&2
+  exit 1
+}
 ssh "$TARGET" "chmod 0600 '$REMOTE_ROOT/shared/.env' '$REMOTE_ROOT/shared/.env.prod'"
 
 ssh "$TARGET" "grep -Eq '^DINGTALK_APP_KEY=.+$' '$REMOTE_ROOT/shared/.env' && grep -Eq '^DINGTALK_APP_SECRET=.+$' '$REMOTE_ROOT/shared/.env'" || {

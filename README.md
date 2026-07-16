@@ -78,7 +78,7 @@ curl \
 
 `GET /api/v1/users` supports exact, case-insensitive filters for `openId`, `userId`, `jobNumber` (or its `job_number` alias), `email`, and `orgEmail`, plus `limit` (maximum 200) and `offset`. User responses include both `jobNumber` and `job_number` with the same value. `GET /api/v1/users/{userId}` returns one exact DingTalk organization user ID match. `GET /api/v1/rubrics` returns the active versioned scoring standard, formula, score bands, weights, evidence, and interpretation guidance. Each evaluation response includes `rubricId` and `rubricVersion` so consumers can join scores to the correct standard. Existing records created before organization enrichment may have empty organization fields.
 
-The partner endpoints also expose 28 deterministic synthetic users, each with one completed mock evaluation, for integration testing. Their identifiers and job numbers start with `mock_` and `MOCK`, respectively, and their email addresses use the reserved `example.com` domain. The mocks are generated in memory and do not modify recording or question metadata.
+The partner endpoints also expose 28 deterministic roster-backed users, each with one completed mock evaluation, for integration testing. Their `jobNumber` values come from the roster's `工号` field, their `name` values come from `姓名`, and generated API identifiers start with `mock_`. Only those two roster fields are retained. The mocks are generated in memory and do not modify recording or question metadata.
 
 Answer evaluation runs after `Finish and save` when the internal model gateway is configured.
 
