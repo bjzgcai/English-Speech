@@ -5,14 +5,14 @@ const { buildMockPartnerUsers, MOCK_USER_COUNT } = require("../src/mock-evaluati
 
 const rubric = {
   id: "english-speaking-evaluation",
-  version: "1.0.0",
+  version: "1.1.0",
   dimensions: [
-    { key: "pronunciation", label: "Pronunciation", weight: 25 },
-    { key: "fluency", label: "Fluency", weight: 15 },
+    { key: "pronunciation", label: "Pronunciation", weight: 20 },
+    { key: "fluency", label: "Fluency", weight: 10 },
     { key: "grammar", label: "Grammar", weight: 20 },
     { key: "vocabulary", label: "Vocabulary", weight: 15 },
-    { key: "coherence", label: "Coherence", weight: 10 },
-    { key: "visualDelivery", label: "Visual delivery", weight: 15 },
+    { key: "coherence", label: "Coherence", weight: 25 },
+    { key: "visualDelivery", label: "Visual delivery", weight: 10 },
   ],
 };
 
