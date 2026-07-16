@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const { spawn } = require("child_process");
 const express = require("express");
 const multer = require("multer");
+const QRCode = require("qrcode");
 const ffmpegPath = require("ffmpeg-static");
 const swaggerUiDistPath = require("swagger-ui-dist").getAbsoluteFSPath();
 const config = require("./config");
@@ -143,6 +144,47 @@ const upload = multer({
 function safeText(value, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
 }
+
+function shareServiceUrl(req) {
+  const configuredUrl = safeText(process.env.APP_BASE_URL);
+  if (configuredUrl) {
+    try {
+      const parsed = new URL(configuredUrl);
+      if (["http:", "https:"].includes(parsed.protocol)) {
+        parsed.hash = "";
+        parsed.search = "";
+        if (!parsed.pathname.endsWith("/")) parsed.pathname += "/";
+        return parsed.toString();
+      }
+    } catch {
+      // Fall back to the origin serving the current request.
+    }
+  }
+
+  return `${req.protocol}://${req.get("host")}/`;
+}
+
+app.get("/api/share-qr", async (req, res, next) => {
+  try {
+    const png = await QRCode.toBuffer(shareServiceUrl(req), {
+      type: "png",
+      width: 320,
+      margin: 2,
+      errorCorrectionLevel: "M",
+      color: {
+        dark: "#17201B",
+        light: "#FFFFFFFF",
+      },
+    });
+    res.set({
+      "Cache-Control": "private, max-age=3600",
+      "Content-Type": "image/png",
+    });
+    res.send(png);
+  } catch (error) {
+    next(error);
+  }
+});
 
 function getBaseUrl(req) {
   return process.env.APP_BASE_URL || `${req.protocol}://${req.get("host")}`;
@@ -1262,7 +1304,10 @@ app.post("/api/comments", requireAuth, (req, res) => {
 });
 
 app.post("/api/generate-question", requireAuth, requirePrivacyConsent, async (req, res) => {
-  const profile = req.body?.profile || {};
+  const profile = {
+    ...(req.body?.profile || {}),
+    name: safeText(req.user.name, "DingTalk user"),
+  };
   const apiKey = process.env.INTERNAL_LLM_API_KEY;
 
   if (!apiKey) {
