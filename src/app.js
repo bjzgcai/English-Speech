@@ -40,7 +40,7 @@ const internalLlmTranscribeModel = process.env.INTERNAL_LLM_TRANSCRIBE_MODEL || 
 const openRouterChatCompletionsUrl =
   process.env.OPENROUTER_CHAT_COMPLETIONS_URL ||
   "https://openrouter.ai/api/v1/chat/completions";
-const openRouterEvalModel = process.env.OPENROUTER_EVAL_MODEL || "google/gemini-3.5-flash";
+const openRouterEvalModel = process.env.OPENROUTER_EVAL_MODEL || "moonshotai/kimi-k2.6";
 const evaluationRubricStandard = Object.freeze({
   id: "english-speaking-evaluation",
   version: "1.0.0",
