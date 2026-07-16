@@ -394,6 +394,12 @@ textarea:focus {
   box-shadow: 0 0 0 4px rgba(23, 107, 83, 0.14);
 }
 
+input[readonly] {
+  cursor: default;
+  color: var(--muted);
+  background: #e9ede7;
+}
+
 .primary-button,
 .secondary-button,
 .danger-button {
@@ -786,6 +792,48 @@ video {
 .feedback-columns ul {
   margin: 0;
   padding-left: 18px;
+}
+
+.evaluation-share {
+  display: grid;
+  gap: 10px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.evaluation-share-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.evaluation-share button {
+  min-height: 44px;
+}
+
+.copy-image-button {
+  border: 1px solid #aeb9b0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--accent-dark);
+  padding: 0 18px;
+  font-weight: 800;
+  transition: background 140ms ease, transform 140ms ease;
+}
+
+.copy-image-button:hover:not(:disabled) {
+  background: var(--soft);
+}
+
+.copy-image-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.share-feedback {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 .transcript-block {
@@ -1365,6 +1413,18 @@ video {
   .evaluation-header,
   .feedback-columns {
     grid-template-columns: 1fr;
+  }
+
+  .evaluation-share {
+    align-items: stretch;
+  }
+
+  .evaluation-share-actions {
+    display: grid;
+  }
+
+  .evaluation-share button {
+    width: 100%;
   }
 
   .profile-panel,

@@ -45,7 +45,7 @@
         <header class="view-heading play-heading">
           <div>
             <p class="eyebrow">Live speaking evaluation</p>
-            <h1>Examine a complete spoken response.</h1>
+            <h1>Examine</h1>
             <p>Get one focused question, record your answer, and receive feedback across all six dimensions.</p>
           </div>
           <div class="status-pill" id="connectionStatus" role="status" aria-live="polite">Idle</div>
@@ -59,7 +59,14 @@
 
           <label>
             Name
-            <input id="name" name="name" autocomplete="name" placeholder="Alex Chen" value="Biao" />
+            <input
+              id="name"
+              name="name"
+              autocomplete="name"
+              readonly
+              aria-readonly="true"
+              title="Name provided by DingTalk"
+            />
           </label>
 
           <label>
