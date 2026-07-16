@@ -21,8 +21,11 @@ INTERNAL_LLM_CHAT_COMPLETIONS_URL=https://llm.zgci.org/hub/v1/chat/completions
 INTERNAL_LLM_TRANSCRIPTIONS_URL=https://llm.zgci.org/hub/v1/audio/transcriptions
 INTERNAL_LLM_QUESTION_MODEL=glm
 INTERNAL_LLM_TRANSCRIBE_MODEL=qwen-asr
-INTERNAL_LLM_EVAL_MODEL=smart-router
+OPENROUTER_API_KEY=your-openrouter-key
+OPENROUTER_CHAT_COMPLETIONS_URL=https://openrouter.ai/api/v1/chat/completions
+OPENROUTER_EVAL_MODEL=google/gemini-3.5-flash
 EVAL_MAX_FRAMES=18
+EVAL_REQUEST_TIMEOUT_MS=600000
 ```
 
 DingTalk authentication is required before users can generate questions, save recordings, or view history:
@@ -80,7 +83,8 @@ curl \
 
 The partner endpoints also expose 28 deterministic roster-backed users, each with one completed mock evaluation, for integration testing. Their `jobNumber` values come from the roster's `工号` field, their `name` values come from `姓名`, and generated API identifiers start with `mock_`. Only those two roster fields are retained. The mocks are generated in memory and do not modify recording or question metadata.
 
-Answer evaluation runs after `Finish and save` when the internal model gateway is configured.
+Answer evaluation runs after `Finish and save`. The internal model gateway transcribes the audio,
+then OpenRouter evaluates the transcript, audio metrics, and sampled video frames with Gemini 3.5 Flash.
 
 The server extracts the full audio track, samples video frames at roughly one frame every five seconds capped by `EVAL_MAX_FRAMES`, then evaluates:
 

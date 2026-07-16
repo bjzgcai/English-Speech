@@ -37,7 +37,10 @@ const internalLlmTranscriptionsUrl =
   "https://llm.zgci.org/hub/v1/audio/transcriptions";
 const internalLlmQuestionModel = process.env.INTERNAL_LLM_QUESTION_MODEL || "glm";
 const internalLlmTranscribeModel = process.env.INTERNAL_LLM_TRANSCRIBE_MODEL || "qwen-asr";
-const internalLlmEvalModel = process.env.INTERNAL_LLM_EVAL_MODEL || "smart-router";
+const openRouterChatCompletionsUrl =
+  process.env.OPENROUTER_CHAT_COMPLETIONS_URL ||
+  "https://openrouter.ai/api/v1/chat/completions";
+const openRouterEvalModel = process.env.OPENROUTER_EVAL_MODEL || "google/gemini-3.5-flash";
 const evaluationRubricStandard = Object.freeze({
   id: "english-speaking-evaluation",
   version: "1.0.0",
@@ -628,6 +631,15 @@ function modelMessageText(message) {
   return safeText(message?.content) || safeText(message?.reasoning_content);
 }
 
+function isEvaluationTimeout(error) {
+  return error?.name === "TimeoutError" || error?.cause?.name === "TimeoutError";
+}
+
+function evaluationTimeoutMessage(timeoutMs) {
+  const timeoutSeconds = Math.round(timeoutMs / 1000);
+  return `Evaluation timed out after ${timeoutSeconds} seconds. Your recording was saved, but feedback could not be generated. Please try again later.`;
+}
+
 function normalizeScore(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 0;
@@ -871,7 +883,7 @@ function normalizeEvaluation(rawEvaluation) {
       : [],
     model: {
       transcribe: internalLlmTranscribeModel,
-      evaluate: internalLlmEvalModel,
+      evaluate: openRouterEvalModel,
     },
   };
 }
@@ -939,7 +951,8 @@ function buildEvaluationPrompt({ profile, question, transcript, audioMetrics, fr
 }
 
 async function evaluateAnswer({ profile, question, transcript, audioMetrics, framePaths }) {
-  const apiKey = process.env.INTERNAL_LLM_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  const requestTimeoutMs = positiveInteger(Number(process.env.EVAL_REQUEST_TIMEOUT_MS), 600_000);
   const content = [
     {
       type: "text",
@@ -959,45 +972,63 @@ async function evaluateAnswer({ profile, question, transcript, audioMetrics, fra
     })),
   ];
 
-  const response = await fetch(internalLlmChatCompletionsUrl, {
-    method: "POST",
-    headers: {
+  try {
+    const headers = {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: internalLlmEvalModel,
-      temperature: 0.2,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a strict but fair English speaking evaluator. You produce calibrated JSON scores and concise coaching feedback.",
-        },
-        {
-          role: "user",
-          content,
-        },
-      ],
-    }),
-  });
+      "X-OpenRouter-Title": "EnglishEval",
+    };
+    if (safeText(process.env.APP_BASE_URL)) {
+      headers["HTTP-Referer"] = safeText(process.env.APP_BASE_URL);
+    }
 
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Evaluation failed: ${detail}`);
+    const response = await fetch(openRouterChatCompletionsUrl, {
+      method: "POST",
+      signal: AbortSignal.timeout(requestTimeoutMs),
+      headers,
+      body: JSON.stringify({
+        model: openRouterEvalModel,
+        temperature: 0.1,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a strict but fair English speaking evaluator. You produce calibrated JSON scores and concise coaching feedback.",
+          },
+          {
+            role: "user",
+            content,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(`OpenRouter evaluation failed: ${detail}`);
+    }
+
+    const payload = await response.json();
+    const outputText = modelMessageText(payload.choices?.[0]?.message);
+    return normalizeEvaluation(extractJsonObject(outputText));
+  } catch (error) {
+    if (isEvaluationTimeout(error)) {
+      throw new Error(evaluationTimeoutMessage(requestTimeoutMs), { cause: error });
+    }
+    throw error;
   }
-
-  const payload = await response.json();
-  const outputText = modelMessageText(payload.choices?.[0]?.message);
-
-  return normalizeEvaluation(extractJsonObject(outputText));
 }
 
 async function evaluateSavedVideo({ videoPath, artifactBaseDir, profile, question }) {
-  if (!process.env.INTERNAL_LLM_API_KEY) {
+  const missingConfiguration = [
+    !process.env.INTERNAL_LLM_API_KEY && "INTERNAL_LLM_API_KEY",
+    !process.env.OPENROUTER_API_KEY && "OPENROUTER_API_KEY",
+  ].filter(Boolean);
+  if (missingConfiguration.length) {
     return {
       status: "skipped",
-      reason: "INTERNAL_LLM_API_KEY is not configured.",
+      reason: `${missingConfiguration.join(" and ")} ${missingConfiguration.length === 1 ? "is" : "are"} not configured.`,
     };
   }
 
@@ -1463,7 +1494,9 @@ module.exports = {
   testHelpers: {
     createOAuthState,
     createSessionToken,
+    evaluateAnswer,
     extractJsonObject,
+    evaluationTimeoutMessage,
     modelMessageText,
     normalizeRedirectPath,
     parseOAuthState,
