@@ -242,6 +242,7 @@ function closePrepareModal() {
   stopPrepareCountdown();
   state.prepareCountdownResolve = null;
   prepareModal.hidden = true;
+  document.body.classList.remove("modal-open");
 }
 
 function showGeneratingModal() {
@@ -256,6 +257,8 @@ function showGeneratingModal() {
   countdownDisplay.hidden = true;
   prepareActions.hidden = true;
   prepareModal.hidden = false;
+  document.body.classList.add("modal-open");
+  prepareDialog.scrollTop = 0;
 }
 
 function showCountdownModal(question) {
@@ -273,6 +276,8 @@ function showCountdownModal(question) {
   speakDirectlyButton.textContent = "Speak directly";
   countdownSeconds.textContent = String(PREPARE_COUNTDOWN_SECONDS);
   prepareModal.hidden = false;
+  document.body.classList.add("modal-open");
+  prepareDialog.scrollTop = 0;
 }
 
 function showMediaRequiredModal(error, retryAction = "record") {
@@ -292,6 +297,8 @@ function showMediaRequiredModal(error, retryAction = "record") {
   prepareActions.hidden = false;
   speakDirectlyButton.textContent = "Try camera and microphone again";
   prepareModal.hidden = false;
+  document.body.classList.add("modal-open");
+  prepareDialog.scrollTop = 0;
 }
 
 function resetPrepareGuidance() {
