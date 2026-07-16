@@ -62,8 +62,8 @@ ssh "$TARGET" "test -f '$REMOTE_ROOT/shared/.env' && test -f '$REMOTE_ROOT/share
 }
 ssh "$TARGET" "chmod 0600 '$REMOTE_ROOT/shared/.env' '$REMOTE_ROOT/shared/.env.prod'"
 
-ssh "$TARGET" "grep -Eq '^DINGTALK_APP_KEY=.+$' '$REMOTE_ROOT/shared/.env' && grep -Eq '^DINGTALK_APP_SECRET=.+$' '$REMOTE_ROOT/shared/.env'" || {
-  echo "Shared .env must set DINGTALK_APP_KEY and DINGTALK_APP_SECRET." >&2
+ssh "$TARGET" "grep -Eq '^DINGTALK_APP_KEY=.+$' '$REMOTE_ROOT/shared/.env' '$REMOTE_ROOT/shared/.env.prod' && grep -Eq '^DINGTALK_APP_SECRET=.+$' '$REMOTE_ROOT/shared/.env' '$REMOTE_ROOT/shared/.env.prod'" || {
+  echo "Production environment must set DINGTALK_APP_KEY and DINGTALK_APP_SECRET in shared .env or .env.prod." >&2
   exit 1
 }
 app_base_url="$(ssh "$TARGET" "sed -n 's/^APP_BASE_URL=//p' '$REMOTE_ROOT/shared/.env.prod' | tail -n 1")"
