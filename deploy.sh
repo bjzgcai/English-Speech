@@ -5,7 +5,6 @@ set -Eeuo pipefail
 TARGET="${TARGET:-ubuntu@10.1.130.9}"
 REMOTE_ROOT="${REMOTE_ROOT:-/opt/englisheval}"
 APP_PORT="${APP_PORT:-3199}"
-PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-}"
 SERVICE_NAME="${SERVICE_NAME:-englisheval}"
 MIGRATE_DATA=false
 
@@ -24,7 +23,6 @@ Options:
 
 Environment overrides:
   TARGET, REMOTE_ROOT, APP_PORT, SERVICE_NAME
-  PUBLIC_BASE_URL (required HTTP or HTTPS URL exposed by the app or reverse proxy)
 EOF
 }
 
@@ -52,11 +50,6 @@ done
   echo "APP_PORT must be an integer from 1 to 65535." >&2
   exit 1
 }
-[[ "$PUBLIC_BASE_URL" == http://* || "$PUBLIC_BASE_URL" == https://* ]] || {
-  echo "PUBLIC_BASE_URL must be set to the HTTP or HTTPS URL exposed by the app or reverse proxy." >&2
-  exit 1
-}
-
 release_id="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD 2>/dev/null || echo local)"
 release_dir="$REMOTE_ROOT/releases/$release_id"
 remote_user="$(ssh "$TARGET" 'id -un')"
@@ -73,7 +66,9 @@ ssh "$TARGET" "grep -Eq '^DINGTALK_APP_KEY=.+$' '$REMOTE_ROOT/shared/.env' && gr
   echo "Shared .env must set DINGTALK_APP_KEY and DINGTALK_APP_SECRET." >&2
   exit 1
 }
-ssh "$TARGET" "grep -Eq '^APP_BASE_URL=https?://[^[:space:]]+$' '$REMOTE_ROOT/shared/.env.prod' && grep -Eq '^COOKIE_SECURE=(true|false)$' '$REMOTE_ROOT/shared/.env.prod'" || {
+app_base_url="$(ssh "$TARGET" "sed -n 's/^APP_BASE_URL=//p' '$REMOTE_ROOT/shared/.env.prod' | tail -n 1")"
+cookie_secure="$(ssh "$TARGET" "sed -n 's/^COOKIE_SECURE=//p' '$REMOTE_ROOT/shared/.env.prod' | tail -n 1")"
+[[ "$app_base_url" =~ ^https?://[^[:space:]]+$ && "$cookie_secure" =~ ^(true|false)$ ]] || {
   echo "Production .env.prod must set an HTTP or HTTPS APP_BASE_URL and COOKIE_SECURE=true or false." >&2
   exit 1
 }
@@ -229,4 +224,4 @@ fi
 
 ssh "$TARGET" "cd '$REMOTE_ROOT/releases' && ls -1dt */ 2>/dev/null | tail -n +6 | xargs -r rm -rf"
 
-echo "Deployment succeeded: $PUBLIC_BASE_URL"
+echo "Deployment succeeded: $app_base_url"

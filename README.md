@@ -13,6 +13,11 @@ Open `http://localhost:3199`.
 
 ## Configuration
 
+Copy `.env.example` to `.env`, then fill in the required credentials. Use
+`.env.local` for local overrides and `.env.prod` for production overrides;
+these three environment files are gitignored, while `.env.example` is safe to
+commit.
+
 The app reads the internal OpenAI-compatible model gateway settings from `.env`:
 
 ```bash
@@ -196,8 +201,8 @@ For later code-only deployments:
 ```
 
 Defaults target `ubuntu@10.1.130.9` and installs under `/opt/englisheval`.
-`PUBLIC_BASE_URL` is required and must match the HTTP or HTTPS URL in
-`.env.prod`. Plain HTTP deployments must set `COOKIE_SECURE=false`; HTTPS
-deployments should set it to `true`. Override `TARGET`, `REMOTE_ROOT`,
-`APP_PORT`, or `SERVICE_NAME` in the command environment. The migration option
-deliberately refuses to overwrite non-empty remote data.
+The production `APP_BASE_URL` is read from the existing shared `.env.prod`.
+Plain HTTP deployments must set `COOKIE_SECURE=false`; HTTPS deployments should
+set it to `true`. Override `TARGET`, `REMOTE_ROOT`, `APP_PORT`, or
+`SERVICE_NAME` in the command environment. The migration option deliberately
+refuses to overwrite non-empty remote data.
