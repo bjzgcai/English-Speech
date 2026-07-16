@@ -1040,6 +1040,8 @@ video {
   z-index: 50;
   display: grid;
   place-items: center;
+  overflow: hidden;
+  overscroll-behavior: contain;
   background: rgba(15, 22, 18, 0.62);
   padding: 18px;
 }
@@ -1705,25 +1707,87 @@ video {
   .prepare-dialog {
     max-height: calc(100dvh - 20px - env(safe-area-inset-bottom));
     overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 24px 20px;
     text-align: left;
   }
 
   .prepare-dialog.is-countdown {
-    display: block;
+    display: grid;
     width: 100%;
+    grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+    grid-template-areas:
+      "kicker kicker"
+      "question question"
+      "message message"
+      "preview preview"
+      "guidance guidance"
+      "countdown actions";
+    gap: 10px 14px;
+    align-items: center;
+    padding: 18px;
   }
 
   .prepare-dialog.is-countdown > * + * {
-    margin-top: 14px;
+    margin-top: 0;
+  }
+
+  .prepare-dialog.is-countdown .muted-label {
+    margin-bottom: 0;
+    font-size: 10px;
+  }
+
+  .prepare-dialog.is-countdown h2 {
+    max-width: none;
+    font-size: clamp(20px, 5.5vw, 27px);
+    line-height: 1.12;
+    letter-spacing: -0.025em;
+    text-wrap: pretty;
+  }
+
+  .prepare-dialog.is-countdown > p:not(.muted-label) {
+    max-width: none;
+    font-size: 13px;
+    line-height: 1.4;
   }
 
   .prepare-dialog.is-countdown .prepare-preview {
-    width: min(360px, 100%);
+    width: 100%;
+    max-height: min(25dvh, 210px);
+    margin-top: 0;
   }
 
   .prepare-dialog.is-countdown .countdown-display {
-    font-size: clamp(56px, 18vw, 84px);
+    min-width: 0;
+    margin: 0;
+    font-size: clamp(42px, 13vw, 62px);
+    line-height: 0.82;
+  }
+
+  .prepare-dialog.is-countdown .prepare-camera-guidance {
+    width: 100%;
+    margin-top: 0;
+    padding: 9px 12px;
+  }
+
+  .prepare-dialog.is-countdown .prepare-camera-guidance strong {
+    font-size: 12px;
+  }
+
+  .prepare-dialog.is-countdown .prepare-camera-guidance span {
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .prepare-dialog.is-countdown .prepare-actions {
+    align-self: stretch;
+    margin-top: 0;
+  }
+
+  .prepare-dialog.is-countdown .prepare-actions .primary-button {
+    min-height: 52px;
+    padding: 12px 16px;
+    font-size: 15px;
   }
 
   .prepare-dialog h2,
