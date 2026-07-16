@@ -1,20 +1,20 @@
 const dimensions = {
   pronunciation: {
-    weight: "25%",
+    weight: "20%",
     category: "Speech clarity",
     title: "Pronunciation and intelligibility",
     description: "Measures sound clarity, stress, rhythm, and whether pronunciation issues interfere with meaning.",
-    reason: "It has the largest share because intelligibility is the gateway to every other skill. A strong idea cannot land if the listener cannot reliably understand the words.",
+    reason: "Intelligibility remains essential: a strong idea cannot land if the listener cannot reliably understand the words. Its weight keeps speech clarity central without outweighing the structure and relevance of the response.",
   },
   grammar: {
     weight: "20%",
     category: "Language control",
     title: "Grammar",
     description: "Measures control of sentence structure, tense, agreement, and word order without demanding a particular accent or speaking style.",
-    reason: "Grammar carries the second-largest share because it protects meaning. Consistent errors can change relationships between ideas, time, ownership, and intent.",
+    reason: "Grammar carries a substantial share because it protects meaning. Consistent errors can change relationships between ideas, time, ownership, and intent.",
   },
   fluency: {
-    weight: "15%",
+    weight: "10%",
     category: "Speech flow",
     title: "Fluency",
     description: "Measures pacing, hesitation, pauses, self-correction, and the ability to sustain an answer without long breakdowns.",
@@ -28,18 +28,18 @@ const dimensions = {
     reason: "Vocabulary receives equal weight with fluency because precise words make ideas useful. It supports nuance without over-rewarding rare or unnecessarily complex language.",
   },
   visual: {
-    weight: "15%",
+    weight: "10%",
     category: "Presentation",
     title: "Visual delivery",
     description: "Measures posture, eye contact, facial engagement, and professional presence in camera-facing communication.",
-    reason: "Presentation is part of the project goal, so delivery must count. Fifteen percent makes presence meaningful without allowing appearance to outweigh the substance of the speech.",
+    reason: "Presentation is part of the project goal, so delivery must count. Ten percent makes presence meaningful without allowing appearance to outweigh the substance of the speech.",
   },
   coherence: {
-    weight: "10%",
+    weight: "25%",
     category: "Message structure",
     title: "Coherence and task relevance",
     description: "Measures whether ideas connect logically, the response addresses the question, and the listener can follow the main point.",
-    reason: "Coherence is essential, but parts of it already appear in fluency, grammar, and vocabulary. A focused 10 percent rewards structure while avoiding double-counting the same strength.",
+    reason: "Coherence has the largest share because an effective response must address the task, establish a clear main point, and connect ideas in an order the listener can follow.",
   },
 };
 

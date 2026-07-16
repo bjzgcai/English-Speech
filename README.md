@@ -95,12 +95,12 @@ The server extracts the full audio track, samples video frames at roughly one fr
 
 | Dimension | Weight |
 | --- | ---: |
-| Pronunciation / intelligibility | 25% |
-| Fluency | 15% |
+| Pronunciation / intelligibility | 20% |
+| Fluency | 10% |
 | Grammar | 20% |
 | Vocabulary | 15% |
-| Coherence / task relevance | 10% |
-| Visual delivery | 15% |
+| Coherence / task relevance | 25% |
+| Visual delivery | 10% |
 
 ## Persistent storage and ownership
 

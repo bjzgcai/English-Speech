@@ -43,7 +43,7 @@ const openRouterChatCompletionsUrl =
 const openRouterEvalModel = process.env.OPENROUTER_EVAL_MODEL || "moonshotai/kimi-k2.6";
 const evaluationRubricStandard = Object.freeze({
   id: "english-speaking-evaluation",
-  version: "1.0.0",
+  version: "1.1.0",
   name: "English Speaking Evaluation",
   scoreScale: {
     minimum: 0,
@@ -66,7 +66,7 @@ const evaluationRubricStandard = Object.freeze({
     {
       key: "pronunciation",
       label: "Pronunciation / intelligibility",
-      weight: 25,
+      weight: 20,
       description: "Sound clarity, stress, rhythm, and how reliably a listener can understand the words.",
       evidence: ["speech intelligibility", "sound clarity", "stress and rhythm", "transcription reliability"],
       guidance: "Do not penalize accent when intelligibility is strong. State when evidence is limited.",
@@ -74,7 +74,7 @@ const evaluationRubricStandard = Object.freeze({
     {
       key: "fluency",
       label: "Fluency",
-      weight: 15,
+      weight: 10,
       description: "Pacing, hesitation, pauses, self-correction, and the ability to sustain an answer.",
       evidence: ["speaking rate", "pause frequency and length", "hesitation", "continuity"],
       guidance: "Speed is not the goal; thoughtful pauses are acceptable when communication remains smooth.",
@@ -98,7 +98,7 @@ const evaluationRubricStandard = Object.freeze({
     {
       key: "coherence",
       label: "Coherence / task relevance",
-      weight: 10,
+      weight: 25,
       description: "Logical connection of ideas, relevance to the question, and clarity of the main point.",
       evidence: ["task completion", "logical sequence", "connections between ideas", "clear main point"],
       guidance: "Avoid double-counting language errors already scored under grammar, vocabulary, or fluency.",
@@ -106,7 +106,7 @@ const evaluationRubricStandard = Object.freeze({
     {
       key: "visualDelivery",
       label: "Visual delivery",
-      weight: 15,
+      weight: 10,
       description: "Camera-facing posture, eye contact, facial engagement, framing, and distracting movement.",
       evidence: ["posture", "camera eye contact", "facial engagement", "framing", "distracting movement"],
       guidance: "Assess communication behavior only; do not score appearance or personal characteristics.",
