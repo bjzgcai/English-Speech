@@ -37,11 +37,109 @@ const dimensions = {
   coherence: {
     weight: "25%",
     category: "Message structure",
-    title: "Coherence and task relevance",
-    description: "Measures whether ideas connect logically, the response addresses the question, and the listener can follow the main point.",
-    reason: "Coherence has the largest share because an effective response must address the task, establish a clear main point, and connect ideas in an order the listener can follow.",
+    title: "Coherence and speech consistency",
+    description: "Measures whether ideas connect logically, the speaker remains internally consistent, and the listener can follow the main point.",
+    reason: "Coherence has the largest share because effective speech needs a stable main point, consistent claims, and ideas connected in an order the listener can follow.",
   },
 };
+
+const evaluatorForm = document.querySelector("#videoEvaluatorForm");
+const videoInput = document.querySelector("#evaluationVideo");
+const selectedVideoName = document.querySelector("#selectedVideoName");
+const evaluatorStatus = document.querySelector("#videoEvaluatorStatus");
+const evaluatorResult = document.querySelector("#videoEvaluationResult");
+const evaluateVideoButton = document.querySelector("#evaluateVideoButton");
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function renderVideoEvaluation(evaluation) {
+  const dimensions = Object.values(evaluation.rubric || {});
+  const notice = evaluation.mediaValidation?.notice;
+  evaluatorResult.innerHTML = `
+    <div class="result-overview">
+      <p>Speech evaluation</p>
+      <strong>${Math.round(Number(evaluation.overallScore || 0))}<span>/100</span></strong>
+      <p>${escapeHtml(evaluation.summary || "Evaluation completed.")}</p>
+    </div>
+    ${notice ? `<p class="media-notice ${evaluation.mediaValidation.visualEvaluated && !evaluation.mediaValidation.truncated ? "" : "is-limited"}">${escapeHtml(notice)}</p>` : ""}
+    <div class="result-dimensions">
+      ${dimensions
+        .map(
+          (item) => `
+            <article>
+              <div>
+                <h3>${escapeHtml(item.label || "Dimension")}</h3>
+                <strong>${item.available === false ? "Not scored" : `${Number(item.score || 0)} / 100`}</strong>
+              </div>
+              ${item.available === false ? "" : `<meter min="0" max="100" value="${Number(item.score || 0)}"></meter>`}
+              <p>${escapeHtml(item.feedback || "")}</p>
+            </article>
+          `,
+        )
+        .join("")}
+    </div>
+    ${
+      evaluation.transcript
+        ? `<details class="result-transcript"><summary>Read transcript</summary><p>${escapeHtml(evaluation.transcript)}</p></details>`
+        : ""
+    }
+  `;
+  evaluatorResult.hidden = false;
+  evaluatorResult.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+videoInput.addEventListener("change", () => {
+  const file = videoInput.files?.[0];
+  selectedVideoName.textContent = file ? `${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB` : "No file selected";
+});
+
+evaluatorForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  evaluatorResult.hidden = true;
+  evaluatorStatus.className = "";
+
+  const file = videoInput.files?.[0];
+  if (file?.size > 250 * 1024 * 1024) {
+    evaluatorStatus.textContent = "Choose a file smaller than 250 MB.";
+    evaluatorStatus.className = "is-error";
+    return;
+  }
+
+  evaluateVideoButton.disabled = true;
+  evaluateVideoButton.textContent = "Evaluating…";
+  evaluatorStatus.textContent = "Validating the video…";
+
+  try {
+    const body = new FormData();
+    body.append("video", file);
+
+    evaluatorStatus.textContent = "Extracting speech and preparing the evaluation…";
+    const response = await fetch("/api/evaluate-video", { method: "POST", body });
+    const data = await response.json();
+    if (response.status === 401) {
+      window.location.href = `/auth/dingtalk?redirect=${encodeURIComponent("/methodology")}`;
+      return;
+    }
+    if (!response.ok) throw new Error(data.error || "The video could not be evaluated.");
+
+    evaluatorStatus.textContent = "Evaluation complete.";
+    evaluatorStatus.className = "is-success";
+    renderVideoEvaluation(data.evaluation);
+  } catch (error) {
+    evaluatorStatus.textContent = error.message;
+    evaluatorStatus.className = "is-error";
+  } finally {
+    evaluateVideoButton.disabled = false;
+    evaluateVideoButton.textContent = "Validate and evaluate";
+  }
+});
 
 const detail = {
   weight: document.querySelector("#detailWeight"),
