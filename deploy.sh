@@ -137,7 +137,6 @@ sudo tee '/etc/systemd/system/$SERVICE_NAME.service' >/dev/null <<'UNIT'
 Description=EnglishEval web service
 After=network-online.target
 Wants=network-online.target
-ConditionPathIsMountPoint=$REMOTE_ROOT/shared/recordings
 
 [Service]
 Type=simple
@@ -164,7 +163,6 @@ UNIT
 sudo tee '/etc/systemd/system/$SERVICE_NAME-recording-maintenance.service' >/dev/null <<'UNIT'
 [Unit]
 Description=Encrypted EnglishEval recording backup and optional recording retention
-ConditionPathIsMountPoint=$REMOTE_ROOT/shared/recordings
 
 [Service]
 Type=oneshot
@@ -197,6 +195,7 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 UNIT
+sudo rm -f '/etc/systemd/system/$SERVICE_NAME.service.d/recording-mount.conf'
 ln -sfn '$release_dir' '$REMOTE_ROOT/current'
 sudo systemctl daemon-reload
 sudo systemctl enable --now '$SERVICE_NAME.service'

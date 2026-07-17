@@ -106,7 +106,7 @@ The server extracts the full audio track, samples video frames at roughly one fr
 
 Generated questions are appended to `questions/metadata.jsonl` with the DingTalk OAuth `openId` and an organization user snapshot containing `userId`, `jobNumber`, `email`, and `orgEmail` when the organization contact API returns them. These fields are stored both at the record's top level and in its nested `user` object. Answer attempts are appended to `recordings/metadata.jsonl` with the same user fields plus the owned `questionId`. Attempts without a video are retained with `hasVideo: false` and a skipped evaluation; uploaded answer videos are stored in `recordings/` and use `hasVideo: true`.
 
-The JSONL files and the video/artifact directories live on the server filesystem, so they survive application restarts. Privacy acknowledgements are stored separately in `consents/metadata.jsonl` by DingTalk `openId` and policy version. In production, mount `recordings/`, `questions/`, and `consents/` on persistent storage. If the app will run on multiple instances, migrate these records to a shared database/object store rather than relying on instance-local files.
+The JSONL files and the video/artifact directories live on the server filesystem, so they survive application restarts. Privacy acknowledgements are stored separately in `consents/metadata.jsonl` by DingTalk `openId` and policy version. In production, these records live in raw persistent directories under `/opt/englisheval/shared`. If the app will run on multiple instances, migrate these records to a shared database/object store rather than relying on instance-local files.
 
 History and video endpoints always filter by the signed-in DingTalk `openId`. The recordings directory is not publicly served. Application startup never deletes or migrates persistent records; any future migration must be run explicitly with a verified backup.
 
@@ -154,31 +154,11 @@ the live persistent data:
 Verify the restored metadata and videos before considering any manual recovery.
 The restore script deliberately refuses to write into a non-empty directory.
 
-These encrypted archives protect backups, but the live recording volume should
-also be encrypted. Production uses an 8 GB LUKS2 container at
-`/opt/englisheval/recordings.luks`, mounted at the existing recordings path.
-The binary unlock key remains on a protected administrator device and must
-never be copied to the server or repository. Make a second offline copy of this
-key; losing every copy permanently loses access to the live encrypted
-recordings.
-
-After a production reboot, unlock the recordings and start EnglishEval from the
-administrator Mac:
-
-```bash
-LUKS_KEY_FILE=/secure/offline/path ./ops/unlock-production-recordings.sh
-```
-
-To stop the app and lock the recording volume deliberately:
-
-```bash
-./ops/lock-production-recordings.sh
-```
-
-The application and recording-maintenance services have mount conditions and
-will not start against the empty underlying mountpoint. The server can boot and
-accept SSH without the recording key; an administrator must run the unlock
-script before EnglishEval becomes available.
+Live recordings are stored as raw files in
+`/opt/englisheval/shared/recordings`. They are protected by service-account
+ownership and restrictive filesystem permissions, but they are not encrypted
+at rest. The encrypted backup archives remain the recovery mechanism for this
+directory.
 
 ## Deploy
 

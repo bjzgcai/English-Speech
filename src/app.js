@@ -620,8 +620,8 @@ async function extractAudio(videoPath, outputPath) {
       "1",
       "-ar",
       "16000",
-      "-c:a",
-      "pcm_s16le",
+      "-b:a",
+      "64k",
       outputPath,
     ]);
   } catch (error) {
@@ -1075,28 +1075,34 @@ function isTranscriptionFileOpenError(error) {
   );
 }
 
-async function transcribeNormalizedWav(audioPath) {
-  const wavPath = path.join(path.dirname(audioPath), "transcription-fallback.wav");
-  removePath(wavPath);
+async function transcribeAlternateAudioFormat(audioPath) {
+  const sourceIsWav = path.extname(audioPath).toLowerCase() === ".wav";
+  const fallbackPath = path.join(
+    path.dirname(audioPath),
+    sourceIsWav ? "transcription-fallback.mp3" : "transcription-fallback.wav",
+  );
+  removePath(fallbackPath);
 
   try {
-    await runFfmpeg([
+    const args = [
       "-y",
       "-i",
       audioPath,
-      "-af",
-      "silenceremove=start_periods=1:start_duration=0.1:start_threshold=-50dB:start_silence=0.05",
       "-ac",
       "1",
       "-ar",
       "16000",
-      "-c:a",
-      "pcm_s16le",
-      wavPath,
-    ]);
-    return await transcribeAudioFile(wavPath);
+    ];
+    if (sourceIsWav) {
+      args.push("-b:a", "64k");
+    } else {
+      args.push("-c:a", "pcm_s16le");
+    }
+    args.push(fallbackPath);
+    await runFfmpeg(args);
+    return await transcribeAudioFile(fallbackPath);
   } finally {
-    removePath(wavPath);
+    removePath(fallbackPath);
   }
 }
 
@@ -1105,7 +1111,7 @@ async function transcribeAudioFileWithFormatFallback(audioPath) {
     return await transcribeAudioFile(audioPath);
   } catch (error) {
     if (!isTranscriptionFileOpenError(error)) throw error;
-    return transcribeNormalizedWav(audioPath);
+    return transcribeAlternateAudioFormat(audioPath);
   }
 }
 
@@ -1325,7 +1331,7 @@ async function evaluateSavedVideo({
     };
   }
 
-  const audioPath = path.join(artifactBaseDir, "audio.wav");
+  const audioPath = path.join(artifactBaseDir, "audio.mp3");
   const frameDir = path.join(artifactBaseDir, "frames");
 
   fs.mkdirSync(artifactBaseDir, { recursive: true });

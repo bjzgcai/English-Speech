@@ -62,6 +62,8 @@ function escapeHtml(value) {
 function renderVideoEvaluation(evaluation) {
   const dimensions = Object.values(evaluation.rubric || {});
   const notice = evaluation.mediaValidation?.notice;
+  const shareId = "methodology-latest";
+  window.EvaluationShare.register(shareId, evaluation);
   evaluatorResult.innerHTML = `
     <div class="result-overview">
       <p>Speech evaluation</p>
@@ -90,10 +92,21 @@ function renderVideoEvaluation(evaluation) {
         ? `<details class="result-transcript"><summary>Read transcript</summary><p>${escapeHtml(evaluation.transcript)}</p></details>`
         : ""
     }
+    <div class="evaluation-share">
+      <div class="evaluation-share-actions">
+        <button type="button" class="share-evaluation" data-share-id="${shareId}">Share image</button>
+        <button type="button" class="copy-evaluation" data-share-id="${shareId}">Copy image</button>
+      </div>
+      <span class="share-feedback" role="status" aria-live="polite"></span>
+    </div>
   `;
   evaluatorResult.hidden = false;
   evaluatorResult.scrollIntoView({ behavior: "smooth", block: "start" });
 }
+
+evaluatorResult.addEventListener("click", (event) => {
+  window.EvaluationShare.handleClick(event);
+});
 
 videoInput.addEventListener("change", () => {
   const file = videoInput.files?.[0];
