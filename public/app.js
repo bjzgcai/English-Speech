@@ -18,7 +18,6 @@ const state = {
   authReady: false,
   privacyConsent: null,
   privacyConsentResolve: null,
-  shareEvaluations: new Map(),
 };
 
 const MAX_RECORDING_MS = 2 * 60 * 1000;
@@ -654,7 +653,7 @@ function renderEvaluation(evaluation) {
   }
 
   const shareId = evaluation.status === "completed" ? "latest" : "";
-  if (shareId) state.shareEvaluations.set(shareId, evaluation);
+  if (shareId) window.EvaluationShare.register(shareId, evaluation);
   evaluationResult.innerHTML = renderEvaluationContent(evaluation, shareId);
 }
 
@@ -669,6 +668,8 @@ function renderHistoryItem(item, index) {
         ? "No video"
         : "Pending";
   const videoPath = item.path || "";
+  const shareId = item.evaluation?.status === "completed" ? `history-${item.id}` : "";
+  if (shareId) window.EvaluationShare.register(shareId, item.evaluation);
 
   return `
     <details class="history-collapse" ${index === 0 ? "open" : ""}>
@@ -693,230 +694,10 @@ function renderHistoryItem(item, index) {
             `
             : '<p class="no-video-label">No video was recorded for this question.</p>'
         }
-        ${item.evaluation ? renderEvaluationContent(item.evaluation) : '<p class="empty-history">No evaluation saved for this answer.</p>'}
+        ${item.evaluation ? renderEvaluationContent(item.evaluation, shareId) : '<p class="empty-history">No evaluation saved for this answer.</p>'}
       </div>
     </details>
   `;
-}
-
-function scoreBand(score) {
-  if (score >= 90) return "Exceptional";
-  if (score >= 80) return "Strong";
-  if (score >= 70) return "Competent";
-  if (score >= 60) return "Developing";
-  return "Keep building";
-}
-
-function shareDimensionLabel(label) {
-  const labels = {
-    "Pronunciation / intelligibility": "Pronunciation",
-    "Coherence / task relevance": "Coherence",
-  };
-  return labels[label] || label || "Dimension";
-}
-
-function roundedRect(context, x, y, width, height, radius) {
-  const corner = Math.min(radius, width / 2, height / 2);
-  context.beginPath();
-  context.moveTo(x + corner, y);
-  context.arcTo(x + width, y, x + width, y + height, corner);
-  context.arcTo(x + width, y + height, x, y + height, corner);
-  context.arcTo(x, y + height, x, y, corner);
-  context.arcTo(x, y, x + width, y, corner);
-  context.closePath();
-}
-
-function loadShareImage(src) {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Unable to create the QR code."));
-    image.src = src;
-  });
-}
-
-function canvasBlob(canvas) {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error("Unable to create the share image."));
-    }, "image/png");
-  });
-}
-
-async function createEvaluationShareImage(evaluation) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 1080;
-  canvas.height = 1350;
-  const context = canvas.getContext("2d");
-  const font = '"Avenir Next", Avenir, "Segoe UI", sans-serif';
-  const score = Math.round(Number(evaluation.overallScore || 0));
-  const dimensions = getEvaluationDimensions(evaluation);
-  const qrImage = await loadShareImage(`/api/share-qr?v=1`);
-
-  context.fillStyle = "#F2F4EF";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-
-  roundedRect(context, 54, 54, 972, 1242, 24);
-  context.fillStyle = "#FBFCF8";
-  context.fill();
-
-  roundedRect(context, 104, 104, 58, 58, 12);
-  context.fillStyle = "#17201B";
-  context.fill();
-  context.fillStyle = "#FFFFFF";
-  context.font = `800 28px ${font}`;
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText("E", 133, 134);
-
-  context.textAlign = "left";
-  context.fillStyle = "#17201B";
-  context.font = `750 27px ${font}`;
-  context.fillText("EnglishEval", 184, 135);
-  context.fillStyle = "#5D685F";
-  context.font = `650 20px ${font}`;
-  context.fillText("SPEAKING EVALUATION", 104, 226);
-
-  context.fillStyle = "#17201B";
-  context.font = `800 154px ${font}`;
-  context.textBaseline = "alphabetic";
-  context.fillText(String(score), 96, 410);
-  const scoreWidth = context.measureText(String(score)).width;
-  context.fillStyle = "#5D685F";
-  context.font = `700 35px ${font}`;
-  context.fillText("/ 100", 110 + scoreWidth, 404);
-
-  roundedRect(context, 735, 286, 198, 62, 12);
-  context.fillStyle = "#E4E9E2";
-  context.fill();
-  context.fillStyle = "#0D4E3B";
-  context.font = `800 23px ${font}`;
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText(scoreBand(score), 834, 318);
-
-  context.textAlign = "left";
-  context.textBaseline = "alphabetic";
-  context.fillStyle = "#CCD4CC";
-  context.fillRect(104, 458, 872, 2);
-
-  dimensions.forEach((dimension, index) => {
-    const y = 518 + index * 82;
-    const dimensionScore = Math.max(0, Math.min(100, Number(dimension.score || 0)));
-    context.fillStyle = "#17201B";
-    context.font = `700 24px ${font}`;
-    context.fillText(shareDimensionLabel(dimension.label), 104, y);
-    context.fillStyle = "#5D685F";
-    context.font = `750 22px ${font}`;
-    context.textAlign = "right";
-    context.fillText(String(Math.round(dimensionScore)), 976, y);
-    context.textAlign = "left";
-
-    roundedRect(context, 104, y + 20, 872, 12, 6);
-    context.fillStyle = "#E4E9E2";
-    context.fill();
-    if (dimensionScore > 0) {
-      roundedRect(context, 104, y + 20, 872 * (dimensionScore / 100), 12, 6);
-      context.fillStyle = "#176B53";
-      context.fill();
-    }
-  });
-
-  context.fillStyle = "#CCD4CC";
-  context.fillRect(104, 1030, 872, 2);
-  context.fillStyle = "#17201B";
-  context.font = `800 34px ${font}`;
-  context.fillText("How clear is your English?", 104, 1104);
-  context.fillStyle = "#5D685F";
-  context.font = `600 23px ${font}`;
-  context.fillText("Scan to examine your spoken response.", 104, 1146);
-  context.fillStyle = "#0D4E3B";
-  context.font = `750 22px ${font}`;
-  context.fillText(window.location.host, 104, 1194);
-
-  roundedRect(context, 774, 1063, 202, 202, 12);
-  context.fillStyle = "#FFFFFF";
-  context.fill();
-  context.drawImage(qrImage, 785, 1074, 180, 180);
-
-  return canvasBlob(canvas);
-}
-
-function saveShareImage(file) {
-  const url = URL.createObjectURL(file);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = file.name;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-async function shareEvaluation(button) {
-  const evaluation = state.shareEvaluations.get(button.dataset.shareId);
-  const feedback = button.closest(".evaluation-share")?.querySelector(".share-feedback");
-  if (!evaluation) {
-    if (feedback) feedback.textContent = "This evaluation is no longer available.";
-    return;
-  }
-
-  const actionButtons = button.closest(".evaluation-share")?.querySelectorAll("button") || [button];
-  actionButtons.forEach((item) => { item.disabled = true; });
-  if (feedback) feedback.textContent = "Creating image…";
-  try {
-    const blob = await createEvaluationShareImage(evaluation);
-    const score = Math.round(Number(evaluation.overallScore || 0));
-    const file = new File([blob], `english-evaluation-${score}.png`, { type: "image/png" });
-    if (navigator.share && navigator.canShare?.({ files: [file] })) {
-      await navigator.share({ files: [file] });
-      if (feedback) feedback.textContent = "Image shared.";
-    } else {
-      saveShareImage(file);
-      if (feedback) feedback.textContent = "Image saved. You can share it anywhere.";
-    }
-  } catch (error) {
-    if (error?.name !== "AbortError" && feedback) {
-      feedback.textContent = error.message || "Unable to share this evaluation.";
-    } else if (feedback) {
-      feedback.textContent = "";
-    }
-  } finally {
-    actionButtons.forEach((item) => { item.disabled = false; });
-  }
-}
-
-async function copyEvaluation(button) {
-  const evaluation = state.shareEvaluations.get(button.dataset.shareId);
-  const shareBlock = button.closest(".evaluation-share");
-  const feedback = shareBlock?.querySelector(".share-feedback");
-  if (!evaluation) {
-    if (feedback) feedback.textContent = "This evaluation is no longer available.";
-    return;
-  }
-
-  const actionButtons = shareBlock?.querySelectorAll("button") || [button];
-  actionButtons.forEach((item) => { item.disabled = true; });
-  if (feedback) feedback.textContent = "Creating image…";
-  try {
-    const blob = await createEvaluationShareImage(evaluation);
-    if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
-      const score = Math.round(Number(evaluation.overallScore || 0));
-      saveShareImage(new File([blob], `english-evaluation-${score}.png`, { type: "image/png" }));
-      if (feedback) feedback.textContent = "Clipboard images are not supported here, so the image was saved instead.";
-      return;
-    }
-
-    await navigator.clipboard.write([
-      new ClipboardItem({ "image/png": blob }),
-    ]);
-    if (feedback) feedback.textContent = "One image copied.";
-  } catch (error) {
-    if (feedback) feedback.textContent = error.message || "Unable to copy this evaluation.";
-  } finally {
-    actionButtons.forEach((item) => { item.disabled = false; });
-  }
 }
 
 function normalizeRoute(pathname) {
@@ -1274,17 +1055,11 @@ navLinks.forEach((link) => {
 });
 
 evaluationResult.addEventListener("click", (event) => {
-  const shareButton = event.target.closest(".share-evaluation");
-  if (shareButton) {
-    shareEvaluation(shareButton);
-    return;
-  }
-
-  const copyButton = event.target.closest(".copy-evaluation");
-  if (copyButton) copyEvaluation(copyButton);
+  window.EvaluationShare.handleClick(event);
 });
 
 historyList.addEventListener("click", (event) => {
+  if (window.EvaluationShare.handleClick(event)) return;
   const button = event.target.closest(".video-link");
   if (!button) return;
 

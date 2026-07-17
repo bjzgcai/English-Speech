@@ -199,6 +199,68 @@ test("falls back to normalized WAV for the upstream BytesIO decoder bug", async 
   assert.equal(fs.existsSync(path.join(tempDir, "transcription-fallback.wav")), false);
 });
 
+test("falls back to MP3 when Qwen reports an empty decoded WAV", async (context) => {
+  const originalFetch = global.fetch;
+  const originalAttempts = process.env.TRANSCRIPTION_MAX_ATTEMPTS;
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-transcription-mp3-"));
+  const audioPath = path.join(tempDir, "audio.wav");
+  const generated = spawnSync(
+    ffmpegPath,
+    [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=440:duration=0.2",
+      "-ac",
+      "1",
+      "-ar",
+      "16000",
+      audioPath,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(generated.status, 0, generated.stderr);
+  process.env.TRANSCRIPTION_MAX_ATTEMPTS = "1";
+
+  context.after(() => {
+    global.fetch = originalFetch;
+    if (originalAttempts === undefined) delete process.env.TRANSCRIPTION_MAX_ATTEMPTS;
+    else process.env.TRANSCRIPTION_MAX_ATTEMPTS = originalAttempts;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const uploadedFiles = [];
+  global.fetch = async (_url, options) => {
+    const uploadedFile = options.body.get("file");
+    uploadedFiles.push({ name: uploadedFile.name, type: uploadedFile.type, size: uploadedFile.size });
+    if (uploadedFile.name.endsWith(".wav")) {
+      return new Response(
+        `{"error":{"message":"upstream service returned 400: Failed to apply Qwen3ASRProcessor on data={'audio': [array([], dtype=float32)]}"}}`,
+        { status: 400 },
+      );
+    }
+    return new Response(JSON.stringify({ text: "mp3 succeeded" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const transcript = await testHelpers.transcribeAudio(audioPath);
+  assert.deepEqual(
+    uploadedFiles.map(({ name, type }) => ({ name, type })),
+    [
+      { name: "audio.wav", type: "audio/wav" },
+      { name: "transcription-fallback.mp3", type: "audio/mpeg" },
+    ],
+  );
+  assert.ok(uploadedFiles[1].size > 0);
+  assert.equal(transcript, "mp3 succeeded");
+  assert.equal(fs.existsSync(path.join(tempDir, "transcription-fallback.mp3")), false);
+});
+
 test("long audio is transcribed in ordered chunks", async (context) => {
   const originalFetch = global.fetch;
   const originalApiKey = process.env.INTERNAL_LLM_API_KEY;

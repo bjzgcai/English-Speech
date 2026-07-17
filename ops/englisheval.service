@@ -2,7 +2,6 @@
 Description=EnglishEval web service
 After=network-online.target
 Wants=network-online.target
-ConditionPathIsMountPoint=/opt/englisheval/shared/recordings
 
 [Service]
 Type=simple
