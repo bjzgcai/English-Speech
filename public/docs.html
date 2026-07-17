@@ -34,6 +34,46 @@
     </header>
 
     <main>
+      <section class="video-evaluator" aria-labelledby="video-evaluator-title">
+        <div class="evaluator-heading reveal">
+          <p class="kicker">Evaluate existing speech</p>
+          <h1 id="video-evaluator-title">Bring a video.<br />Get a speech evaluation.</h1>
+          <p>
+            Upload a video file. We validate the media, extract its speech, and apply the same
+            evaluation engine used in Examine.
+          </p>
+          <p class="speaker-assumption">
+            <strong>Working assumption:</strong> the video contains one main speaker. If several people or
+            voices appear, the evaluation still treats the speech as one person’s performance.
+          </p>
+        </div>
+
+        <form class="video-evaluator-form reveal" id="videoEvaluatorForm">
+          <div class="source-field">
+            <label class="upload-drop" for="evaluationVideo">
+              <span>Choose a video</span>
+              <small>MP4, WebM, Ogg, MOV or MKV · up to 250 MB</small>
+              <input id="evaluationVideo" name="video" type="file" accept="video/mp4,video/webm,video/ogg,video/quicktime,video/x-matroska,.mkv" required />
+            </label>
+            <p class="selected-file" id="selectedVideoName">No file selected</p>
+          </div>
+
+          <div class="validation-notes" aria-label="Media validation rules">
+            <p><span aria-hidden="true">01</span> The file must be readable and use a supported video format.</p>
+            <p><span aria-hidden="true">02</span> Spoken audio is required; silent or picture-only video cannot be evaluated.</p>
+            <p><span aria-hidden="true">03</span> Audio with no picture will pass, but visual delivery will not be scored.</p>
+            <p><span aria-hidden="true">04</span> For videos longer than two minutes, only the first two minutes are evaluated.</p>
+          </div>
+
+          <div class="evaluator-submit-row">
+            <button type="submit" id="evaluateVideoButton">Validate and evaluate</button>
+            <p id="videoEvaluatorStatus" role="status" aria-live="polite"></p>
+          </div>
+        </form>
+
+        <section class="video-evaluation-result" id="videoEvaluationResult" aria-live="polite" hidden></section>
+      </section>
+
       <section class="hero">
         <div class="hero-copy reveal">
           <p class="kicker">Evaluation methodology</p>
@@ -66,7 +106,7 @@
           <article>
             <span>02</span>
             <h3>Can I follow you?</h3>
-            <p>Fluency and coherence turn individual sentences into a clear line of thought.</p>
+            <p>Fluency and coherence show whether the speech maintains a consistent, connected line of thought.</p>
           </article>
           <article>
             <span>03</span>
@@ -111,12 +151,12 @@
           </div>
           <div class="detail-copy">
             <p id="detailCategory">Message structure</p>
-            <h3 id="detailTitle">Coherence and task relevance</h3>
-            <p id="detailDescription">Measures whether ideas connect logically, the response addresses the question, and the listener can follow the main point.</p>
+            <h3 id="detailTitle">Coherence and speech consistency</h3>
+            <p id="detailDescription">Measures whether ideas connect logically, the speaker remains internally consistent, and the listener can follow the main point.</p>
           </div>
           <div class="detail-reason">
             <h4>Why this weight</h4>
-            <p id="detailReason">It has the largest share because a response must answer the task, present a clear main point, and connect ideas in an order the listener can follow.</p>
+            <p id="detailReason">It has the largest share because effective speech needs a stable main point, consistent claims, and ideas connected in an order the listener can follow.</p>
           </div>
         </article>
       </section>

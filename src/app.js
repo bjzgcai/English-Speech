@@ -42,6 +42,8 @@ const openRouterChatCompletionsUrl =
   process.env.OPENROUTER_CHAT_COMPLETIONS_URL ||
   "https://openrouter.ihainan.me/api/v1/chat/completions";
 const openRouterEvalModel = process.env.OPENROUTER_EVAL_MODEL || "google/gemini-3.5-flash";
+const maximumVideoBytes = 250 * 1024 * 1024;
+const standaloneEvaluationMaxSeconds = 2 * 60;
 const evaluationRubricStandard = Object.freeze({
   id: "english-speaking-evaluation",
   version: "1.1.0",
@@ -130,10 +132,16 @@ app.use("/api-docs/assets", express.static(swaggerUiDistPath));
 const upload = multer({
   dest: recordingTmpDir,
   limits: {
-    fileSize: 250 * 1024 * 1024,
+    fileSize: maximumVideoBytes,
   },
   fileFilter: (_req, file, callback) => {
-    const allowedMimeTypes = new Set(["video/mp4", "video/webm", "video/ogg"]);
+    const allowedMimeTypes = new Set([
+      "video/mp4",
+      "video/webm",
+      "video/ogg",
+      "video/quicktime",
+      "video/x-matroska",
+    ]);
     if (!allowedMimeTypes.has(file.mimetype)) {
       return callback(new multer.MulterError("LIMIT_UNEXPECTED_FILE", file.fieldname));
     }
@@ -510,12 +518,17 @@ function removePath(targetPath) {
   }
 }
 
-function convertToMp4(inputPath, outputPath) {
+function convertToMp4(inputPath, outputPath, { maximumDurationSeconds = null } = {}) {
   return new Promise((resolve, reject) => {
-    const ffmpeg = spawn(ffmpegPath, [
+    const args = [
       "-y",
       "-i",
       inputPath,
+    ];
+    if (maximumDurationSeconds) {
+      args.push("-t", String(maximumDurationSeconds));
+    }
+    args.push(
       "-c:v",
       "libx264",
       "-preset",
@@ -527,7 +540,8 @@ function convertToMp4(inputPath, outputPath) {
       "-movflags",
       "+faststart",
       outputPath,
-    ]);
+    );
+    const ffmpeg = spawn(ffmpegPath, args);
 
     let errorOutput = "";
     ffmpeg.stderr.on("data", (chunk) => {
@@ -563,6 +577,38 @@ function runFfmpeg(args) {
   });
 }
 
+function inspectMedia(inputPath) {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn(ffmpegPath, ["-hide_banner", "-i", inputPath]);
+    let output = "";
+    ffmpeg.stderr.on("data", (chunk) => {
+      output += chunk.toString();
+    });
+    ffmpeg.on("error", reject);
+    ffmpeg.on("close", () => {
+      const hasAudio = /Stream #\S+.*Audio:/i.test(output);
+      const hasVideo = /Stream #\S+.*Video:/i.test(output);
+      if (!hasAudio && !hasVideo) {
+        return reject(new Error("The file does not contain a usable audio or video stream."));
+      }
+      resolve({ hasAudio, hasVideo, durationSeconds: parseDurationSeconds(output) });
+    });
+  });
+}
+
+function limitStandaloneMediaInfo(mediaInfo) {
+  const originalDurationSeconds = mediaInfo.durationSeconds;
+  const hasKnownDuration = Number.isFinite(originalDurationSeconds);
+  return {
+    ...mediaInfo,
+    truncated: hasKnownDuration && originalDurationSeconds > standaloneEvaluationMaxSeconds,
+    originalDurationSeconds,
+    durationSeconds: hasKnownDuration
+      ? Math.min(originalDurationSeconds, standaloneEvaluationMaxSeconds)
+      : standaloneEvaluationMaxSeconds,
+  };
+}
+
 async function extractAudio(videoPath, outputPath) {
   try {
     await runFfmpeg([
@@ -574,8 +620,8 @@ async function extractAudio(videoPath, outputPath) {
       "1",
       "-ar",
       "16000",
-      "-b:a",
-      "64k",
+      "-c:a",
+      "pcm_s16le",
       outputPath,
     ]);
   } catch (error) {
@@ -653,6 +699,26 @@ async function inspectAudio(audioPath, transcript) {
     longPauses: longPauses.length,
     silenceSeconds: Math.round(silenceSeconds * 10) / 10,
   };
+}
+
+async function audioMaximumVolume(audioPath) {
+  const output = await runFfmpeg([
+    "-i",
+    audioPath,
+    "-af",
+    "volumedetect",
+    "-f",
+    "null",
+    "-",
+  ]);
+  return Number(output.match(/max_volume:\s*(-?[0-9.]+)\s*dB/i)?.[1]);
+}
+
+async function validateSpokenAudio(audioPath) {
+  const maximumVolume = await audioMaximumVolume(audioPath);
+  if (!Number.isFinite(maximumVolume) || maximumVolume < -50) {
+    throw new Error("We found an audio track, but it is silent or too quiet to evaluate.");
+  }
 }
 
 function fileToDataUrl(filePath, mimeType) {
@@ -892,21 +958,30 @@ function nonNegativeInteger(value, fallback = 0) {
   return Number.isInteger(number) && number >= 0 ? number : fallback;
 }
 
-function normalizeEvaluation(rawEvaluation) {
+function normalizeEvaluation(rawEvaluation, { visualAvailable = true } = {}) {
   const rubric = Object.fromEntries(
     evaluationRubricStandard.dimensions.map((dimension) => [
       dimension.key,
       {
         label: dimension.label,
         weight: dimension.weight,
-        score: normalizeScore(rawEvaluation?.rubric?.[dimension.key]?.score),
-        feedback: safeText(rawEvaluation?.rubric?.[dimension.key]?.feedback),
+        score:
+          dimension.key === "visualDelivery" && !visualAvailable
+            ? null
+            : normalizeScore(rawEvaluation?.rubric?.[dimension.key]?.score),
+        feedback:
+          dimension.key === "visualDelivery" && !visualAvailable
+            ? "Not scored because the file contains usable speech but no video picture."
+            : safeText(rawEvaluation?.rubric?.[dimension.key]?.feedback),
+        available: dimension.key !== "visualDelivery" || visualAvailable,
       },
     ]),
   );
 
-  const overallScore = Object.values(rubric).reduce(
-    (total, item) => total + item.score * (item.weight / 100),
+  const availableItems = Object.values(rubric).filter((item) => item.available);
+  const availableWeight = availableItems.reduce((total, item) => total + item.weight, 0);
+  const overallScore = availableItems.reduce(
+    (total, item) => total + item.score * (item.weight / availableWeight),
     0,
   );
 
@@ -930,33 +1005,186 @@ function normalizeEvaluation(rawEvaluation) {
   };
 }
 
-async function transcribeAudio(audioPath) {
-  const apiKey = process.env.INTERNAL_LLM_API_KEY;
-  const formData = new FormData();
-  const file = new Blob([fs.readFileSync(audioPath)], { type: "audio/mpeg" });
-
-  formData.append("model", internalLlmTranscribeModel);
-  formData.append("file", file, path.basename(audioPath));
-  formData.append("language", "en");
-
-  const response = await fetch(internalLlmTranscriptionsUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Transcription failed: ${detail}`);
-  }
-
-  const payload = await response.json();
-  return safeText(payload.text);
+function transcriptionMimeType(audioPath) {
+  return path.extname(audioPath).toLowerCase() === ".wav" ? "audio/wav" : "audio/mpeg";
 }
 
-function buildEvaluationPrompt({ profile, question, transcript, audioMetrics, frameCount }) {
+function isRetryableTranscriptionError(error) {
+  return error?.retryable === true || /upstream_error|BytesIO object|fetch failed/i.test(
+    String(error?.message || error),
+  );
+}
+
+function transcriptionRetryDelay(attempt) {
+  return new Promise((resolve) => setTimeout(resolve, attempt * 300));
+}
+
+async function transcribeAudioFile(audioPath) {
+  const apiKey = process.env.INTERNAL_LLM_API_KEY;
+  const maximumAttempts = Math.min(
+    positiveInteger(Number(process.env.TRANSCRIPTION_MAX_ATTEMPTS), 3),
+    5,
+  );
+
+  for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+    const formData = new FormData();
+    const file = new Blob([fs.readFileSync(audioPath)], {
+      type: transcriptionMimeType(audioPath),
+    });
+
+    formData.append("model", internalLlmTranscribeModel);
+    formData.append("file", file, path.basename(audioPath));
+    formData.append("language", "en");
+
+    try {
+      const response = await fetch(internalLlmTranscriptionsUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const detail = await response.text();
+        const error = new Error(`Transcription failed: ${detail}`);
+        error.retryable = response.status >= 500;
+        throw error;
+      }
+
+      const payload = await response.json();
+      return safeText(payload.text);
+    } catch (error) {
+      if (attempt === maximumAttempts || !isRetryableTranscriptionError(error)) throw error;
+      await transcriptionRetryDelay(attempt);
+    }
+  }
+
+  return "";
+}
+
+function isTranscriptionSizeError(error) {
+  return /embedding tokens|encoder cache size|reduce the input size|limit-mm-per-prompt/i.test(
+    String(error?.message || error),
+  );
+}
+
+function isTranscriptionFileOpenError(error) {
+  return /BytesIO object|File does not exist or is not a regular file|possibly a pipe|Failed to apply Qwen3ASRProcessor/i.test(
+    String(error?.message || error),
+  );
+}
+
+async function transcribeNormalizedWav(audioPath) {
+  const wavPath = path.join(path.dirname(audioPath), "transcription-fallback.wav");
+  removePath(wavPath);
+
+  try {
+    await runFfmpeg([
+      "-y",
+      "-i",
+      audioPath,
+      "-af",
+      "silenceremove=start_periods=1:start_duration=0.1:start_threshold=-50dB:start_silence=0.05",
+      "-ac",
+      "1",
+      "-ar",
+      "16000",
+      "-c:a",
+      "pcm_s16le",
+      wavPath,
+    ]);
+    return await transcribeAudioFile(wavPath);
+  } finally {
+    removePath(wavPath);
+  }
+}
+
+async function transcribeAudioFileWithFormatFallback(audioPath) {
+  try {
+    return await transcribeAudioFile(audioPath);
+  } catch (error) {
+    if (!isTranscriptionFileOpenError(error)) throw error;
+    return transcribeNormalizedWav(audioPath);
+  }
+}
+
+async function transcribeAudioInChunks(audioPath, chunkSeconds = 30) {
+  const chunkDir = path.join(path.dirname(audioPath), "transcription-chunks");
+  removePath(chunkDir);
+  fs.mkdirSync(chunkDir, { recursive: true });
+
+  try {
+    await runFfmpeg([
+      "-y",
+      "-i",
+      audioPath,
+      "-f",
+      "segment",
+      "-segment_time",
+      String(chunkSeconds),
+      "-reset_timestamps",
+      "1",
+      "-ac",
+      "1",
+      "-ar",
+      "16000",
+      "-c:a",
+      "pcm_s16le",
+      path.join(chunkDir, "chunk-%03d.wav"),
+    ]);
+
+    const chunkPaths = fs
+      .readdirSync(chunkDir)
+      .filter((filename) => filename.endsWith(".wav"))
+      .sort()
+      .map((filename) => path.join(chunkDir, filename));
+    if (!chunkPaths.length) {
+      throw new Error("The audio could not be divided into transcription segments.");
+    }
+
+    const transcriptParts = [];
+    for (let index = 0; index < chunkPaths.length; index += 1) {
+      try {
+        const maximumVolume = await audioMaximumVolume(chunkPaths[index]);
+        if (!Number.isFinite(maximumVolume) || maximumVolume < -50) continue;
+        const part = await transcribeAudioFileWithFormatFallback(chunkPaths[index]);
+        if (part) transcriptParts.push(part);
+      } catch (error) {
+        if (isTranscriptionSizeError(error)) {
+          throw new Error(
+            `Audio segment ${index + 1} is still too long for the transcription service.`,
+          );
+        }
+        throw error;
+      }
+    }
+    return transcriptParts.join(" ").trim();
+  } finally {
+    removePath(chunkDir);
+  }
+}
+
+async function transcribeAudio(audioPath, { durationSeconds = null } = {}) {
+  const configuredChunkSeconds = positiveInteger(
+    Number(process.env.TRANSCRIPTION_CHUNK_SECONDS),
+    30,
+  );
+  const chunkSeconds = Math.min(configuredChunkSeconds, 40);
+
+  if (durationSeconds && durationSeconds > chunkSeconds) {
+    return transcribeAudioInChunks(audioPath, chunkSeconds);
+  }
+
+  try {
+    return await transcribeAudioFileWithFormatFallback(audioPath);
+  } catch (error) {
+    if (!isTranscriptionSizeError(error)) throw error;
+    return transcribeAudioInChunks(audioPath, chunkSeconds);
+  }
+}
+
+function buildEvaluationPrompt({ profile, question, transcript, audioMetrics, frameCount, evaluationMode }) {
   const weights = evaluationRubricStandard.dimensions
     .map((dimension) => `${dimension.key} ${dimension.weight}`)
     .join(", ");
@@ -974,6 +1202,12 @@ function buildEvaluationPrompt({ profile, question, transcript, audioMetrics, fr
     `Apply this rubric standard: ${JSON.stringify({ scoreBands: evaluationRubricStandard.scoreBands, dimensions: evaluationRubricStandard.dimensions })}`,
     "Use the audio metrics to evaluate fluency and pacing. Pronunciation should be inferred from transcription reliability and intelligibility clues.",
     "Be direct, specific, and useful to the learner. Do not over-penalize accent when intelligibility is strong.",
+    evaluationMode === "standalone-speech"
+      ? "This is a standalone speech, not an answer to a question. Score coherence by whether the speaker stays internally consistent, develops a stable main point, and connects ideas without contradictions. Do not assess task relevance."
+      : "This is an answer to the supplied question. Include task relevance when scoring coherence.",
+    frameCount > 0
+      ? "Use the sampled frames to score visual delivery."
+      : "No visual frames are available. Do not infer visual delivery; return 0 for that dimension and explain that it was not assessed.",
     "Schema:",
     JSON.stringify({
       overallScore: 0,
@@ -992,7 +1226,14 @@ function buildEvaluationPrompt({ profile, question, transcript, audioMetrics, fr
   ].join("\n");
 }
 
-async function evaluateAnswer({ profile, question, transcript, audioMetrics, framePaths }) {
+async function evaluateAnswer({
+  profile,
+  question,
+  transcript,
+  audioMetrics,
+  framePaths,
+  evaluationMode = "question-answer",
+}) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   const requestTimeoutMs = positiveInteger(Number(process.env.EVAL_REQUEST_TIMEOUT_MS), 600_000);
   const content = [
@@ -1004,6 +1245,7 @@ async function evaluateAnswer({ profile, question, transcript, audioMetrics, fra
         transcript,
         audioMetrics,
         frameCount: framePaths.length,
+        evaluationMode,
       }),
     },
     ...framePaths.map((framePath) => ({
@@ -1053,7 +1295,9 @@ async function evaluateAnswer({ profile, question, transcript, audioMetrics, fra
 
     const payload = await response.json();
     const outputText = modelMessageText(payload.choices?.[0]?.message);
-    return normalizeEvaluation(extractJsonObject(outputText));
+    return normalizeEvaluation(extractJsonObject(outputText), {
+      visualAvailable: framePaths.length > 0,
+    });
   } catch (error) {
     if (isEvaluationTimeout(error)) {
       throw new Error(evaluationTimeoutMessage(requestTimeoutMs), { cause: error });
@@ -1062,7 +1306,14 @@ async function evaluateAnswer({ profile, question, transcript, audioMetrics, fra
   }
 }
 
-async function evaluateSavedVideo({ videoPath, artifactBaseDir, profile, question }) {
+async function evaluateSavedVideo({
+  videoPath,
+  artifactBaseDir,
+  profile,
+  question,
+  evaluationMode = "question-answer",
+  mediaInfo = null,
+}) {
   const missingConfiguration = [
     !process.env.INTERNAL_LLM_API_KEY && "INTERNAL_LLM_API_KEY",
     !process.env.OPENROUTER_API_KEY && "OPENROUTER_API_KEY",
@@ -1074,23 +1325,56 @@ async function evaluateSavedVideo({ videoPath, artifactBaseDir, profile, questio
     };
   }
 
-  const audioPath = path.join(artifactBaseDir, "audio.mp3");
+  const audioPath = path.join(artifactBaseDir, "audio.wav");
   const frameDir = path.join(artifactBaseDir, "frames");
 
   fs.mkdirSync(artifactBaseDir, { recursive: true });
+  const inspectedMedia = mediaInfo || (await inspectMedia(videoPath));
+  if (!inspectedMedia.hasAudio) {
+    throw new Error("The video has a picture but no usable audio track, so speech cannot be evaluated.");
+  }
   await extractAudio(videoPath, audioPath);
+  await validateSpokenAudio(audioPath);
   const maxFrames = positiveInteger(Number(process.env.EVAL_MAX_FRAMES), 18);
   const [transcript, framePaths] = await Promise.all([
-    transcribeAudio(audioPath),
-    sampleFrames(videoPath, frameDir, maxFrames),
+    transcribeAudio(audioPath, { durationSeconds: inspectedMedia.durationSeconds }),
+    inspectedMedia.hasVideo ? sampleFrames(videoPath, frameDir, maxFrames) : Promise.resolve([]),
   ]);
+  if (transcript.split(/\s+/).filter(Boolean).length < 2) {
+    throw new Error("We found audio, but could not detect enough spoken voice to evaluate.");
+  }
   const audioMetrics = await inspectAudio(audioPath, transcript);
-  const result = await evaluateAnswer({ profile, question, transcript, audioMetrics, framePaths });
+  const result = await evaluateAnswer({
+    profile,
+    question,
+    transcript,
+    audioMetrics,
+    framePaths,
+    evaluationMode,
+  });
 
   return {
     status: "completed",
     audioFile: path.relative(recordingsDir, audioPath),
     frameCount: framePaths.length,
+    mediaValidation: {
+      hasAudio: inspectedMedia.hasAudio,
+      hasVideo: inspectedMedia.hasVideo,
+      visualEvaluated: framePaths.length > 0,
+      truncated: inspectedMedia.truncated === true,
+      originalDurationSeconds: inspectedMedia.originalDurationSeconds || null,
+      evaluatedDurationSeconds: inspectedMedia.durationSeconds || null,
+      notice: [
+        inspectedMedia.truncated
+          ? "The video was longer than two minutes, so only the first two minutes were evaluated."
+          : "",
+        framePaths.length
+          ? "Speech and visual delivery were evaluated."
+          : "Speech was evaluated from audio. Visual delivery was not scored because the file has no video picture.",
+      ]
+        .filter(Boolean)
+        .join(" "),
+    },
     audioMetrics,
     ...result,
   };
@@ -1427,9 +1711,13 @@ app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, re
   const filename = `${baseName}.mp4`;
   const finalPath = path.join(recordingsDir, filename);
   const convertedPath = path.join(recordingTmpDir, filename);
+  let evaluationMediaInfo;
 
   try {
-    await convertToMp4(req.file.path, convertedPath);
+    evaluationMediaInfo = limitStandaloneMediaInfo(await inspectMedia(req.file.path));
+    await convertToMp4(req.file.path, convertedPath, {
+      maximumDurationSeconds: standaloneEvaluationMaxSeconds,
+    });
     fs.chmodSync(convertedPath, 0o600);
     fs.renameSync(convertedPath, finalPath);
   } catch (error) {
@@ -1467,6 +1755,7 @@ app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, re
       artifactBaseDir: path.join(artifactsDir, id),
       profile,
       question,
+      mediaInfo: evaluationMediaInfo,
     });
   } catch (error) {
     record.evaluation = {
@@ -1486,6 +1775,94 @@ app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, re
     evaluation: record.evaluation,
   });
 });
+
+app.post(
+  "/api/evaluate-video",
+  requireAuth,
+  upload.single("video"),
+  async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: "Choose a video file to evaluate." });
+    }
+
+    const id = crypto.randomUUID();
+    const finishedAt = new Date().toISOString();
+    const baseName = `${finishedAt.replace(/[:.]/g, "-")}-${id}`;
+    const inputPath = req.file.path;
+    const convertedPath = path.join(recordingTmpDir, `${baseName}.mp4`);
+    const filename = `${baseName}.mp4`;
+    const finalPath = path.join(recordingsDir, filename);
+
+    try {
+      const mediaInfo = await inspectMedia(inputPath);
+      if (!mediaInfo.hasAudio) {
+        throw new Error(
+          "This video has a picture but no audio track. EnglishEval needs spoken audio to evaluate it.",
+        );
+      }
+      const limitedMediaInfo = limitStandaloneMediaInfo(mediaInfo);
+      await convertToMp4(inputPath, convertedPath, {
+        maximumDurationSeconds: standaloneEvaluationMaxSeconds,
+      });
+      fs.chmodSync(convertedPath, 0o600);
+      fs.renameSync(convertedPath, finalPath);
+
+      const profile = { name: safeText(req.user.name, "DingTalk user") };
+      const question = {
+        question: "Standalone speech",
+        focus: "Speech consistency and English communication",
+      };
+      const evaluation = await evaluateSavedVideo({
+        videoPath: finalPath,
+        artifactBaseDir: path.join(artifactsDir, id),
+        profile,
+        question,
+        evaluationMode: "standalone-speech",
+        mediaInfo: limitedMediaInfo,
+      });
+      if (evaluation.rubric?.coherence) {
+        evaluation.rubric.coherence.label = "Coherence / speech consistency";
+      }
+      const record = {
+        id,
+        hasVideo: true,
+        filename,
+        mimeType: "video/mp4",
+        originalMimeType: req.file.mimetype,
+        convertedToMp4: true,
+        bytes: fs.statSync(finalPath).size,
+        startedAt: finishedAt,
+        finishedAt,
+        openId: req.user.openId,
+        userId: req.user.userId,
+        jobNumber: req.user.jobNumber,
+        email: req.user.email,
+        orgEmail: req.user.orgEmail,
+        user: req.user,
+        profile,
+        questionId: null,
+        question,
+        sourceType: "upload",
+        evaluationMode: "standalone-speech",
+        evaluation,
+      };
+      appendJsonLine(metadataFile, record);
+      return res.json({
+        ok: true,
+        id,
+        path: `/api/recordings/${id}/video`,
+        evaluation,
+      });
+    } catch (error) {
+      removePath(convertedPath);
+      removePath(finalPath);
+      removePath(path.join(artifactsDir, id));
+      return res.status(422).json({ error: error.message });
+    } finally {
+      removePath(req.file.path);
+    }
+  },
+);
 
 app.get("/api/recordings", requireAuth, (req, res) => {
   const recordings = readJsonLines(metadataFile)
@@ -1522,7 +1899,9 @@ registerPageRoutes(app);
 
 app.use((error, _req, res, next) => {
   if (error instanceof multer.MulterError) {
-    return res.status(400).json({ error: "Only MP4, WebM, or Ogg video uploads are supported." });
+    return res.status(400).json({
+      error: "Only MP4, WebM, Ogg, MOV, or MKV video uploads up to 250 MB are supported.",
+    });
   }
   next(error);
 });
@@ -1537,14 +1916,20 @@ module.exports = {
   app,
   startServer,
   testHelpers: {
+    buildEvaluationPrompt,
     createOAuthState,
     createSessionToken,
     evaluateAnswer,
     extractJsonObject,
     evaluationTimeoutMessage,
+    isTranscriptionSizeError,
+    isTranscriptionFileOpenError,
+    limitStandaloneMediaInfo,
     modelMessageText,
+    normalizeEvaluation,
     normalizeRedirectPath,
     parseOAuthState,
+    transcribeAudio,
     useSecureSessionCookie,
   },
 };

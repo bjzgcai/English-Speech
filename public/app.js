@@ -41,6 +41,7 @@ const profileForm = document.querySelector("#profileForm");
 const nameInput = document.querySelector("#name");
 const generateButton = document.querySelector("#generateButton");
 const finishButton = document.querySelector("#finishButton");
+const recorderPanel = document.querySelector(".recorder-panel");
 const preview = document.querySelector("#preview");
 const preparePreview = document.querySelector("#preparePreview");
 const preparePreviewWrap = document.querySelector("#preparePreviewWrap");
@@ -1083,16 +1084,21 @@ async function startRecording() {
     state.mediaRetryAction = null;
     resetPrepareGuidance();
     closePrepareModal();
+    recorderPanel.classList.add("is-recording");
     finishButton.disabled = false;
     generateButton.disabled = true;
     logoutButton.disabled = true;
     recordingBadge.classList.add("visible");
     setStatus("Recording");
     saveResult.textContent = "Recording in progress. Answer the question in English. Recording is limited to 2 minutes.";
+    if (window.matchMedia("(max-width: 820px)").matches) {
+      recorderPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
     state.autoStopTimer = window.setTimeout(() => {
       finishRecording();
     }, MAX_RECORDING_MS);
   } catch (error) {
+    recorderPanel.classList.remove("is-recording");
     setStatus("Camera & mic required");
     stopStream();
     await releaseWakeLock();
@@ -1121,6 +1127,7 @@ async function finishRecording() {
     });
     state.recorder.stop();
     await stopped;
+    recorderPanel.classList.remove("is-recording");
     stopStream();
     await releaseWakeLock();
     state.recorder = null;
@@ -1152,6 +1159,7 @@ async function finishRecording() {
 
   state.recorder.stop();
   await stopped;
+  recorderPanel.classList.remove("is-recording");
   recordingBadge.classList.remove("visible");
   stopStream();
   await releaseWakeLock();

@@ -1615,6 +1615,56 @@ video {
     padding: 24px;
   }
 
+  .recorder-panel.is-recording {
+    scroll-margin-top: 8px;
+    padding: 16px;
+  }
+
+  .recorder-panel.is-recording .question-block {
+    padding-bottom: 12px;
+  }
+
+  .recorder-panel.is-recording .question-block .muted-label {
+    margin-bottom: 6px;
+    font-size: 10px;
+  }
+
+  .recorder-panel.is-recording #questionText {
+    max-width: none;
+    font-size: clamp(20px, 5.6vw, 25px);
+    line-height: 1.12;
+    letter-spacing: -0.025em;
+    text-wrap: pretty;
+  }
+
+  .recorder-panel.is-recording #questionMeta {
+    display: none;
+  }
+
+  .recorder-panel.is-recording .video-frame {
+    margin-top: 12px;
+  }
+
+  .recorder-panel.is-recording .camera-guidance {
+    margin-top: 10px;
+    padding: 8px 10px;
+  }
+
+  .recorder-panel.is-recording .camera-guidance > strong,
+  .recorder-panel.is-recording .camera-guidance > p {
+    display: none;
+  }
+
+  .recorder-panel.is-recording .device-status {
+    margin-top: 0;
+  }
+
+  .recorder-panel.is-recording .save-result {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
   .question-block {
     min-height: 0;
   }
@@ -1682,6 +1732,22 @@ video {
 
   .danger-button {
     box-shadow: 0 10px 28px rgba(180, 35, 52, 0.24);
+  }
+
+  .danger-button:disabled {
+    background: #7f6c70;
+    color: #fff;
+    opacity: 1;
+    box-shadow: none;
+  }
+
+  .recorder-panel.is-recording .control-row {
+    bottom: 0;
+    margin: 10px -4px 0;
+    padding: 8px 4px max(8px, env(safe-area-inset-bottom));
+    background: rgba(251, 252, 248, 0.96);
+    box-shadow: 0 -10px 22px rgba(35, 54, 43, 0.08);
+    backdrop-filter: blur(8px);
   }
 
   .prepare-modal {
