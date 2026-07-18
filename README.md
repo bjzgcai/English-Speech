@@ -28,7 +28,7 @@ INTERNAL_LLM_QUESTION_MODEL=glm
 INTERNAL_LLM_TRANSCRIBE_MODEL=qwen-asr
 OPENROUTER_API_KEY=your-openrouter-key
 OPENROUTER_CHAT_COMPLETIONS_URL=https://openrouter.ai/api/v1/chat/completions
-OPENROUTER_EVAL_MODEL=moonshotai/kimi-k2.6
+OPENROUTER_EVAL_MODEL=google/gemini-3.5-flash
 EVAL_MAX_FRAMES=18
 EVAL_REQUEST_TIMEOUT_MS=600000
 ```
@@ -64,6 +64,87 @@ days by default).
 
 The browser never receives API keys. Question generation goes through `POST /api/generate-question`.
 
+## Core authentication, question, and answer workflow
+
+This workflow is a core application contract and should be preserved when the
+authentication, question-generation, recording, or evaluation code changes.
+
+1. The browser checks `GET /api/me`. An unauthenticated user is sent to
+   `GET /auth/dingtalk` with a safe local redirect path.
+2. The server creates a nonce-protected OAuth state and redirects to DingTalk.
+   At `/auth/dingtalk/callback`, it exchanges the authorization code, obtains
+   the user's `openId`, optionally enriches the session with organization
+   fields (`userId`, `jobNumber`, `email`, and `orgEmail`), and sets a signed,
+   HTTP-only session cookie. Authentication can continue if optional
+   organization enrichment fails, but it cannot continue without `openId`.
+3. Before question generation, the authenticated user must accept both current
+   privacy acknowledgements. Consent is versioned and persisted by `openId`.
+4. The browser submits the candidate profile to
+   `POST /api/generate-question`. The server replaces the submitted name with
+   the authenticated DingTalk name, asks the configured internal chat model for
+   a structured interview-style question, and persists the generated question
+   with its owner and profile. If model generation fails, a persisted fallback
+   question is returned with the error.
+5. After a short preparation countdown, the browser records camera and
+   microphone together with `MediaRecorder`. Recording stops when the user
+   selects **Finish and save**, when the two-minute limit is reached, or when a
+   required media device is interrupted. An interrupted incomplete recording is
+   not uploaded.
+6. The browser uploads the finalized recording and its `questionId` to
+   `POST /api/save-answer`. The server rejects a missing question or a question
+   not owned by the authenticated user's `openId`. Supported browser formats
+   are validated and normalized to MP4 before durable storage.
+7. Once the video is safely stored, the server runs the speech-evaluation
+   workflow described below. Evaluation failure does not discard the answer:
+   the recording and a failed evaluation status are still persisted.
+8. The recording metadata, evaluation, and owned question reference are
+   appended to `recordings/metadata.jsonl`. History and video requests are
+   always filtered by the signed-in user's `openId`.
+
+In compact form:
+
+```text
+DingTalk OAuth -> signed session -> versioned privacy consent
+    -> generate and persist owned question -> prepare -> record answer
+    -> verify owned question -> normalize and save video -> evaluate
+    -> persist result -> show owner-filtered history
+```
+
+## Audio, transcript, and evaluation workflow
+
+Qwen ASR is the transcription component; it does not assign evaluation scores.
+The scoring model evaluates the transcript together with derived audio metrics,
+the question and rubric, and sampled video frames.
+
+```text
+Recorded video
+    -> validate media and limit evaluation to two minutes
+    -> FFmpeg extracts mono 16 kHz audio
+    -> reject missing, silent, or extremely quiet audio
+    -> Qwen ASR transcribes English speech to text
+       (long audio is processed in ordered chunks)
+    -> FFmpeg derives duration, silence, pause, word-count, and speaking-rate metrics
+    -> FFmpeg samples a video frame about every five seconds, up to EVAL_MAX_FRAMES
+    -> Gemini receives the transcript, audio metrics, question/profile, rubric, and frames
+    -> normalize and persist JSON scores, feedback, strengths, and improvements
+```
+
+The evaluator therefore uses different evidence for different dimensions:
+
+- Grammar, vocabulary, coherence, and task relevance primarily use the transcript.
+- Fluency and pacing use the transcript plus speaking-rate and pause metrics.
+- Visual delivery uses sampled video frames. It is excluded and reweighted when
+  usable audio exists but no video picture is available.
+- Pronunciation/intelligibility is currently inferred from transcription
+  reliability and intelligibility clues. The scoring model does not receive the
+  original audio, so this is not a phoneme-level acoustic pronunciation test.
+
+Both `INTERNAL_LLM_API_KEY` (transcription) and `OPENROUTER_API_KEY`
+(evaluation) are required to complete evaluation. Qwen requests explicitly use
+English and retry transient failures. Audio longer than the configured chunk
+size (30 seconds by default, capped at 40) is split and transcribed in order;
+known Qwen input-format failures trigger WAV/MP3 format fallback.
+
 ## Partner API
 
 The read-only partner API exposes DingTalk user identity fields and speaking-assessment scores without exposing recorded videos, video paths, filenames, extracted audio, sampled frames, transcripts, raw audio metrics, or internal model metadata. Configure a separate integration secret as `PARTNER_API_KEY`; do not reuse the DingTalk app secret or session secret. Generate a strong key with `openssl rand -hex 32`, and expose the API only over HTTPS or a trusted private network.
@@ -88,10 +169,8 @@ curl \
 
 The partner endpoints also expose 28 deterministic roster-backed users, each with one completed mock evaluation, for integration testing. Their `jobNumber` values come from the roster's `工号` field, their `name` values come from `姓名`, and generated API identifiers start with `mock_`. Only those two roster fields are retained. The mocks are generated in memory and do not modify recording or question metadata.
 
-Answer evaluation runs after `Finish and save`. The internal model gateway transcribes the audio,
-then OpenRouter evaluates the transcript, audio metrics, and sampled video frames with Gemini 3.5 Flash.
-
-The server extracts the full audio track, samples video frames at roughly one frame every five seconds capped by `EVAL_MAX_FRAMES`, then evaluates:
+Answer evaluation runs after `Finish and save` according to the audio,
+transcript, and evaluation workflow above. The active rubric is:
 
 | Dimension | Weight |
 | --- | ---: |
