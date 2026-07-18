@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily EnglishEval encrypted recording backup and optional recording retention
+Description=Daily OScanner-Eng encrypted recording backup and optional recording retention
 
 [Timer]
 OnCalendar=*-*-* 03:15:00

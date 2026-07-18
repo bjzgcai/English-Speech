@@ -1,15 +1,15 @@
 openapi: 3.0.3
 info:
-  title: EnglishEval Partner API
+  title: OScanner-Eng Partner API
   version: 1.0.0
   description: |
-    Read-only access to EnglishEval user identity data and speaking-assessment
+    Read-only access to OScanner-Eng user identity data and speaking-assessment
     results. Responses intentionally exclude recorded videos, video URLs,
     filenames, MIME metadata, extracted audio paths, sampled-frame artifacts,
     transcripts, raw audio metrics, and internal model metadata.
 servers:
   - url: /
-    description: Current EnglishEval server
+    description: Current OScanner-Eng server
 tags:
   - name: Users
     description: User identity data and assessment results
@@ -83,7 +83,7 @@ paths:
       tags: [Rubrics]
       summary: Get the active speaking-evaluation rubric
       description: |
-        Returns the versioned scoring standard used by EnglishEval, including
+        Returns the versioned scoring standard used by OScanner-Eng, including
         the score scale, weighted-average formula, score bands, dimension
         weights, evidence considered, and interpretation guidance. Partner
         evaluation payloads reference this standard through `rubricId` and

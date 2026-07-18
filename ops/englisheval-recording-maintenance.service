@@ -1,5 +1,5 @@
 [Unit]
-Description=Encrypted EnglishEval recording backup and optional recording retention
+Description=Encrypted OScanner-Eng recording backup and optional recording retention
 
 [Service]
 Type=oneshot

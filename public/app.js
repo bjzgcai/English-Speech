@@ -331,7 +331,7 @@ function showMediaRequiredModal(error, retryAction = "record") {
   prepareModalKicker.textContent = "Devices required";
   prepareModalTitle.textContent = "Turn on your camera and microphone to continue";
   prepareModalMessage.textContent =
-    "EnglishEval needs both devices to record and evaluate your answer. Allow camera and microphone access in your browser, then try again.";
+    "OScanner-Eng needs both devices to record and evaluate your answer. Allow camera and microphone access in your browser, then try again.";
   prepareSpinner.hidden = true;
   preparePreviewWrap.hidden = true;
   prepareCameraGuidance.hidden = false;
@@ -756,7 +756,7 @@ function setRoute(pathname) {
   historyView.hidden = !state.authUser || !isHistory;
   loginPanel.hidden = Boolean(state.authUser);
   connectionStatus.hidden = isHistory;
-  document.title = isHistory ? "History | EnglishEval" : "Examine | EnglishEval";
+  document.title = isHistory ? "History | OScanner-Eng" : "Examine | OScanner-Eng";
   navLinks.forEach((link) => {
     link.classList.toggle("active", normalizeRoute(link.dataset.route) === route);
   });
