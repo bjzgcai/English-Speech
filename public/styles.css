@@ -85,7 +85,7 @@ button:disabled {
   gap: 10px;
   color: var(--ink);
   font-size: 15px;
-  font-weight: 750;
+  font-weight: 650;
   text-decoration: none;
 }
 
@@ -98,7 +98,7 @@ button:disabled {
   background: var(--ink);
   color: #fff;
   font-size: 14px;
-  font-weight: 850;
+  font-weight: 700;
 }
 
 .header-menu {
@@ -194,7 +194,7 @@ button:disabled {
   padding: 27px 0 24px;
   text-decoration: none;
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .main-nav a:hover,
@@ -220,7 +220,7 @@ button:disabled {
   margin: 0 0 8px;
   color: var(--accent-dark);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 650;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -234,6 +234,7 @@ p {
 h1 {
   max-width: 820px;
   font-size: clamp(48px, 5.5vw, 76px);
+  font-weight: 650;
   line-height: 0.98;
   letter-spacing: -0.05em;
   text-wrap: balance;
@@ -282,7 +283,7 @@ h1 {
   color: var(--accent-dark);
   padding: 12px 14px;
   font-size: 12px;
-  font-weight: 850;
+  font-weight: 650;
   letter-spacing: 0.08em;
   line-height: 1;
   text-transform: uppercase;
@@ -331,6 +332,7 @@ h1 {
 
 .section-heading h2 {
   font-size: 26px;
+  font-weight: 650;
   line-height: 1.08;
   letter-spacing: -0.025em;
 }
@@ -348,7 +350,7 @@ label {
   margin-bottom: 20px;
   color: #28342d;
   font-size: 14px;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .privacy-note {
@@ -361,7 +363,7 @@ label {
 .privacy-note a,
 .consent-check a {
   color: var(--accent-dark);
-  font-weight: 800;
+  font-weight: 600;
   text-underline-offset: 3px;
 }
 
@@ -373,6 +375,7 @@ textarea {
   border-radius: var(--radius);
   background: #f4f6f1;
   color: var(--ink);
+  font-weight: 400;
   padding: 14px;
   outline: none;
   transition:
@@ -407,7 +410,7 @@ input[readonly] {
   border-radius: var(--radius);
   padding: 0 18px;
   color: #fff;
-  font-weight: 800;
+  font-weight: 650;
   transition:
     transform 140ms ease,
     background 140ms ease,
@@ -449,6 +452,7 @@ input[readonly] {
   font-size: clamp(28px, 3.3vw, 45px);
   line-height: 1.03;
   letter-spacing: -0.035em;
+  font-weight: 600;
   text-wrap: balance;
 }
 
@@ -469,7 +473,7 @@ input[readonly] {
   place-items: center;
   background: rgba(17, 25, 20, 0.9);
   color: #f4faf6;
-  font-weight: 850;
+  font-weight: 600;
   z-index: 2;
 }
 
@@ -515,14 +519,14 @@ video {
   gap: 6px;
   place-items: center;
   color: #dce6de;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .video-placeholder small {
   max-width: 28ch;
   color: #aebbb1;
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 400;
   line-height: 1.4;
   text-align: center;
 }
@@ -531,21 +535,129 @@ video {
   display: none;
 }
 
-.recording-badge {
+.framing-guide {
   position: absolute;
-  top: 14px;
-  left: 14px;
-  display: none;
-  border-radius: 999px;
-  background: #d72638;
-  color: #fff;
-  padding: 7px 11px;
-  font-size: 13px;
-  font-weight: 850;
+  inset: 5% 12% 3%;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  opacity: 0.74;
+  transition: opacity 240ms ease;
 }
 
-.recording-badge.visible {
+.video-placeholder:not(.hidden) + .framing-guide {
+  opacity: 0;
+}
+
+.framing-guide svg {
+  width: min(54%, 250px);
+  height: 88%;
+  overflow: visible;
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.74);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 7 7;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
+}
+
+.framing-guide > span {
+  position: absolute;
+  bottom: 0;
+  border-radius: 4px;
+  background: rgba(10, 16, 12, 0.62);
+  color: rgba(255, 255, 255, 0.88);
+  padding: 4px 7px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.recording-hud {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  left: 12px;
+  z-index: 2;
+  display: none;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px 18px;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  background: rgba(12, 18, 14, 0.82);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(10px);
+  color: #fff;
+  padding: 9px 12px 11px;
+}
+
+.recording-hud.visible {
+  display: grid;
+}
+
+.recording-state {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.recording-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f04452;
+  box-shadow: 0 0 0 4px rgba(240, 68, 82, 0.16);
+  animation: recording-pulse 1.8s ease-in-out infinite;
+}
+
+.recording-time {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 6px;
+  align-items: baseline;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.recording-time strong {
+  color: #fff;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.recording-progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.recording-progress span {
   display: block;
+  width: 100%;
+  height: 100%;
+  transform: scaleX(0);
+  transform-origin: left;
+  background: #f04452;
+  transition: transform 1s linear;
+}
+
+@keyframes recording-pulse {
+  50% { opacity: 0.48; }
 }
 
 .camera-guidance {
@@ -559,6 +671,7 @@ video {
 .camera-guidance strong {
   display: block;
   font-size: 14px;
+  font-weight: 600;
 }
 
 .camera-guidance p {
@@ -584,7 +697,7 @@ video {
   padding: 7px 9px;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 750;
+  font-weight: 500;
 }
 
 .device-status span::before {
@@ -615,7 +728,7 @@ video {
   min-height: 22px;
   margin-top: 16px;
   color: var(--muted);
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .evaluation-result {
@@ -1240,7 +1353,7 @@ video {
   transform: scaleX(-1);
 }
 
-.prepare-preview span {
+.prepare-preview .preview-status {
   position: absolute;
   right: 8px;
   bottom: 8px;
@@ -1249,7 +1362,19 @@ video {
   color: #f4faf6;
   padding: 6px 8px;
   font-size: 11px;
-  font-weight: 750;
+  font-weight: 500;
+  z-index: 2;
+}
+
+.prepare-preview .framing-guide-compact {
+  inset: 4% 12% 3%;
+}
+
+.prepare-preview .framing-guide-compact > span {
+  top: 8px;
+  right: auto;
+  bottom: auto;
+  left: 8px;
 }
 
 .prepare-actions {
@@ -1285,6 +1410,7 @@ video {
 
 .prepare-camera-guidance strong {
   font-size: 14px;
+  font-weight: 600;
 }
 
 .prepare-camera-guidance span {
@@ -1722,6 +1848,20 @@ video {
 
   .video-frame {
     aspect-ratio: 4 / 3;
+  }
+
+  .recording-hud {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 14px;
+    padding: 8px 10px 10px;
+  }
+
+  .recording-state {
+    grid-column: 1 / -1;
+  }
+
+  .recording-time {
+    justify-content: space-between;
   }
 
   .control-row {
