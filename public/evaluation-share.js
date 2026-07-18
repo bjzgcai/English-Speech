@@ -90,7 +90,7 @@
     context.textAlign = "left";
     context.fillStyle = "#17201B";
     context.font = `750 27px ${font}`;
-    context.fillText("EnglishEval", 184, 135);
+    context.fillText("OScanner-Eng", 184, 135);
     context.fillStyle = "#5D685F";
     context.font = `650 20px ${font}`;
     context.fillText("SPEAKING EVALUATION", 104, 226);

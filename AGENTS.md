@@ -1,4 +1,4 @@
-# EnglishEval Agent Guide
+# OScanner-Eng Agent Guide
 
 ## Production safety
 

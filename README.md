@@ -1,4 +1,4 @@
-# EnglishEval
+# OScanner-Eng
 
 A local web app for generating English speaking questions from a candidate profile, recording the answer with the browser camera, and saving the video plus metadata on the server.
 

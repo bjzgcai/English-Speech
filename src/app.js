@@ -305,7 +305,7 @@ function requirePartnerApiKey(req, res, next) {
   const match = authorization.match(/^Bearer\s+(.+)$/i);
   const providedKey = safeText(match?.[1]);
   if (!providedKey || !secureTextEqual(providedKey, configuredKey)) {
-    res.set("WWW-Authenticate", 'Bearer realm="EnglishEval Partner API"');
+    res.set("WWW-Authenticate", 'Bearer realm="OScanner-Eng Partner API"');
     return res.status(401).json({ error: "A valid partner API bearer token is required." });
   }
 
@@ -1353,7 +1353,7 @@ async function evaluateAnswer({
     const headers = {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
-      "X-OpenRouter-Title": "EnglishEval",
+      "X-OpenRouter-Title": "OScanner-Eng",
     };
     if (safeText(process.env.APP_BASE_URL)) {
       headers["HTTP-Referer"] = safeText(process.env.APP_BASE_URL);
@@ -1890,7 +1890,7 @@ app.post(
       const mediaInfo = await inspectMedia(inputPath);
       if (!mediaInfo.hasAudio) {
         throw new Error(
-          "This video has a picture but no audio track. EnglishEval needs spoken audio to evaluate it.",
+          "This video has a picture but no audio track. OScanner-Eng needs spoken audio to evaluate it.",
         );
       }
       const limitedMediaInfo = limitStandaloneMediaInfo(mediaInfo);
@@ -2062,7 +2062,7 @@ app.use((error, _req, res, next) => {
 
 function startServer() {
   return app.listen(port, () => {
-    console.log(`EnglishEval is running at http://localhost:${port}`);
+    console.log(`OScanner-Eng is running at http://localhost:${port}`);
   });
 }
 

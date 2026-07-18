@@ -12,7 +12,7 @@ usage() {
   cat <<'EOF'
 Usage: ./deploy.sh [--migrate-data]
 
-Deploy EnglishEval to the configured SSH target. Code is installed as a
+Deploy OScanner-Eng to the configured SSH target. Code is installed as a
 versioned release while .env, recordings, questions, comments, and consents remain in shared
 persistent storage.
 
@@ -43,7 +43,7 @@ for command in ssh rsync curl; do
 done
 
 [[ -f package.json && -f package-lock.json && -f server.js ]] || {
-  echo "Run this script from the EnglishEval repository root." >&2
+  echo "Run this script from the OScanner-Eng repository root." >&2
   exit 1
 }
 [[ "$APP_PORT" =~ ^[0-9]+$ ]] && ((APP_PORT >= 1 && APP_PORT <= 65535)) || {
@@ -134,7 +134,7 @@ previous_release="$(ssh "$TARGET" "readlink -f '$REMOTE_ROOT/current' 2>/dev/nul
 ssh "$TARGET" "set -eu
 sudo tee '/etc/systemd/system/$SERVICE_NAME.service' >/dev/null <<'UNIT'
 [Unit]
-Description=EnglishEval web service
+Description=OScanner-Eng web service
 After=network-online.target
 Wants=network-online.target
 
@@ -162,7 +162,7 @@ WantedBy=multi-user.target
 UNIT
 sudo tee '/etc/systemd/system/$SERVICE_NAME-recording-maintenance.service' >/dev/null <<'UNIT'
 [Unit]
-Description=Encrypted EnglishEval recording backup and optional recording retention
+Description=Encrypted OScanner-Eng recording backup and optional recording retention
 
 [Service]
 Type=oneshot
@@ -185,7 +185,7 @@ UMask=0077
 UNIT
 sudo tee '/etc/systemd/system/$SERVICE_NAME-recording-maintenance.timer' >/dev/null <<'UNIT'
 [Unit]
-Description=Daily EnglishEval encrypted recording backup and optional recording retention
+Description=Daily OScanner-Eng encrypted recording backup and optional recording retention
 
 [Timer]
 OnCalendar=*-*-* 03:15:00

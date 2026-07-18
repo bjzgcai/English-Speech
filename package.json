@@ -1,7 +1,7 @@
 {
-  "name": "englisheval",
+  "name": "oscanner-eng",
   "version": "1.0.0",
-  "description": "English evaluation question generator and answer recorder.",
+  "description": "OScanner-Eng English evaluation question generator and answer recorder.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

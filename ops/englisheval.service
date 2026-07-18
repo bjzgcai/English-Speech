@@ -1,5 +1,5 @@
 [Unit]
-Description=EnglishEval web service
+Description=OScanner-Eng web service
 After=network-online.target
 Wants=network-online.target
 

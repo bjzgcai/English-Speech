@@ -9,7 +9,7 @@ function registerPageRoutes(app) {
   app.get(["/api-docs", "/api-docs/"], (_req, res) => {
     res.type("html").send(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>EnglishEval Partner API</title><link rel="stylesheet" href="/api-docs/assets/swagger-ui.css"></head>
+<title>OScanner-Eng Partner API</title><link rel="stylesheet" href="/api-docs/assets/swagger-ui.css"></head>
 <body><div id="swagger-ui"></div><script src="/api-docs/assets/swagger-ui-bundle.js"></script>
 <script src="/api-docs/assets/swagger-ui-standalone-preset.js"></script><script>
 SwaggerUIBundle({url:"/openapi.yaml",dom_id:"#swagger-ui",deepLinking:true,presets:[SwaggerUIBundle.presets.apis,SwaggerUIStandalonePreset],layout:"StandaloneLayout"});
