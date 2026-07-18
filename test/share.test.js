@@ -53,6 +53,7 @@ test("methodology and history load the shared evaluation image controls", async 
   assert.equal(historyResponse.status, 200);
   assert.equal(scriptResponse.status, 200);
   assert.match(methodology, /<script src="\/evaluation-share\.js"><\/script>/);
+  assert.match(methodology, /<video id="evaluationModalVideo" controls playsinline/);
   assert.match(history, /<script src="\/evaluation-share\.js"><\/script>/);
   assert.match(script, /window\.EvaluationShare/);
   assert.match(script, /share-evaluation/);
