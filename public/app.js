@@ -7,6 +7,8 @@ const state = {
   startedAt: null,
   mimeType: "",
   autoStopTimer: null,
+  recordingTimer: null,
+  recordingStartedAtMs: null,
   prepareCountdownTimer: null,
   prepareCountdownResolve: null,
   mediaRetryPending: false,
@@ -47,6 +49,9 @@ const preparePreviewWrap = document.querySelector("#preparePreviewWrap");
 const videoFrame = document.querySelector(".video-frame");
 const videoPlaceholder = document.querySelector("#videoPlaceholder");
 const recordingBadge = document.querySelector("#recordingBadge");
+const recordingElapsed = document.querySelector("#recordingElapsed");
+const recordingRemaining = document.querySelector("#recordingRemaining");
+const recordingProgress = document.querySelector("#recordingProgress");
 const questionText = document.querySelector("#questionText");
 const questionMeta = document.querySelector("#questionMeta");
 const saveResult = document.querySelector("#saveResult");
@@ -181,6 +186,45 @@ function setStatus(message) {
 function setVideoLoading(isLoading) {
   videoFrame.classList.toggle("is-loading", isLoading);
   videoFrame.setAttribute("aria-busy", String(isLoading));
+}
+
+function formatRecordingTime(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function updateRecordingTimer() {
+  if (!state.recordingStartedAtMs) return;
+
+  const elapsedMs = Math.min(Date.now() - state.recordingStartedAtMs, MAX_RECORDING_MS);
+  const elapsedSeconds = Math.floor(elapsedMs / 1000);
+  const remainingSeconds = Math.max(0, Math.ceil((MAX_RECORDING_MS - elapsedMs) / 1000));
+  const elapsedLabel = formatRecordingTime(elapsedSeconds);
+  const remainingLabel = formatRecordingTime(remainingSeconds);
+
+  recordingElapsed.textContent = elapsedLabel;
+  recordingRemaining.textContent = remainingLabel;
+  recordingProgress.style.transform = `scaleX(${elapsedMs / MAX_RECORDING_MS})`;
+  recordingBadge.setAttribute(
+    "aria-label",
+    `Recording started. ${elapsedLabel} elapsed. ${remainingLabel} remaining.`,
+  );
+}
+
+function startRecordingTimer() {
+  if (state.recordingTimer) window.clearInterval(state.recordingTimer);
+  state.recordingStartedAtMs = Date.now();
+  updateRecordingTimer();
+  state.recordingTimer = window.setInterval(updateRecordingTimer, 1000);
+}
+
+function stopRecordingTimer() {
+  if (state.recordingTimer) {
+    window.clearInterval(state.recordingTimer);
+    state.recordingTimer = null;
+  }
+  state.recordingStartedAtMs = null;
 }
 
 function updateAuthView() {
@@ -821,6 +865,7 @@ async function startRecording() {
     state.mimeType = getSupportedMimeType();
     state.chunks = [];
     state.requiredDeviceInterrupted = null;
+    stopRecordingTimer();
     setVideoLoading(false);
     await acquireRequiredMedia();
 
@@ -870,6 +915,7 @@ async function startRecording() {
     generateButton.disabled = true;
     logoutButton.disabled = true;
     recordingBadge.classList.add("visible");
+    startRecordingTimer();
     setStatus("Recording");
     saveResult.textContent = "Recording in progress. Answer the question in English. Recording is limited to 2 minutes.";
     if (window.matchMedia("(max-width: 820px)").matches) {
@@ -879,7 +925,9 @@ async function startRecording() {
       finishRecording();
     }, MAX_RECORDING_MS);
   } catch (error) {
+    stopRecordingTimer();
     recorderPanel.classList.remove("is-recording");
+    recordingBadge.classList.remove("visible");
     setStatus("Camera & mic required");
     stopStream();
     await releaseWakeLock();
@@ -909,6 +957,7 @@ async function finishRecording() {
     state.recorder.stop();
     await stopped;
     recorderPanel.classList.remove("is-recording");
+    stopRecordingTimer();
     stopStream();
     await releaseWakeLock();
     state.recorder = null;
@@ -929,6 +978,7 @@ async function finishRecording() {
   }
 
   finishButton.disabled = true;
+  stopRecordingTimer();
   setStatus("Saving");
   saveResult.textContent = "Finalizing recording, uploading it, and evaluating the answer...";
   evaluationResult.innerHTML = "";

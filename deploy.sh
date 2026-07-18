@@ -196,6 +196,7 @@ Persistent=true
 WantedBy=timers.target
 UNIT
 sudo rm -f '/etc/systemd/system/$SERVICE_NAME.service.d/recording-mount.conf'
+sudo rm -f '/etc/systemd/system/$SERVICE_NAME-recording-maintenance.service.d/recording-mount.conf'
 ln -sfn '$release_dir' '$REMOTE_ROOT/current'
 sudo systemctl daemon-reload
 sudo systemctl enable --now '$SERVICE_NAME.service'

@@ -96,7 +96,32 @@
               <span>Camera preview</span>
               <small>Your browser will ask before anything turns on.</small>
             </div>
-            <div class="recording-badge" id="recordingBadge">Recording</div>
+            <div class="framing-guide" aria-hidden="true">
+              <svg viewBox="100 20 200 200" focusable="false">
+                <ellipse cx="200" cy="62" rx="29" ry="35"></ellipse>
+                <path d="M187 105v17c-39 9-61 37-64 88"></path>
+                <path d="M213 105v17c39 9 61 37 64 88"></path>
+                <path d="M123 210c24-18 50-27 77-27s53 9 77 27"></path>
+              </svg>
+              <span>Align head and shoulders</span>
+            </div>
+            <div class="recording-hud" id="recordingBadge" role="timer" aria-live="off">
+              <div class="recording-state">
+                <span class="recording-dot" aria-hidden="true"></span>
+                <span>Recording started</span>
+              </div>
+              <div class="recording-time">
+                <span>Elapsed</span>
+                <strong id="recordingElapsed">00:00</strong>
+              </div>
+              <div class="recording-time">
+                <span>Remaining</span>
+                <strong id="recordingRemaining">02:00</strong>
+              </div>
+              <div class="recording-progress" aria-hidden="true">
+                <span id="recordingProgress"></span>
+              </div>
+            </div>
           </div>
 
           <aside class="camera-guidance" aria-label="Camera setup guidance">
@@ -151,7 +176,16 @@
           <p id="prepareModalMessage">Please wait while the assessment question is generated.</p>
           <div class="prepare-preview" id="preparePreviewWrap" hidden>
             <video id="preparePreview" autoplay muted playsinline></video>
-            <span>Live preview · not recording yet</span>
+            <div class="framing-guide framing-guide-compact" aria-hidden="true">
+              <svg viewBox="100 20 200 200" focusable="false">
+                <ellipse cx="200" cy="62" rx="29" ry="35"></ellipse>
+                <path d="M187 105v17c-39 9-61 37-64 88"></path>
+                <path d="M213 105v17c39 9 61 37 64 88"></path>
+                <path d="M123 210c24-18 50-27 77-27s53 9 77 27"></path>
+              </svg>
+              <span>Align head and shoulders</span>
+            </div>
+            <span class="preview-status">Live preview · not recording yet</span>
           </div>
           <div class="prepare-camera-guidance" id="prepareCameraGuidance" hidden>
             <strong id="prepareGuidanceTitle">Set up your camera and microphone</strong>
