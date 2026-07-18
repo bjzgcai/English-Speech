@@ -153,6 +153,93 @@ function safeText(value, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
 }
 
+function decodeUtf8UploadFilename(value) {
+  const filename = safeText(value);
+  if (!filename) return "";
+
+  const normalized = filename.normalize("NFC");
+  const looksLikeUtf8DecodedAsLatin1 = /[\u0080-\u009f]|[ÃÂÐÑð]/.test(normalized);
+  if (!looksLikeUtf8DecodedAsLatin1) return normalized;
+
+  const sourceBytes = Buffer.from(normalized, "latin1");
+  const decoded = sourceBytes.toString("utf8");
+  if (
+    decoded.includes("\uFFFD") ||
+    !Buffer.from(decoded, "utf8").equals(sourceBytes)
+  ) {
+    return normalized;
+  }
+  return decoded.normalize("NFC");
+}
+
+function standaloneEvaluationTitle(filename) {
+  const decodedFilename = decodeUtf8UploadFilename(filename) || "Standalone speech";
+  const baseName = path.basename(decodedFilename);
+  const withoutExtension = baseName.replace(/\.[^.]+$/, "");
+  const normalized = withoutExtension
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return (normalized || "Standalone speech").slice(0, 100);
+}
+
+function isPublicEvaluation(record) {
+  const id = safeText(record?.id);
+  return (
+    record?.sourceType === "upload" &&
+    record?.evaluation?.status === "completed" &&
+    /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(id)
+  );
+}
+
+function publicEvaluationForClient(record) {
+  if (!isPublicEvaluation(record)) return null;
+
+  const rubric = Object.fromEntries(
+    Object.entries(record.evaluation.rubric || {}).map(([key, dimension]) => [
+      key,
+      {
+        label: safeText(dimension?.label, "Evaluation dimension"),
+        weight: Number.isFinite(Number(dimension?.weight)) ? Number(dimension.weight) : null,
+        score: Number.isFinite(Number(dimension?.score)) ? Number(dimension.score) : null,
+        feedback: safeText(dimension?.feedback),
+        available: dimension?.available !== false,
+      },
+    ]),
+  );
+  const posterPath = path.join(artifactsDir, record.id, "frames", "frame-001.jpg");
+  const hasVideo =
+    safeText(record.filename) &&
+    path.basename(record.filename) === record.filename &&
+    fs.existsSync(path.join(recordingsDir, record.filename));
+  const storedTitle = decodeUtf8UploadFilename(record.title);
+  const originalFilename = decodeUtf8UploadFilename(record.originalFilename);
+
+  return {
+    id: record.id,
+    title: originalFilename
+      ? standaloneEvaluationTitle(originalFilename)
+      : storedTitle || "Standalone speech",
+    finishedAt: safeText(record.finishedAt),
+    overallScore: Number.isFinite(Number(record.evaluation.overallScore))
+      ? Number(record.evaluation.overallScore)
+      : null,
+    summary: safeText(record.evaluation.summary),
+    rubric,
+    mediaValidation: {
+      visualEvaluated: record.evaluation.mediaValidation?.visualEvaluated === true,
+      truncated: record.evaluation.mediaValidation?.truncated === true,
+      notice: safeText(record.evaluation.mediaValidation?.notice),
+    },
+    posterPath: fs.existsSync(posterPath)
+      ? `/api/public-evaluations/${encodeURIComponent(record.id)}/poster`
+      : null,
+    videoPath: hasVideo
+      ? `/api/public-evaluations/${encodeURIComponent(record.id)}/video`
+      : null,
+  };
+}
+
 function shareServiceUrl(req) {
   const configuredUrl = safeText(process.env.APP_BASE_URL);
   if (configuredUrl) {
@@ -1829,8 +1916,11 @@ app.post(
       if (evaluation.rubric?.coherence) {
         evaluation.rubric.coherence.label = "Coherence / speech consistency";
       }
+      const originalFilename = decodeUtf8UploadFilename(req.file.originalname);
       const record = {
         id,
+        title: standaloneEvaluationTitle(originalFilename),
+        originalFilename: path.basename(originalFilename),
         hasVideo: true,
         filename,
         mimeType: "video/mp4",
@@ -1858,6 +1948,7 @@ app.post(
         id,
         path: `/api/recordings/${id}/video`,
         evaluation,
+        publicEvaluation: publicEvaluationForClient(record),
       });
     } catch (error) {
       removePath(convertedPath);
@@ -1869,6 +1960,63 @@ app.post(
     }
   },
 );
+
+app.get("/api/public-evaluations", (_req, res) => {
+  const evaluations = readJsonLines(metadataFile)
+    .filter(isPublicEvaluation)
+    .map(publicEvaluationForClient)
+    .filter(Boolean)
+    .sort((left, right) => right.finishedAt.localeCompare(left.finishedAt));
+
+  res.set("Cache-Control", "no-store");
+  res.json({ evaluations });
+});
+
+app.get("/api/public-evaluations/:id/poster", (req, res) => {
+  const record = readJsonLines(metadataFile).find(
+    (item) => item.id === req.params.id && isPublicEvaluation(item),
+  );
+  if (!record) {
+    return res.status(404).json({ error: "Evaluation poster not found." });
+  }
+
+  const posterPath = path.join(artifactsDir, record.id, "frames", "frame-001.jpg");
+  if (!fs.existsSync(posterPath)) {
+    return res.status(404).json({ error: "Evaluation poster not found." });
+  }
+
+  res.set({
+    "Cache-Control": "public, max-age=86400",
+    "X-Content-Type-Options": "nosniff",
+  });
+  res.type("image/jpeg");
+  res.sendFile(posterPath);
+});
+
+app.get("/api/public-evaluations/:id/video", (req, res) => {
+  const record = readJsonLines(metadataFile).find(
+    (item) => item.id === req.params.id && isPublicEvaluation(item),
+  );
+  if (
+    !record ||
+    !record.filename ||
+    path.basename(record.filename) !== record.filename
+  ) {
+    return res.status(404).json({ error: "Evaluation video not found." });
+  }
+
+  const videoPath = path.join(recordingsDir, record.filename);
+  if (!fs.existsSync(videoPath)) {
+    return res.status(404).json({ error: "Evaluation video not found." });
+  }
+
+  res.set({
+    "Cache-Control": "public, max-age=3600",
+    "X-Content-Type-Options": "nosniff",
+  });
+  res.type("video/mp4");
+  res.sendFile(videoPath);
+});
 
 app.get("/api/recordings", requireAuth, (req, res) => {
   const recordings = readJsonLines(metadataFile)
@@ -1925,6 +2073,7 @@ module.exports = {
     buildEvaluationPrompt,
     createOAuthState,
     createSessionToken,
+    decodeUtf8UploadFilename,
     evaluateAnswer,
     extractJsonObject,
     evaluationTimeoutMessage,
@@ -1935,6 +2084,8 @@ module.exports = {
     normalizeEvaluation,
     normalizeRedirectPath,
     parseOAuthState,
+    publicEvaluationForClient,
+    standaloneEvaluationTitle,
     transcribeAudio,
     useSecureSessionCookie,
   },

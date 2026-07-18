@@ -49,6 +49,19 @@ const selectedVideoName = document.querySelector("#selectedVideoName");
 const evaluatorStatus = document.querySelector("#videoEvaluatorStatus");
 const evaluatorResult = document.querySelector("#videoEvaluationResult");
 const evaluateVideoButton = document.querySelector("#evaluateVideoButton");
+const evaluationGallery = document.querySelector("#evaluationGallery");
+const evaluationGalleryStatus = document.querySelector("#evaluationGalleryStatus");
+const evaluationModal = document.querySelector("#evaluationModal");
+const closeEvaluationModalButton = document.querySelector("#closeEvaluationModal");
+const evaluationModalVideo = document.querySelector("#evaluationModalVideo");
+const evaluationModalPoster = document.querySelector("#evaluationModalPoster");
+const evaluationModalPosterFallback = document.querySelector("#evaluationModalPosterFallback");
+const evaluationModalDate = document.querySelector("#evaluationModalDate");
+const evaluationModalTitle = document.querySelector("#evaluationModalTitle");
+const evaluationModalScore = document.querySelector("#evaluationModalScore");
+const evaluationModalSummary = document.querySelector("#evaluationModalSummary");
+const evaluationModalDimensions = document.querySelector("#evaluationModalDimensions");
+let publicEvaluations = [];
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -58,6 +71,168 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+function formatEvaluationDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Shared evaluation";
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
+function posterMarkup(evaluation, className) {
+  if (!evaluation.posterPath) {
+    return `<div class="${className}-fallback" aria-hidden="true"><span>E</span></div>`;
+  }
+  return `<img src="${escapeHtml(evaluation.posterPath)}" alt="First frame from ${escapeHtml(evaluation.title)}" loading="lazy" />`;
+}
+
+function renderEvaluationGallery() {
+  evaluationGallery.setAttribute("aria-busy", "false");
+  evaluationGalleryStatus.classList.remove("is-error");
+  if (!publicEvaluations.length) {
+    evaluationGallery.innerHTML = `
+      <div class="evaluation-gallery-empty">
+        <span aria-hidden="true">01</span>
+        <h3>The first shared evaluation will appear here.</h3>
+        <p>Upload a video above to add its poster and dimension scores to this collection.</p>
+      </div>
+    `;
+    evaluationGalleryStatus.textContent = "No shared evaluations yet.";
+    return;
+  }
+
+  evaluationGalleryStatus.textContent = `${publicEvaluations.length} shared ${publicEvaluations.length === 1 ? "evaluation" : "evaluations"}`;
+  evaluationGallery.innerHTML = publicEvaluations
+    .map(
+      (evaluation, index) => `
+        <article class="evaluation-card" style="--card-index: ${index}">
+          <button class="evaluation-card-poster" type="button" data-evaluation-id="${escapeHtml(evaluation.id)}" aria-label="Open ${escapeHtml(evaluation.title)} evaluation">
+            ${posterMarkup(evaluation, "evaluation-card-poster")}
+            <span class="evaluation-card-score">${Math.round(Number(evaluation.overallScore || 0))}</span>
+          </button>
+          <div class="evaluation-card-caption">
+            <button type="button" data-evaluation-id="${escapeHtml(evaluation.id)}" title="${escapeHtml(evaluation.title)}">${escapeHtml(evaluation.title)}</button>
+            <time datetime="${escapeHtml(evaluation.finishedAt)}">${escapeHtml(formatEvaluationDate(evaluation.finishedAt))}</time>
+          </div>
+        </article>
+      `,
+    )
+    .join("");
+}
+
+async function loadPublicEvaluations() {
+  try {
+    const response = await fetch("/api/public-evaluations", { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Shared evaluations could not be loaded.");
+    publicEvaluations = Array.isArray(data.evaluations) ? data.evaluations : [];
+    renderEvaluationGallery();
+  } catch (error) {
+    evaluationGallery.setAttribute("aria-busy", "false");
+    evaluationGalleryStatus.textContent = error.message;
+    evaluationGalleryStatus.classList.add("is-error");
+    evaluationGallery.innerHTML = "";
+  }
+}
+
+function openEvaluationModal(evaluation) {
+  const rubric = Object.values(evaluation.rubric || {});
+  evaluationModalDate.textContent = formatEvaluationDate(evaluation.finishedAt);
+  evaluationModalTitle.textContent = evaluation.title;
+  evaluationModalScore.innerHTML = `${Math.round(Number(evaluation.overallScore || 0))}<span>/100</span>`;
+  evaluationModalSummary.textContent = evaluation.summary || "Evaluation completed.";
+  evaluationModalDimensions.innerHTML = rubric
+    .map((dimension) => {
+      const available = dimension.available !== false && Number.isFinite(Number(dimension.score));
+      return `
+        <article>
+          <div class="evaluation-modal-dimension-heading">
+            <h3>${escapeHtml(dimension.label || "Dimension")}</h3>
+            <strong>${available ? `${Math.round(Number(dimension.score))}<span>/100</span>` : "Not scored"}</strong>
+          </div>
+          ${available ? `<div class="evaluation-modal-meter" aria-hidden="true"><span style="--score: ${Math.max(0, Math.min(100, Number(dimension.score)))}%"></span></div>` : ""}
+          <p>${escapeHtml(dimension.feedback || "No feedback was provided.")}</p>
+        </article>
+      `;
+    })
+    .join("");
+
+  const hasVideo = Boolean(evaluation.videoPath);
+  const hasPoster = Boolean(evaluation.posterPath);
+  evaluationModalVideo.hidden = !hasVideo;
+  evaluationModalPoster.hidden = hasVideo || !hasPoster;
+  evaluationModalPosterFallback.hidden = hasVideo || hasPoster;
+
+  if (hasVideo) {
+    evaluationModalVideo.src = evaluation.videoPath;
+    evaluationModalVideo.setAttribute("aria-label", `Play ${evaluation.title}`);
+    if (hasPoster) evaluationModalVideo.poster = evaluation.posterPath;
+    else evaluationModalVideo.removeAttribute("poster");
+    evaluationModalVideo.load();
+  } else {
+    evaluationModalVideo.removeAttribute("src");
+    evaluationModalVideo.removeAttribute("poster");
+    evaluationModalVideo.removeAttribute("aria-label");
+  }
+
+  if (hasPoster) {
+    evaluationModalPoster.src = evaluation.posterPath;
+    evaluationModalPoster.alt = `First frame from ${evaluation.title}`;
+  } else {
+    evaluationModalPoster.removeAttribute("src");
+    evaluationModalPoster.alt = "";
+  }
+
+  document.body.classList.add("modal-open");
+  if (typeof evaluationModal.showModal === "function") evaluationModal.showModal();
+  else evaluationModal.setAttribute("open", "");
+  closeEvaluationModalButton.focus();
+}
+
+function closeEvaluationModal() {
+  evaluationModalVideo.pause();
+  if (typeof evaluationModal.close === "function") evaluationModal.close();
+  else evaluationModal.removeAttribute("open");
+  document.body.classList.remove("modal-open");
+}
+
+evaluationGallery.addEventListener("click", (event) => {
+  const trigger = event.target.closest("[data-evaluation-id]");
+  if (!trigger) return;
+  const evaluation = publicEvaluations.find((item) => item.id === trigger.dataset.evaluationId);
+  if (evaluation) openEvaluationModal(evaluation);
+});
+
+evaluationGallery.addEventListener(
+  "error",
+  (event) => {
+    if (!(event.target instanceof HTMLImageElement)) return;
+    const fallback = document.createElement("div");
+    fallback.className = "evaluation-card-poster-fallback";
+    fallback.setAttribute("aria-hidden", "true");
+    fallback.innerHTML = "<span>E</span>";
+    event.target.replaceWith(fallback);
+  },
+  true,
+);
+
+closeEvaluationModalButton.addEventListener("click", closeEvaluationModal);
+evaluationModalPoster.addEventListener("error", () => {
+  evaluationModalPoster.hidden = true;
+  evaluationModalPosterFallback.hidden = false;
+});
+evaluationModalVideo.addEventListener("error", () => {
+  evaluationModalVideo.hidden = true;
+  if (evaluationModalPoster.src) evaluationModalPoster.hidden = false;
+  else evaluationModalPosterFallback.hidden = false;
+});
+evaluationModal.addEventListener("click", (event) => {
+  if (event.target === evaluationModal) closeEvaluationModal();
+});
+evaluationModal.addEventListener("close", () => document.body.classList.remove("modal-open"));
 
 function renderVideoEvaluation(evaluation) {
   const dimensions = Object.values(evaluation.rubric || {});
@@ -145,6 +320,7 @@ evaluatorForm.addEventListener("submit", async (event) => {
     evaluatorStatus.textContent = "Evaluation complete.";
     evaluatorStatus.className = "is-success";
     renderVideoEvaluation(data.evaluation);
+    await loadPublicEvaluations();
   } catch (error) {
     evaluatorStatus.textContent = error.message;
     evaluatorStatus.className = "is-error";
@@ -153,6 +329,8 @@ evaluatorForm.addEventListener("submit", async (event) => {
     evaluateVideoButton.textContent = "Validate and evaluate";
   }
 });
+
+loadPublicEvaluations();
 
 const detail = {
   weight: document.querySelector("#detailWeight"),
