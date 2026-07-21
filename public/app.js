@@ -20,6 +20,11 @@ const state = {
   authReady: false,
   privacyConsent: null,
   privacyConsentResolve: null,
+  saveAbortController: null,
+  activeSaveId: null,
+  discardTargetSaveId: null,
+  discardRequested: false,
+  discardInProgress: false,
 };
 
 const MAX_RECORDING_MS = 2 * 60 * 1000;
@@ -42,6 +47,8 @@ const profileForm = document.querySelector("#profileForm");
 const nameInput = document.querySelector("#name");
 const generateButton = document.querySelector("#generateButton");
 const finishButton = document.querySelector("#finishButton");
+const discardButton = document.querySelector("#discardButton");
+const controlRow = document.querySelector(".control-row");
 const recorderPanel = document.querySelector(".recorder-panel");
 const preview = document.querySelector("#preview");
 const preparePreview = document.querySelector("#preparePreview");
@@ -91,6 +98,10 @@ const sensitiveInfoAgree = document.querySelector("#sensitiveInfoAgree");
 const privacyConsentError = document.querySelector("#privacyConsentError");
 const declinePrivacyButton = document.querySelector("#declinePrivacyButton");
 const acceptPrivacyButton = document.querySelector("#acceptPrivacyButton");
+const discardModal = document.querySelector("#discardModal");
+const discardError = document.querySelector("#discardError");
+const keepAnswerButton = document.querySelector("#keepAnswerButton");
+const confirmDiscardButton = document.querySelector("#confirmDiscardButton");
 
 function updatePrivacyAcceptButton() {
   acceptPrivacyButton.disabled = !(privacyPolicyAgree.checked && sensitiveInfoAgree.checked);
@@ -186,6 +197,64 @@ function setStatus(message) {
 function setVideoLoading(isLoading) {
   videoFrame.classList.toggle("is-loading", isLoading);
   videoFrame.setAttribute("aria-busy", String(isLoading));
+}
+
+function setDiscardAvailable(isAvailable) {
+  discardButton.hidden = !isAvailable;
+  discardButton.disabled = !isAvailable;
+  controlRow.classList.toggle("has-discard", isAvailable);
+}
+
+function createAnswerSaveId() {
+  if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+
+  const bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map((value) => value.toString(16).padStart(2, "0"));
+  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
+}
+
+function openDiscardModal() {
+  if (state.discardInProgress) return;
+  state.discardTargetSaveId = state.activeSaveId;
+  discardError.hidden = true;
+  discardError.textContent = "";
+  discardModal.hidden = false;
+  document.body.classList.add("modal-open");
+  window.setTimeout(() => keepAnswerButton.focus(), 0);
+}
+
+function closeDiscardModal() {
+  if (state.discardInProgress) return;
+  state.discardTargetSaveId = null;
+  discardModal.hidden = true;
+  document.body.classList.remove("modal-open");
+  (discardButton.hidden ? generateButton : discardButton).focus();
+}
+
+async function requestAnswerCancellation(submissionId) {
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(`/api/save-answer/${encodeURIComponent(submissionId)}/cancel`, {
+        method: "POST",
+        keepalive: true,
+      });
+      const data = await response.json();
+      if (!response.ok || !data.cancellationRequested) {
+        throw new Error(data.error || "The server could not discard this answer.");
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) {
+        await new Promise((resolve) => window.setTimeout(resolve, 300 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastError || new Error("The server could not discard this answer.");
 }
 
 function formatRecordingTime(totalSeconds) {
@@ -317,7 +386,7 @@ function showCountdownModal(question) {
   prepareCameraGuidance.hidden = false;
   countdownDisplay.hidden = false;
   prepareActions.hidden = false;
-  speakDirectlyButton.textContent = "Speak directly";
+  speakDirectlyButton.textContent = "Start now";
   countdownSeconds.textContent = String(PREPARE_COUNTDOWN_SECONDS);
   prepareModal.hidden = false;
   document.body.classList.add("modal-open");
@@ -912,6 +981,7 @@ async function startRecording() {
     closePrepareModal();
     recorderPanel.classList.add("is-recording");
     finishButton.disabled = false;
+    setDiscardAvailable(true);
     generateButton.disabled = true;
     logoutButton.disabled = true;
     recordingBadge.classList.add("visible");
@@ -933,6 +1003,7 @@ async function startRecording() {
     await releaseWakeLock();
     updateDeviceStatus("error", "Camera and microphone need attention");
     finishButton.disabled = true;
+    setDiscardAvailable(false);
     generateButton.disabled = true;
     logoutButton.disabled = false;
     saveResult.textContent = "Turn on your camera and microphone to record this answer.";
@@ -963,6 +1034,7 @@ async function finishRecording() {
     state.recorder = null;
     state.chunks = [];
     logoutButton.disabled = false;
+    setDiscardAvailable(false);
     recordingBadge.classList.remove("visible");
     showMediaRequiredModal(new Error(
       `Your ${unavailableDevice} is off. Turn it on and record the answer again; this incomplete recording will not be saved.`,
@@ -977,7 +1049,12 @@ async function finishRecording() {
     state.autoStopTimer = null;
   }
 
+  const submissionId = createAnswerSaveId();
+  state.activeSaveId = submissionId;
+  state.discardRequested = false;
+  state.saveAbortController = new AbortController();
   finishButton.disabled = true;
+  finishButton.textContent = "Saving and evaluating…";
   stopRecordingTimer();
   setStatus("Saving");
   saveResult.textContent = "Finalizing recording, uploading it, and evaluating the answer...";
@@ -1002,35 +1079,130 @@ async function finishRecording() {
   formData.append("video", videoBlob, `answer.${extension}`);
   formData.append("questionId", state.question.id);
   formData.append("startedAt", state.startedAt);
+  formData.append("submissionId", submissionId);
 
   try {
     const response = await fetch("/api/save-answer", {
       method: "POST",
       body: formData,
+      signal: state.saveAbortController.signal,
     });
     const data = await response.json();
     if (!response.ok) {
       throw new Error(data.error || "Save failed.");
+    }
+    if (state.discardRequested) return;
+    if (state.activeSaveId === submissionId) {
+      state.activeSaveId = null;
+      state.saveAbortController = null;
     }
 
     saveResult.innerHTML = `Saved as <a href="${escapeHtml(data.path)}" target="_blank" rel="noreferrer">${escapeHtml(data.filename)}</a>. Generate the next question when ready.`;
     renderEvaluation(data.evaluation);
     setStatus(data.evaluation?.status === "completed" ? "Evaluated" : "Saved");
     generateButton.disabled = false;
+    setDiscardAvailable(false);
     await loadHistory();
   } catch (error) {
+    if (state.discardRequested) return;
     setStatus("Save failed");
     saveResult.textContent = error.message;
     generateButton.disabled = false;
+    setDiscardAvailable(false);
   } finally {
     setVideoLoading(false);
     state.recorder = null;
     state.chunks = [];
     logoutButton.disabled = false;
+    finishButton.textContent = "Finish and save";
+    if (state.activeSaveId === submissionId && !state.discardRequested) {
+      state.activeSaveId = null;
+      state.saveAbortController = null;
+    }
+  }
+}
+
+async function discardCurrentAnswer() {
+  if (state.discardInProgress) return;
+
+  state.discardInProgress = true;
+  confirmDiscardButton.disabled = true;
+  keepAnswerButton.disabled = true;
+  discardButton.disabled = true;
+  finishButton.disabled = true;
+  videoFrame.classList.add("is-discarding");
+  setVideoLoading(true);
+  setStatus("Discarding");
+  saveResult.textContent = "Discarding this recording and its evaluation data...";
+
+  if (state.autoStopTimer) {
+    window.clearTimeout(state.autoStopTimer);
+    state.autoStopTimer = null;
+  }
+
+  const submissionId = state.discardTargetSaveId || state.activeSaveId;
+  state.discardRequested = true;
+
+  try {
+    if (state.recorder && state.recorder.state !== "inactive") {
+      const stopped = new Promise((resolve) => {
+        state.recorder.addEventListener("stop", resolve, { once: true });
+      });
+      state.recorder.stop();
+      await stopped;
+    }
+
+    state.saveAbortController?.abort();
+    if (submissionId) {
+      await requestAnswerCancellation(submissionId);
+    }
+
+    stopRecordingTimer();
+    recorderPanel.classList.remove("is-recording");
+    recordingBadge.classList.remove("visible");
+    stopStream();
+    await releaseWakeLock();
+    state.recorder = null;
+    state.chunks = [];
+    state.startedAt = null;
+    state.question = null;
+    state.activeSaveId = null;
+    state.discardTargetSaveId = null;
+    state.saveAbortController = null;
+    state.discardRequested = false;
+    evaluationResult.innerHTML = "";
+    questionText.textContent = "Enter a profile, then generate one question.";
+    questionMeta.textContent = "Recording starts automatically after the question is ready.";
+    saveResult.textContent = "Answer discarded. No recording, evaluation, or score was saved.";
+    finishButton.textContent = "Finish and save";
+    generateButton.disabled = false;
+    logoutButton.disabled = false;
+    setDiscardAvailable(false);
+    videoFrame.classList.remove("is-discarding");
+    setVideoLoading(false);
+    discardModal.hidden = true;
+    document.body.classList.remove("modal-open");
+    state.discardInProgress = false;
+    confirmDiscardButton.disabled = false;
+    keepAnswerButton.disabled = false;
+    navigateTo("/history");
+  } catch (error) {
+    state.discardInProgress = false;
+    confirmDiscardButton.disabled = false;
+    keepAnswerButton.disabled = false;
+    discardButton.disabled = false;
+    videoFrame.classList.remove("is-discarding");
+    setVideoLoading(false);
+    setStatus("Discard not confirmed");
+    discardError.textContent = `${error.message} Try again before leaving this page.`;
+    discardError.hidden = false;
   }
 }
 
 finishButton.addEventListener("click", finishRecording);
+discardButton.addEventListener("click", openDiscardModal);
+keepAnswerButton.addEventListener("click", closeDiscardModal);
+confirmDiscardButton.addEventListener("click", discardCurrentAnswer);
 
 logoutButton.addEventListener("click", async () => {
   await fetch("/auth/logout", { method: "POST" });
@@ -1095,9 +1267,8 @@ speakDirectlyButton.addEventListener("click", () => {
 navLinks.forEach((link) => {
   link.addEventListener("click", (event) => {
     event.preventDefault();
-    if (state.recorder && state.recorder.state !== "inactive") {
-      setStatus("Recording");
-      saveResult.textContent = "Finish and save before leaving the recording screen.";
+    if ((state.recorder && state.recorder.state !== "inactive") || state.activeSaveId) {
+      openDiscardModal();
       return;
     }
     navigateTo(link.getAttribute("href"));
@@ -1119,17 +1290,17 @@ historyList.addEventListener("click", (event) => {
 closeVideoModal.addEventListener("click", closeHistoryVideo);
 
 window.addEventListener("popstate", () => {
-  if (state.recorder && state.recorder.state !== "inactive") {
+  if ((state.recorder && state.recorder.state !== "inactive") || state.activeSaveId) {
     window.history.pushState({}, "", "/");
     setRoute("/examine");
-    saveResult.textContent = "Finish and save before leaving the recording screen.";
+    openDiscardModal();
     return;
   }
   setRoute(window.location.pathname);
 });
 
 window.addEventListener("beforeunload", (event) => {
-  if (state.recorder && state.recorder.state !== "inactive") {
+  if ((state.recorder && state.recorder.state !== "inactive") || state.activeSaveId) {
     event.preventDefault();
     event.returnValue = "";
     return;
@@ -1139,6 +1310,12 @@ window.addEventListener("beforeunload", (event) => {
   }
   stopPrepareCountdown();
   stopStream();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !discardModal.hidden && !state.discardInProgress) {
+    closeDiscardModal();
+  }
 });
 
 document.addEventListener("visibilitychange", () => {
