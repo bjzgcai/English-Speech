@@ -8,7 +8,7 @@ const QRCode = require("qrcode");
 const ffmpegPath = require("ffmpeg-static");
 const swaggerUiDistPath = require("swagger-ui-dist").getAbsoluteFSPath();
 const config = require("./config");
-const { appendJsonLine, readJsonLines } = require("./storage");
+const { appendJsonLine, readJsonLines, writeJsonLines } = require("./storage");
 const { createQuestionService } = require("./questions");
 const { registerPageRoutes } = require("./routes/pages");
 const { buildMockPartnerUsers } = require("./mock-evaluations");
@@ -44,9 +44,11 @@ const openRouterChatCompletionsUrl =
 const openRouterEvalModel = process.env.OPENROUTER_EVAL_MODEL || "google/gemini-3.5-flash";
 const maximumVideoBytes = 250 * 1024 * 1024;
 const standaloneEvaluationMaxSeconds = 2 * 60;
+const answerCancellationTtlMs = 60 * 60 * 1000;
+const canceledAnswerSaves = new Map();
 const evaluationRubricStandard = Object.freeze({
   id: "english-speaking-evaluation",
-  version: "1.1.0",
+  version: "1.2.0",
   name: "English Speaking Evaluation",
   scoreScale: {
     minimum: 0,
@@ -605,6 +607,61 @@ function removePath(targetPath) {
   }
 }
 
+function validAnswerSaveId(value) {
+  const id = safeText(value);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
+    ? id
+    : "";
+}
+
+function pruneCanceledAnswerSaves(now = Date.now()) {
+  canceledAnswerSaves.forEach((cancellation, id) => {
+    if (now - cancellation.requestedAt > answerCancellationTtlMs) {
+      canceledAnswerSaves.delete(id);
+    }
+  });
+}
+
+function requestAnswerCancellation(id, openId) {
+  pruneCanceledAnswerSaves();
+  canceledAnswerSaves.set(id, { openId, requestedAt: Date.now() });
+}
+
+function isAnswerCancellationRequested(id, openId) {
+  pruneCanceledAnswerSaves();
+  return canceledAnswerSaves.get(id)?.openId === openId;
+}
+
+function discardPersistedAnswer({
+  id,
+  openId,
+  metadataPath = metadataFile,
+  recordingsPath = recordingsDir,
+  artifactsPath = artifactsDir,
+  requireSubmissionId = false,
+}) {
+  const records = readJsonLines(metadataPath);
+  const matchesDiscard = (record) =>
+    record.id === id &&
+    recordOpenId(record) === openId &&
+    (!requireSubmissionId || record.submissionId === id);
+  const discardedRecords = records.filter(matchesDiscard);
+
+  if (discardedRecords.length) {
+    discardedRecords.forEach((record) => {
+      if (record.filename && path.basename(record.filename) === record.filename) {
+        removePath(path.join(recordingsPath, record.filename));
+      }
+    });
+    writeJsonLines(
+      metadataPath,
+      records.filter((record) => !matchesDiscard(record)),
+    );
+    removePath(path.join(artifactsPath, id));
+  }
+  return discardedRecords.length;
+}
+
 function convertToMp4(inputPath, outputPath, { maximumDurationSeconds = null } = {}) {
   return new Promise((resolve, reject) => {
     const args = [
@@ -801,11 +858,9 @@ async function audioMaximumVolume(audioPath) {
   return Number(output.match(/max_volume:\s*(-?[0-9.]+)\s*dB/i)?.[1]);
 }
 
-async function validateSpokenAudio(audioPath) {
+async function hasAudibleAudio(audioPath) {
   const maximumVolume = await audioMaximumVolume(audioPath);
-  if (!Number.isFinite(maximumVolume) || maximumVolume < -50) {
-    throw new Error("We found an audio track, but it is silent or too quiet to evaluate.");
-  }
+  return Number.isFinite(maximumVolume) && maximumVolume >= -50;
 }
 
 function fileToDataUrl(filePath, mimeType) {
@@ -839,6 +894,38 @@ function normalizeScore(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 0;
   return Math.max(0, Math.min(100, Math.round(number)));
+}
+
+const nonVerbalTranscriptWords = new Set([
+  "ah",
+  "er",
+  "erm",
+  "ha",
+  "haha",
+  "hm",
+  "hmm",
+  "hmmm",
+  "huh",
+  "mm",
+  "mmm",
+  "oh",
+  "ooh",
+  "uh",
+  "uhh",
+  "um",
+  "umm",
+]);
+
+function meaningfulEnglishWords(transcript) {
+  return safeText(transcript)
+    .replace(/\[[^\]]*\]|\([^)]*\)|<[^>]*>/g, " ")
+    .toLowerCase()
+    .match(/[a-z]+(?:'[a-z]+)?/g)
+    ?.filter((word) => !nonVerbalTranscriptWords.has(word)) || [];
+}
+
+function hasScorableEnglishSpeech(transcript) {
+  return meaningfulEnglishWords(transcript).length >= 2;
 }
 
 function normalizeRedirectPath(value) {
@@ -1045,7 +1132,14 @@ function nonNegativeInteger(value, fallback = 0) {
   return Number.isInteger(number) && number >= 0 ? number : fallback;
 }
 
-function normalizeEvaluation(rawEvaluation, { visualAvailable = true } = {}) {
+function normalizeEvaluation(
+  rawEvaluation,
+  { visualAvailable = true, hasScorableSpeech = true, transcript = "" } = {},
+) {
+  const modelSpeechFlag = rawEvaluation?.hasScorableEnglishSpeech;
+  const modelFoundScorableSpeech =
+    modelSpeechFlag !== false && safeText(modelSpeechFlag).toLowerCase() !== "false";
+  const shouldScore = hasScorableSpeech && modelFoundScorableSpeech;
   const rubric = Object.fromEntries(
     evaluationRubricStandard.dimensions.map((dimension) => [
       dimension.key,
@@ -1055,11 +1149,15 @@ function normalizeEvaluation(rawEvaluation, { visualAvailable = true } = {}) {
         score:
           dimension.key === "visualDelivery" && !visualAvailable
             ? null
-            : normalizeScore(rawEvaluation?.rubric?.[dimension.key]?.score),
+            : shouldScore
+              ? normalizeScore(rawEvaluation?.rubric?.[dimension.key]?.score)
+              : 0,
         feedback:
           dimension.key === "visualDelivery" && !visualAvailable
             ? "Not scored because the file contains usable speech but no video picture."
-            : safeText(rawEvaluation?.rubric?.[dimension.key]?.feedback),
+            : shouldScore
+              ? safeText(rawEvaluation?.rubric?.[dimension.key]?.feedback)
+              : "No scorable English speech was detected, so this dimension received 0.",
         available: dimension.key !== "visualDelivery" || visualAvailable,
       },
     ]),
@@ -1075,16 +1173,21 @@ function normalizeEvaluation(rawEvaluation, { visualAvailable = true } = {}) {
   return {
     rubricId: evaluationRubricStandard.id,
     rubricVersion: evaluationRubricStandard.version,
-    overallScore: normalizeScore(overallScore),
-    summary: safeText(rawEvaluation?.summary, "Evaluation completed."),
-    transcript: safeText(rawEvaluation?.transcript),
+    hasScorableEnglishSpeech: shouldScore,
+    overallScore: shouldScore ? normalizeScore(overallScore) : 0,
+    summary: shouldScore
+      ? safeText(rawEvaluation?.summary, "Evaluation completed.")
+      : "No scorable English speech was detected. This attempt received 0 out of 100.",
+    transcript: safeText(transcript, safeText(rawEvaluation?.transcript)),
     rubric,
-    strengths: Array.isArray(rawEvaluation?.strengths)
+    strengths: shouldScore && Array.isArray(rawEvaluation?.strengths)
       ? rawEvaluation.strengths.map((item) => safeText(item)).filter(Boolean).slice(0, 4)
       : [],
-    improvements: Array.isArray(rawEvaluation?.improvements)
+    improvements: shouldScore && Array.isArray(rawEvaluation?.improvements)
       ? rawEvaluation.improvements.map((item) => safeText(item)).filter(Boolean).slice(0, 4)
-      : [],
+      : shouldScore
+        ? []
+        : ["Start speaking in English and give at least one complete response to the question."],
     model: {
       transcribe: internalLlmTranscribeModel,
       evaluate: openRouterEvalModel,
@@ -1291,6 +1394,7 @@ function buildEvaluationPrompt({ profile, question, transcript, audioMetrics, fr
     "Evaluate this user's English speaking performance from the transcript and sampled video frames.",
     "Return strict JSON only. Do not include markdown.",
     "Use a 0-100 score for each dimension.",
+    "Set hasScorableEnglishSpeech to false when the response contains no meaningful English words or only silence, noise, humming, filler sounds, or isolated exclamations. In that case, return 0 for every dimension and 0 overall.",
     `The weights must be: ${weights}.`,
     `Apply this rubric standard: ${JSON.stringify({ scoreBands: evaluationRubricStandard.scoreBands, dimensions: evaluationRubricStandard.dimensions })}`,
     "Use the audio metrics to evaluate fluency and pacing. Pronunciation should be inferred from transcription reliability and intelligibility clues.",
@@ -1303,6 +1407,7 @@ function buildEvaluationPrompt({ profile, question, transcript, audioMetrics, fr
       : "No visual frames are available. Do not infer visual delivery; return 0 for that dimension and explain that it was not assessed.",
     "Schema:",
     JSON.stringify({
+      hasScorableEnglishSpeech: true,
       overallScore: 0,
       summary: "",
       transcript: "",
@@ -1327,6 +1432,18 @@ async function evaluateAnswer({
   framePaths,
   evaluationMode = "question-answer",
 }) {
+  const transcriptHasScorableSpeech = hasScorableEnglishSpeech(transcript);
+  if (!transcriptHasScorableSpeech) {
+    return normalizeEvaluation(
+      {},
+      {
+        visualAvailable: framePaths.length > 0,
+        hasScorableSpeech: false,
+        transcript,
+      },
+    );
+  }
+
   const apiKey = process.env.OPENROUTER_API_KEY;
   const requestTimeoutMs = positiveInteger(Number(process.env.EVAL_REQUEST_TIMEOUT_MS), 600_000);
   const content = [
@@ -1390,6 +1507,8 @@ async function evaluateAnswer({
     const outputText = modelMessageText(payload.choices?.[0]?.message);
     return normalizeEvaluation(extractJsonObject(outputText), {
       visualAvailable: framePaths.length > 0,
+      hasScorableSpeech: transcriptHasScorableSpeech,
+      transcript,
     });
   } catch (error) {
     if (isEvaluationTimeout(error)) {
@@ -1427,15 +1546,14 @@ async function evaluateSavedVideo({
     throw new Error("The video has a picture but no usable audio track, so speech cannot be evaluated.");
   }
   await extractAudio(videoPath, audioPath);
-  await validateSpokenAudio(audioPath);
+  const audibleAudio = await hasAudibleAudio(audioPath);
   const maxFrames = positiveInteger(Number(process.env.EVAL_MAX_FRAMES), 18);
   const [transcript, framePaths] = await Promise.all([
-    transcribeAudio(audioPath, { durationSeconds: inspectedMedia.durationSeconds }),
+    audibleAudio
+      ? transcribeAudio(audioPath, { durationSeconds: inspectedMedia.durationSeconds })
+      : Promise.resolve(""),
     inspectedMedia.hasVideo ? sampleFrames(videoPath, frameDir, maxFrames) : Promise.resolve([]),
   ]);
-  if (transcript.split(/\s+/).filter(Boolean).length < 2) {
-    throw new Error("We found audio, but could not detect enough spoken voice to evaluate.");
-  }
   const audioMetrics = await inspectAudio(audioPath, transcript);
   const result = await evaluateAnswer({
     profile,
@@ -1461,9 +1579,11 @@ async function evaluateSavedVideo({
         inspectedMedia.truncated
           ? "The video was longer than two minutes, so only the first two minutes were evaluated."
           : "",
-        framePaths.length
-          ? "Speech and visual delivery were evaluated."
-          : "Speech was evaluated from audio. Visual delivery was not scored because the file has no video picture.",
+        !result.hasScorableEnglishSpeech
+          ? "No scorable English speech was detected, so this attempt received 0 out of 100."
+          : framePaths.length
+            ? "Speech and visual delivery were evaluated."
+            : "Speech was evaluated from audio. Visual delivery was not scored because the file has no video picture.",
       ]
         .filter(Boolean)
         .join(" "),
@@ -1751,6 +1871,26 @@ app.post("/api/generate-question", requireAuth, requirePrivacyConsent, async (re
   }
 });
 
+app.post("/api/save-answer/:id/cancel", requireAuth, (req, res) => {
+  const id = validAnswerSaveId(req.params.id);
+  if (!id) {
+    return res.status(400).json({ error: "A valid answer save ID is required." });
+  }
+
+  requestAnswerCancellation(id, req.user.openId);
+  const removedRecordCount = discardPersistedAnswer({
+    id,
+    openId: req.user.openId,
+    requireSubmissionId: true,
+  });
+  res.json({
+    ok: true,
+    id,
+    cancellationRequested: true,
+    removedRecordCount,
+  });
+});
+
 app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, res) => {
   const questionId = safeText(req.body.questionId);
   const questionRecord = findOwnedQuestion(questionId, req.user.openId);
@@ -1759,15 +1899,30 @@ app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, re
     return res.status(400).json({ error: "The question is missing or does not belong to this user." });
   }
 
+  const requestedId = safeText(req.body.submissionId);
+  const id = requestedId ? validAnswerSaveId(requestedId) : crypto.randomUUID();
+  if (!id) {
+    if (req.file) removePath(req.file.path);
+    return res.status(400).json({ error: "A valid answer save ID is required." });
+  }
+  if (readJsonLines(metadataFile).some((record) => record.id === id)) {
+    if (req.file) removePath(req.file.path);
+    return res.status(409).json({ error: "This answer save ID has already been used." });
+  }
+  if (isAnswerCancellationRequested(id, req.user.openId)) {
+    if (req.file) removePath(req.file.path);
+    return res.status(409).json({ error: "This answer was discarded.", code: "ANSWER_DISCARDED" });
+  }
+
   const profile = questionRecord.profile;
   const question = questionRecord.question;
   const startedAt = safeText(req.body.startedAt);
   const finishedAt = new Date().toISOString();
-  const id = crypto.randomUUID();
 
   if (!req.file) {
     const record = {
       id,
+      submissionId: requestedId ? id : null,
       hasVideo: false,
       filename: null,
       mimeType: null,
@@ -1789,6 +1944,9 @@ app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, re
       },
     };
 
+    if (isAnswerCancellationRequested(id, req.user.openId)) {
+      return res.status(409).json({ error: "This answer was discarded.", code: "ANSWER_DISCARDED" });
+    }
     appendJsonLine(metadataFile, record);
     return res.json({
       ok: true,
@@ -1821,8 +1979,15 @@ app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, re
   }
   removePath(req.file.path);
 
+  if (isAnswerCancellationRequested(id, req.user.openId)) {
+    removePath(finalPath);
+    removePath(path.join(artifactsDir, id));
+    return res.status(409).json({ error: "This answer was discarded.", code: "ANSWER_DISCARDED" });
+  }
+
   const record = {
     id,
+    submissionId: requestedId ? id : null,
     hasVideo: true,
     filename,
     mimeType: "video/mp4",
@@ -1855,6 +2020,12 @@ app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, re
       status: "failed",
       reason: error.message,
     };
+  }
+
+  if (isAnswerCancellationRequested(id, req.user.openId)) {
+    removePath(finalPath);
+    removePath(path.join(artifactsDir, id));
+    return res.status(409).json({ error: "This answer was discarded.", code: "ANSWER_DISCARDED" });
   }
 
   appendJsonLine(metadataFile, record);
@@ -2074,9 +2245,11 @@ module.exports = {
     createOAuthState,
     createSessionToken,
     decodeUtf8UploadFilename,
+    discardPersistedAnswer,
     evaluateAnswer,
     extractJsonObject,
     evaluationTimeoutMessage,
+    hasScorableEnglishSpeech,
     isTranscriptionSizeError,
     isTranscriptionFileOpenError,
     limitStandaloneMediaInfo,
@@ -2088,5 +2261,6 @@ module.exports = {
     standaloneEvaluationTitle,
     transcribeAudio,
     useSecureSessionCookie,
+    validAnswerSaveId,
   },
 };

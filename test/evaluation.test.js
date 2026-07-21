@@ -22,6 +22,56 @@ test("evaluation reads normal model content", () => {
   });
 });
 
+test("answer save IDs accept UUID v4 values only", () => {
+  const id = "777c2d86-6d44-4d8b-ab1c-b823529ca1b5";
+  assert.equal(testHelpers.validAnswerSaveId(id), id);
+  assert.equal(testHelpers.validAnswerSaveId("../../recordings"), "");
+  assert.equal(testHelpers.validAnswerSaveId("777c2d86-6d44-1d8b-ab1c-b823529ca1b5"), "");
+});
+
+test("discarding a persisted answer removes only the owner's metadata and artifacts", (context) => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-discard-"));
+  const metadataPath = path.join(tempDir, "metadata.jsonl");
+  const recordingsPath = path.join(tempDir, "recordings");
+  const artifactsPath = path.join(tempDir, "artifacts");
+  const id = "777c2d86-6d44-4d8b-ab1c-b823529ca1b5";
+  const filename = "answer.mp4";
+  fs.mkdirSync(recordingsPath);
+  fs.mkdirSync(path.join(artifactsPath, id), { recursive: true });
+  fs.writeFileSync(path.join(recordingsPath, filename), "video");
+  fs.writeFileSync(path.join(artifactsPath, id, "transcript.txt"), "transcript");
+  fs.writeFileSync(
+    metadataPath,
+    `${JSON.stringify({ id, submissionId: id, openId: "owner-1", filename })}\n${JSON.stringify({ id: "keep", openId: "owner-1" })}\n`,
+  );
+  context.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
+
+  assert.equal(testHelpers.discardPersistedAnswer({
+    id,
+    openId: "someone-else",
+    metadataPath,
+    recordingsPath,
+    artifactsPath,
+    requireSubmissionId: true,
+  }), 0);
+  assert.equal(fs.existsSync(path.join(artifactsPath, id)), true);
+
+  assert.equal(testHelpers.discardPersistedAnswer({
+    id,
+    openId: "owner-1",
+    metadataPath,
+    recordingsPath,
+    artifactsPath,
+    requireSubmissionId: true,
+  }), 1);
+  assert.equal(fs.existsSync(path.join(recordingsPath, filename)), false);
+  assert.equal(fs.existsSync(path.join(artifactsPath, id)), false);
+  assert.deepEqual(
+    fs.readFileSync(metadataPath, "utf8").trim().split("\n").map(JSON.parse),
+    [{ id: "keep", openId: "owner-1" }],
+  );
+});
+
 test("evaluation falls back to reasoning content when normal content is absent", () => {
   const message = {
     content: null,
@@ -73,6 +123,65 @@ test("audio-only evaluation excludes visual delivery from the weighted total", (
   assert.equal(evaluation.overallScore, 80);
   assert.equal(evaluation.rubric.visualDelivery.score, null);
   assert.equal(evaluation.rubric.visualDelivery.available, false);
+});
+
+test("non-verbal or missing speech receives a deterministic zero score", () => {
+  assert.equal(testHelpers.hasScorableEnglishSpeech(""), false);
+  assert.equal(testHelpers.hasScorableEnglishSpeech("[humming] Hmm... oh!"), false);
+  assert.equal(testHelpers.hasScorableEnglishSpeech("I agree."), true);
+
+  const evaluation = testHelpers.normalizeEvaluation(
+    {
+      overallScore: 11,
+      rubric: {
+        pronunciation: { score: 10 },
+        fluency: { score: 5 },
+        grammar: { score: 5 },
+        vocabulary: { score: 5 },
+        coherence: { score: 20 },
+        visualDelivery: { score: 50 },
+      },
+    },
+    { hasScorableSpeech: false, transcript: "[humming] Hmm... oh!" },
+  );
+
+  assert.equal(evaluation.overallScore, 0);
+  assert.equal(evaluation.hasScorableEnglishSpeech, false);
+  assert.equal(evaluation.transcript, "[humming] Hmm... oh!");
+  assert.deepEqual(
+    Object.values(evaluation.rubric).map((dimension) => dimension.score),
+    [0, 0, 0, 0, 0, 0],
+  );
+  assert.deepEqual(evaluation.strengths, []);
+});
+
+test("the evaluator's explicit no-speech decision overrides non-zero model scores", () => {
+  const evaluation = testHelpers.normalizeEvaluation({
+    hasScorableEnglishSpeech: false,
+    rubric: {
+      pronunciation: { score: 10 },
+      fluency: { score: 5 },
+      grammar: { score: 5 },
+      vocabulary: { score: 5 },
+      coherence: { score: 20 },
+      visualDelivery: { score: 50 },
+    },
+  });
+
+  assert.equal(evaluation.overallScore, 0);
+});
+
+test("non-verbal transcripts skip model scoring and complete with zero", async () => {
+  const evaluation = await testHelpers.evaluateAnswer({
+    profile: {},
+    question: { question: "Tell us about a challenge." },
+    transcript: "(humming) Hmm... oh!",
+    audioMetrics: { wordCount: 2 },
+    framePaths: [],
+  });
+
+  assert.equal(evaluation.overallScore, 0);
+  assert.equal(evaluation.hasScorableEnglishSpeech, false);
 });
 
 test("standalone videos are capped at the end of the second minute", () => {

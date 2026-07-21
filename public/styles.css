@@ -405,7 +405,8 @@ input[readonly] {
 
 .primary-button,
 .secondary-button,
-.danger-button {
+.danger-button,
+.discard-button {
   min-height: 48px;
   border-radius: var(--radius);
   padding: 0 18px;
@@ -435,10 +436,30 @@ input[readonly] {
   background: var(--danger);
 }
 
+.discard-button {
+  border: 1px solid rgba(180, 35, 52, 0.34);
+  background: transparent;
+  color: #8c1e2b;
+}
+
+.discard-button:hover:not(:disabled) {
+  border-color: rgba(180, 35, 52, 0.58);
+  background: #f8eeee;
+}
+
 .primary-button:active:not(:disabled),
 .secondary-button:active:not(:disabled),
-.danger-button:active:not(:disabled) {
+.danger-button:active:not(:disabled),
+.discard-button:active:not(:disabled) {
   transform: translateY(1px);
+}
+
+.primary-button:focus-visible,
+.secondary-button:focus-visible,
+.danger-button:focus-visible,
+.discard-button:focus-visible {
+  outline: 3px solid rgba(23, 107, 83, 0.26);
+  outline-offset: 3px;
 }
 
 .question-block {
@@ -495,6 +516,10 @@ input[readonly] {
 .video-frame.is-loading::before,
 .video-frame.is-loading::after {
   display: grid;
+}
+
+.video-frame.is-discarding::after {
+  content: "Discarding answer...";
 }
 
 video,
@@ -719,9 +744,13 @@ video {
 
 .control-row {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 2fr) minmax(210px, 1fr);
   gap: 12px;
   margin-top: 16px;
+}
+
+.control-row:not(.has-discard) .danger-button {
+  grid-column: 1 / -1;
 }
 
 .save-result {
@@ -1169,6 +1198,52 @@ video {
   background: rgba(17, 27, 21, 0.72);
   backdrop-filter: blur(10px);
   padding: 24px;
+}
+
+.discard-modal {
+  position: fixed;
+  z-index: 58;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  background: rgba(17, 27, 21, 0.72);
+  backdrop-filter: blur(10px);
+  padding: 24px;
+}
+
+.discard-dialog {
+  width: min(520px, 100%);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 34px 100px rgba(5, 18, 11, 0.32);
+  padding: clamp(26px, 5vw, 42px);
+}
+
+.discard-dialog h2 {
+  margin-top: 6px;
+  font-size: clamp(30px, 5vw, 44px);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+}
+
+.discard-dialog > p:not(.muted-label) {
+  margin-top: 16px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.discard-dialog .discard-error {
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.discard-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 26px;
 }
 
 .privacy-consent-dialog {
@@ -1898,6 +1973,15 @@ video {
   .privacy-consent-modal {
     align-items: end;
     padding: 10px 10px max(10px, env(safe-area-inset-bottom));
+  }
+
+  .discard-modal {
+    align-items: end;
+    padding: 10px 10px max(10px, env(safe-area-inset-bottom));
+  }
+
+  .discard-dialog {
+    padding: 26px 20px;
   }
 
   .privacy-consent-dialog {

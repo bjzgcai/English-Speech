@@ -137,6 +137,9 @@
             <button type="button" class="danger-button" id="finishButton" disabled>
               Finish and save
             </button>
+            <button type="button" class="discard-button" id="discardButton" hidden>
+              Exit without saving
+            </button>
           </div>
 
           <div class="save-result" id="saveResult" aria-live="polite"></div>
@@ -196,8 +199,31 @@
           </div>
           <div class="prepare-actions" id="prepareActions" hidden>
             <button type="button" class="primary-button" id="speakDirectlyButton">
-              Speak directly
+              Start now
             </button>
+          </div>
+        </div>
+      </div>
+
+      <div
+        class="discard-modal"
+        id="discardModal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="discardModalTitle"
+        aria-describedby="discardModalMessage"
+        hidden
+      >
+        <div class="discard-dialog">
+          <p class="muted-label">Leave this attempt</p>
+          <h2 id="discardModalTitle">Discard this answer?</h2>
+          <p id="discardModalMessage">
+            The recording, evaluation, and score for this attempt will not be saved. This cannot be undone.
+          </p>
+          <p class="discard-error" id="discardError" role="alert" hidden></p>
+          <div class="discard-actions">
+            <button type="button" class="secondary-button" id="keepAnswerButton">Keep working</button>
+            <button type="button" class="danger-button" id="confirmDiscardButton">Discard and exit</button>
           </div>
         </div>
       </div>
