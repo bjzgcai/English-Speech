@@ -37,6 +37,7 @@ DingTalk authentication is required before users can generate questions, save re
 
 ```bash
 DINGTALK_UNIFIED_APP_ID=...
+DINGTALK_CORP_ID=...
 DINGTALK_APP_KEY=...
 DINGTALK_APP_SECRET=...
 APP_BASE_URL=http://localhost:3199
@@ -46,6 +47,11 @@ PARTNER_API_KEY=replace-with-a-long-random-secret
 ```
 
 The DingTalk app callback URL must match `APP_BASE_URL` plus `/auth/dingtalk/callback`.
+`DINGTALK_CORP_ID` enables automatic H5 passwordless sign-in when the page is
+opened inside DingTalk. The configured 端内免登地址 is an allowlist; the browser
+must still call DingTalk's `requestAuthCode` JSAPI and the server must exchange
+that one-time code. Outside DingTalk, the existing nonce-protected OAuth flow is
+used instead.
 In production, `APP_BASE_URL` must use HTTPS and `COOKIE_SECURE` must be `true`.
 Local HTTP development may set `COOKIE_SECURE=false`.
 
@@ -69,8 +75,10 @@ The browser never receives API keys. Question generation goes through `POST /api
 This workflow is a core application contract and should be preserved when the
 authentication, question-generation, recording, or evaluation code changes.
 
-1. The browser checks `GET /api/me`. An unauthenticated user is sent to
-   `GET /auth/dingtalk` with a safe local redirect path.
+1. The browser checks `GET /api/me`. Inside DingTalk it automatically requests
+   a one-time H5 auth code and posts it to `POST /auth/dingtalk/in-app`. In a
+   regular browser, an unauthenticated user is sent to `GET /auth/dingtalk`
+   with a safe local redirect path.
 2. The server creates a nonce-protected OAuth state and redirects to DingTalk.
    At `/auth/dingtalk/callback`, it exchanges the authorization code, obtains
    the user's `openId`, optionally enriches the session with organization
@@ -195,7 +203,16 @@ The daily recording-maintenance unit briefly stops the application, creates an
 encrypted backup, skips live-recording deletion when retention is disabled, and
 starts the application again.
 
-`openId` is scoped to this DingTalk application and remains the ownership key returned directly by the OAuth user-information endpoint. At sign-in, the server uses `unionId` to resolve the organization `userId`, queries DingTalk user details, and normalizes DingTalk's snake_case/camelCase response fields as `userId`, `jobNumber`, `email`, and `orgEmail`. This enrichment requires the application's organization-contact permission; if the lookup is unavailable, authentication continues with empty organization fields and the server logs a warning.
+`openId` remains the ownership field. Browser OAuth stores the application-scoped
+`openId` returned directly by DingTalk. H5 in-app login returns the organization's
+`unionId` and `userId` instead; the server reuses a matching historical OAuth
+`openId` when one exists, otherwise it derives a deterministic, app-scoped opaque
+`inapp_...` ownership value without exposing the raw organization identifiers.
+At sign-in, the server queries DingTalk user details and normalizes DingTalk's
+snake_case/camelCase response fields as `userId`, `jobNumber`, `email`, and
+`orgEmail`. This enrichment requires the application's organization-contact
+permission; if the lookup is unavailable, authentication continues with empty
+organization fields and the server logs a warning.
 
 Browser support for direct MP4 recording varies. The app asks for MP4 first and records WebM when the browser does not support MP4 through `MediaRecorder`. Recordings are finalized as a single browser blob because timed MP4 chunks are not reliably concatenable across implementations. The server validates and transcodes every accepted upload to MP4 before storage.
 

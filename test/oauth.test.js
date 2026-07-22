@@ -5,6 +5,7 @@ process.env.NODE_ENV = "test";
 process.env.SESSION_SECRET = "test-session-secret";
 process.env.DINGTALK_APP_KEY = "test-app-key";
 process.env.DINGTALK_APP_SECRET = "test-app-secret";
+process.env.DINGTALK_CORP_ID = "test-corp-id";
 
 const { app, testHelpers } = require("../src/app");
 
@@ -42,6 +43,42 @@ test("an explicit cookie security setting supports HTTP production", () => {
     if (previousCookieSecure === undefined) delete process.env.COOKIE_SECURE;
     else process.env.COOKIE_SECURE = previousCookieSecure;
   }
+});
+
+test("DingTalk in-app login has a stable app-scoped ownership key", () => {
+  const first = testHelpers.normalizeDingTalkInAppUser({
+    userid: "employee-123",
+    unionid: "union-123",
+    name: "In-app user",
+  });
+  const second = testHelpers.normalizeDingTalkInAppUser({
+    userid: "employee-123",
+    unionid: "union-123",
+    name: "Renamed user",
+  });
+
+  assert.equal(testHelpers.isDingTalkInAppConfigured(), true);
+  assert.match(first.openId, /^inapp_[A-Za-z0-9_-]{43}$/);
+  assert.equal(second.openId, first.openId);
+  assert.equal(first.userId, "employee-123");
+  assert.equal(first.unionId, "union-123");
+});
+
+test("DingTalk in-app login rejects a missing one-time authorization code", async (context) => {
+  const server = app.listen(0);
+  context.after(() => new Promise((resolve) => server.close(resolve)));
+  await new Promise((resolve) => server.once("listening", resolve));
+
+  const response = await fetch(
+    `http://127.0.0.1:${server.address().port}/auth/dingtalk/in-app`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    },
+  );
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /authorization code/i);
 });
 
 test("DingTalk login sets a nonce cookie and rejects tampered callback state", async (context) => {

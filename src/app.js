@@ -298,6 +298,10 @@ function isDingTalkConfigured() {
   return Boolean(process.env.DINGTALK_APP_KEY && process.env.DINGTALK_APP_SECRET);
 }
 
+function isDingTalkInAppConfigured() {
+  return isDingTalkConfigured() && Boolean(safeText(process.env.DINGTALK_CORP_ID));
+}
+
 function secureTextEqual(left, right) {
   const leftBuffer = Buffer.from(String(left));
   const rightBuffer = Buffer.from(String(right));
@@ -1122,6 +1126,33 @@ async function requestDingTalkAppAccessToken() {
   return token.accessToken;
 }
 
+async function requestDingTalkInAppUserInfo(accessToken, authCode) {
+  const url = new URL("https://oapi.dingtalk.com/topapi/v2/user/getuserinfo");
+  url.searchParams.set("access_token", accessToken);
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ code: authCode }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`DingTalk in-app identity lookup failed with HTTP ${response.status}.`);
+  }
+
+  const body = await response.json();
+  if (Number(body?.errcode) !== 0) {
+    throw new Error(
+      `DingTalk in-app identity lookup failed with error ${body?.errcode ?? "unknown"}.`,
+    );
+  }
+  if (!safeText(body?.result?.userid || body?.result?.userId)) {
+    throw new Error("DingTalk in-app identity lookup did not return an organization user ID.");
+  }
+  return body.result;
+}
+
 async function requestDingTalkUserIdByUnionId(accessToken, unionId) {
   const url = new URL("https://oapi.dingtalk.com/topapi/user/getbyunionid");
   url.searchParams.set("access_token", accessToken);
@@ -1191,6 +1222,57 @@ function normalizeDingTalkUser(rawUser, organizationUser = null) {
     avatarUrl: safeText(rawUser?.avatarUrl),
     mobile: safeText(rawUser?.mobile),
   };
+}
+
+function knownOpenIdForDingTalkUser(user) {
+  const unionId = safeText(user?.unionId);
+  const userId = safeText(user?.userId);
+  if (!unionId && !userId) return "";
+
+  return [...readJsonLines(questionsMetadataFile), ...readJsonLines(metadataFile)]
+    .reverse()
+    .map(recordUserInfo)
+    .find(
+      (candidate) =>
+        safeText(candidate.openId) &&
+        ((unionId && safeText(candidate.unionId) === unionId) ||
+          (userId && safeText(candidate.userId) === userId)),
+    )?.openId || "";
+}
+
+function inAppOwnerOpenId(user) {
+  const knownOpenId = knownOpenIdForDingTalkUser(user);
+  if (knownOpenId) return knownOpenId;
+
+  const stableUserId = safeText(user?.unionId || user?.userId);
+  const corpId = safeText(process.env.DINGTALK_CORP_ID);
+  if (!stableUserId || !corpId) return "";
+  const digest = crypto
+    .createHash("sha256")
+    .update(`dingtalk-in-app\0${corpId}\0${stableUserId}`)
+    .digest("base64url");
+  return `inapp_${digest}`;
+}
+
+function normalizeDingTalkInAppUser(rawUser, organizationUser = null) {
+  const user = {
+    openId: "",
+    unionId: safeText(
+      organizationUser?.unionId || organizationUser?.unionid || rawUser?.unionId || rawUser?.unionid,
+    ),
+    userId: safeText(
+      organizationUser?.userId || organizationUser?.userid || rawUser?.userId || rawUser?.userid,
+    ),
+    jobNumber: safeText(organizationUser?.jobNumber || organizationUser?.job_number),
+    email: safeText(organizationUser?.email),
+    orgEmail: safeText(organizationUser?.orgEmail || organizationUser?.org_email),
+    name: safeText(organizationUser?.name || rawUser?.name, "DingTalk user"),
+    avatarUrl: safeText(organizationUser?.avatarUrl || organizationUser?.avatar),
+    mobile: safeText(organizationUser?.mobile),
+    identitySource: "dingtalk-in-app",
+  };
+  user.openId = inAppOwnerOpenId(user);
+  return user;
 }
 
 function positiveInteger(value, fallback) {
@@ -1729,6 +1811,39 @@ app.get("/auth/dingtalk/callback", async (req, res) => {
   }
 });
 
+app.post("/auth/dingtalk/in-app", async (req, res) => {
+  if (!isDingTalkInAppConfigured()) {
+    return res.status(503).json({ error: "DingTalk in-app authentication is not configured." });
+  }
+
+  const authCode = safeText(req.body?.authCode);
+  if (!authCode || authCode.length > 512) {
+    return res.status(400).json({ error: "A valid DingTalk in-app authorization code is required." });
+  }
+
+  try {
+    const accessToken = await requestDingTalkAppAccessToken();
+    const rawUser = await requestDingTalkInAppUserInfo(accessToken, authCode);
+    const userId = safeText(rawUser?.userid || rawUser?.userId);
+    let organizationUser = null;
+    try {
+      organizationUser = await requestDingTalkUserDetails(accessToken, userId);
+    } catch (error) {
+      console.warn(`Unable to enrich DingTalk in-app user details: ${error.message}`);
+    }
+    const user = normalizeDingTalkInAppUser(rawUser, organizationUser);
+    if (!user.openId) {
+      return res.status(403).json({ error: "DingTalk did not return a stable user identity." });
+    }
+    setSessionCookie(res, user);
+    res.set("Cache-Control", "no-store");
+    res.json({ user });
+  } catch (error) {
+    console.error(`DingTalk in-app authentication failed: ${error.message}`);
+    res.status(502).json({ error: "DingTalk in-app authentication could not be completed." });
+  }
+});
+
 app.post("/auth/logout", (_req, res) => {
   clearSessionCookie(res);
   res.json({ ok: true });
@@ -1769,8 +1884,13 @@ app.get("/api/v1/rubrics", requirePartnerApiKey, (_req, res) => {
 });
 
 app.get("/api/me", (req, res) => {
+  res.set("Cache-Control", "no-store");
   res.json({
     configured: isDingTalkConfigured(),
+    inAppAuth: {
+      configured: isDingTalkInAppConfigured(),
+      corpId: isDingTalkInAppConfigured() ? safeText(process.env.DINGTALK_CORP_ID) : "",
+    },
     user: readSession(req),
   });
 });
@@ -2442,11 +2562,14 @@ module.exports = {
     extractJsonObject,
     evaluationTimeoutMessage,
     hasScorableEnglishSpeech,
+    inAppOwnerOpenId,
+    isDingTalkInAppConfigured,
     isTranscriptionSizeError,
     isTranscriptionFileOpenError,
     limitStandaloneMediaInfo,
     modelMessageText,
     normalizeEvaluation,
+    normalizeDingTalkInAppUser,
     normalizeRedirectPath,
     parseOAuthState,
     publicEvaluationForClient,

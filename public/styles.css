@@ -2161,6 +2161,85 @@ video {
   padding: clamp(22px, 3vw, 32px);
 }
 
+.prepare-dialog.is-recording {
+  width: min(1040px, 100%);
+  padding: 12px;
+  text-align: left;
+}
+
+.prepare-dialog.is-recording > :not(.recorder-modal-slot) {
+  display: none !important;
+}
+
+.recorder-modal-slot {
+  width: 100%;
+}
+
+.prepare-dialog.is-recording .recorder-panel {
+  width: 100%;
+  border: 0;
+  border-radius: calc(var(--radius-large) - 8px);
+  box-shadow: none;
+  padding: clamp(20px, 2.6vw, 30px);
+}
+
+.prepare-dialog.is-recording .question-block {
+  min-height: 0;
+}
+
+.prepare-dialog.is-recording #questionText {
+  font-size: clamp(26px, 3vw, 38px);
+  line-height: 1.06;
+  text-wrap: pretty;
+}
+
+@media (min-width: 821px) {
+  .prepare-dialog.is-recording .recorder-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(250px, 0.38fr);
+    grid-template-areas:
+      "question question"
+      "video guidance"
+      "video controls"
+      "video status"
+      "evaluation evaluation";
+    gap: 16px 20px;
+    align-items: start;
+  }
+
+  .prepare-dialog.is-recording .question-block {
+    grid-area: question;
+    padding-bottom: 16px;
+  }
+
+  .prepare-dialog.is-recording .video-frame {
+    grid-area: video;
+    margin-top: 0;
+  }
+
+  .prepare-dialog.is-recording .camera-guidance {
+    grid-area: guidance;
+    display: block;
+    margin-top: 0;
+  }
+
+  .prepare-dialog.is-recording .control-row {
+    grid-area: controls;
+    grid-template-columns: 1fr;
+    margin-top: 0;
+  }
+
+  .prepare-dialog.is-recording .save-result {
+    grid-area: status;
+    margin-top: 0;
+  }
+
+  .prepare-dialog.is-recording .evaluation-result {
+    grid-area: evaluation;
+    margin-top: 0;
+  }
+}
+
 .prepare-dialog.is-countdown .muted-label {
   grid-area: kicker;
 }
@@ -3054,6 +3133,15 @@ video {
     overscroll-behavior: contain;
     padding: 24px 20px;
     text-align: left;
+  }
+
+  .prepare-dialog.is-recording {
+    width: 100%;
+    padding: 8px;
+  }
+
+  .prepare-dialog.is-recording .recorder-panel {
+    padding: 16px;
   }
 
   .prepare-dialog.is-countdown {
