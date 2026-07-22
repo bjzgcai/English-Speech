@@ -12,6 +12,12 @@ const { appendJsonLine, readJsonLines, writeJsonLines } = require("./storage");
 const { createQuestionService } = require("./questions");
 const { registerPageRoutes } = require("./routes/pages");
 const { buildMockPartnerUsers } = require("./mock-evaluations");
+const {
+  availableChallenges,
+  challengeQuestion,
+  currentChallenge,
+  leaderboardForChallenge,
+} = require("./game");
 
 const app = express();
 const {
@@ -1179,6 +1185,9 @@ function normalizeEvaluation(
       ? safeText(rawEvaluation?.summary, "Evaluation completed.")
       : "No scorable English speech was detected. This attempt received 0 out of 100.",
     transcript: safeText(transcript, safeText(rawEvaluation?.transcript)),
+    improvedAnswer: shouldScore
+      ? safeText(rawEvaluation?.improvedAnswer, safeText(rawEvaluation?.betterAnswer)).slice(0, 6000)
+      : "",
     rubric,
     strengths: shouldScore && Array.isArray(rawEvaluation?.strengths)
       ? rawEvaluation.strengths.map((item) => safeText(item)).filter(Boolean).slice(0, 4)
@@ -1399,6 +1408,11 @@ function buildEvaluationPrompt({ profile, question, transcript, audioMetrics, fr
     `Apply this rubric standard: ${JSON.stringify({ scoreBands: evaluationRubricStandard.scoreBands, dimensions: evaluationRubricStandard.dimensions })}`,
     "Use the audio metrics to evaluate fluency and pacing. Pronunciation should be inferred from transcription reliability and intelligibility clues.",
     "Be direct, specific, and useful to the learner. Do not over-penalize accent when intelligibility is strong.",
+    "Create improvedAnswer as a polished, more clearly structured version of the user's transcript.",
+    "Preserve the user's first-person voice, intended meaning, facts, examples, and level of certainty. Never invent or infer missing experiences, achievements, numbers, events, reasons, or opinions.",
+    "Correct grammar, sentence structure, word choice, repetition, and awkward phrasing while keeping the result natural for spoken English.",
+    "Organize improvedAnswer into short paragraphs: a direct answer or main point, connected supporting details, a concrete example only when the transcript provides one, and a concise close.",
+    "Keep improvedAnswer close to the transcript's length and no longer than 1.25 times its length. If the transcript is very short, polish only the available content instead of filling factual gaps.",
     evaluationMode === "standalone-speech"
       ? "This is a standalone speech, not an answer to a question. Score coherence by whether the speaker stays internally consistent, develops a stable main point, and connects ideas without contradictions. Do not assess task relevance."
       : "This is an answer to the supplied question. Include task relevance when scoring coherence.",
@@ -1411,6 +1425,7 @@ function buildEvaluationPrompt({ profile, question, transcript, audioMetrics, fr
       overallScore: 0,
       summary: "",
       transcript: "",
+      improvedAnswer: "",
       rubric: rubricSchema,
       strengths: [],
       improvements: [],
@@ -1798,6 +1813,68 @@ app.post("/api/comments", requireAuth, (req, res) => {
   };
   appendJsonLine(commentsMetadataFile, comment);
   res.status(201).json({ comment: commentForClient(comment) });
+});
+
+function gameChallengeForClient(challenge) {
+  return {
+    id: challenge.id,
+    title: challenge.title,
+    question: challenge.question,
+    focus: challenge.focus,
+    expectedDurationSeconds: challenge.expectedDurationSeconds,
+    followUp: challenge.followUp,
+    startsAt: challenge.startsAt,
+    endsAt: challenge.endsAt,
+    structuralGuide: challenge.structuralGuide,
+  };
+}
+
+app.get("/api/game/challenge", requireAuth, (_req, res) => {
+  const challenge = currentChallenge();
+  res.set("Cache-Control", "no-store");
+  res.json({
+    challenge: gameChallengeForClient(challenge),
+    challenges: availableChallenges().map(gameChallengeForClient),
+  });
+});
+
+app.get("/api/game/leaderboard", requireAuth, (req, res) => {
+  const challenges = availableChallenges();
+  const requestedId = safeText(req.query.challengeId);
+  const challenge = requestedId
+    ? challenges.find((item) => item.id === requestedId)
+    : challenges[0];
+  if (!challenge) {
+    return res.status(400).json({ error: "Choose an available weekly challenge." });
+  }
+
+  const leaderboard = leaderboardForChallenge(
+    readJsonLines(metadataFile),
+    challenge,
+    req.user.openId,
+  );
+  res.set("Cache-Control", "no-store");
+  res.json({ challenge: gameChallengeForClient(challenge), ...leaderboard });
+});
+
+app.post("/api/game/question", requireAuth, requirePrivacyConsent, (req, res) => {
+  const challenge = currentChallenge();
+  const profile = {
+    name: safeText(req.user.name, "DingTalk user"),
+    role: "Weekly everyday speaking challenge",
+  };
+  const record = persistQuestion(
+    req.user,
+    profile,
+    challengeQuestion(challenge),
+    "weekly-fixed-topic",
+  );
+  res.status(201).json({
+    question: questionForClient(record),
+    challenge: gameChallengeForClient(challenge),
+    model: "weekly-fixed-topic",
+    user: req.user,
+  });
 });
 
 app.post("/api/generate-question", requireAuth, requirePrivacyConsent, async (req, res) => {

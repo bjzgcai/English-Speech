@@ -3,20 +3,21 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Examine spoken English and review communication evaluations." />
-    <title>Examine | OScanner-Eng</title>
+    <meta name="description" content="Join the weekly English speaking game or complete a focused speaking examination." />
+    <title>Weekly Game | OScanner-Eng</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <a class="skip-link" href="#mainContent">Skip to content</a>
     <header class="app-nav">
-      <a class="brand" href="/examine" data-route="/examine" aria-label="OScanner-Eng home">
+      <a class="brand" href="/game" data-route="/game" aria-label="OScanner-Eng weekly game">
         <span class="brand-mark" aria-hidden="true">E</span>
         <span>OScanner-Eng</span>
       </a>
       <div class="header-menu">
         <nav class="main-nav" aria-label="Primary navigation">
+          <a href="/game" data-route="/game">Game</a>
           <a href="/examine" data-route="/examine">Examine</a>
           <a href="/history" data-route="/history">History</a>
           <a href="/methodology">Methodology</a>
@@ -44,20 +45,36 @@
       <section class="workspace view" id="playView" data-view="/examine">
         <header class="view-heading play-heading">
           <div>
-            <p class="eyebrow">Live speaking evaluation</p>
-            <h1>Examine</h1>
-            <p>Get one focused question, record your answer, and receive feedback across all six dimensions.</p>
+            <p class="eyebrow" id="playEyebrow">Live speaking evaluation</p>
+            <h1 id="playTitle">Examine</h1>
+            <p id="playSummary">Get one focused question, record your answer, and receive feedback across all six dimensions.</p>
           </div>
           <div class="status-pill" id="connectionStatus" role="status" aria-live="polite">Idle</div>
         </header>
 
+        <section class="game-overview" id="gameOverview" aria-labelledby="gameTopicTitle" hidden>
+          <div class="game-week">
+            <span id="gameWeekLabel">Jul 22 - Jul 29</span>
+            <strong>One topic. One week. Your clearest answer.</strong>
+          </div>
+          <div class="game-topic">
+            <p>Weekly topic</p>
+            <h2 id="gameTopicTitle">Loading this week's topic...</h2>
+            <p id="gameTopicQuestion">The same everyday topic is used for every player this week.</p>
+          </div>
+          <div class="game-rule">
+            <strong>Best score counts</strong>
+            <span>Try again during the week. Only your highest completed evaluation appears on the board.</span>
+          </div>
+        </section>
+
         <form class="panel profile-panel" id="profileForm">
           <div class="section-heading">
-            <h2>Candidate profile</h2>
-            <p>Used by the LLM to generate one targeted speaking question.</p>
+            <h2 id="profileHeading">Candidate profile</h2>
+            <p id="profileSummary">Used by the LLM to generate one targeted speaking question.</p>
           </div>
 
-          <label>
+          <label id="nameField">
             Name
             <input
               id="name"
@@ -69,7 +86,7 @@
             />
           </label>
 
-          <label>
+          <label id="roleField">
             Role or background
             <textarea id="role" name="role" placeholder="Product manager preparing for interviews">AI engineering</textarea>
           </label>
@@ -145,6 +162,23 @@
           <div class="save-result" id="saveResult" aria-live="polite"></div>
           <div class="evaluation-result" id="evaluationResult" aria-live="polite"></div>
         </section>
+
+        <section class="leaderboard-panel" id="leaderboardPanel" aria-labelledby="leaderboardTitle" hidden>
+          <div class="leaderboard-heading">
+            <div>
+              <h2 id="leaderboardTitle">Weekly leaderboard</h2>
+              <p id="leaderboardTopic">Best completed score for this week's topic.</p>
+            </div>
+            <label class="leaderboard-picker">
+              Challenge week
+              <select id="leaderboardWeek" aria-label="Choose a challenge week"></select>
+            </label>
+          </div>
+          <div class="leaderboard-summary" id="leaderboardSummary" aria-live="polite"></div>
+          <ol class="leaderboard-list" id="leaderboardList" aria-live="polite">
+            <li class="leaderboard-loading">Loading leaderboard...</li>
+          </ol>
+        </section>
       </section>
 
       <section class="history view" id="historyView" data-view="/history" hidden>
@@ -177,6 +211,30 @@
           <p class="muted-label" id="prepareModalKicker">Generating</p>
           <h2 id="prepareModalTitle">Preparing your question...</h2>
           <p id="prepareModalMessage">Please wait while the assessment question is generated.</p>
+          <section class="thinking-guide" id="thinkingGuide" aria-labelledby="thinkingGuideTitle" hidden>
+            <div class="thinking-guide-heading">
+              <h3 id="thinkingGuideTitle">Build your answer</h3>
+              <span>Private notes stay in your browser</span>
+            </div>
+            <div class="thinking-grid">
+              <label>
+                <span>Answer</span>
+                <input id="thinkingAnswer" autocomplete="off" placeholder="My main point is..." />
+              </label>
+              <label>
+                <span>Reasons</span>
+                <input id="thinkingReasons" autocomplete="off" placeholder="Two details that support it..." />
+              </label>
+              <label>
+                <span>Example</span>
+                <input id="thinkingExample" autocomplete="off" placeholder="One real moment..." />
+              </label>
+              <label>
+                <span>Close</span>
+                <input id="thinkingClose" autocomplete="off" placeholder="The result or lesson..." />
+              </label>
+            </div>
+          </section>
           <div class="prepare-preview" id="preparePreviewWrap" hidden>
             <video id="preparePreview" autoplay muted playsinline></video>
             <div class="framing-guide framing-guide-compact" aria-hidden="true">
