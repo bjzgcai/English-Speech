@@ -25,6 +25,9 @@ const state = {
   discardTargetSaveId: null,
   discardRequested: false,
   discardInProgress: false,
+  gameChallenge: null,
+  gameChallenges: [],
+  activeMode: null,
 };
 
 const MAX_RECORDING_MS = 2 * 60 * 1000;
@@ -45,6 +48,7 @@ const dimensionDetails = {
 };
 const profileForm = document.querySelector("#profileForm");
 const nameInput = document.querySelector("#name");
+const nameField = document.querySelector("#nameField");
 const generateButton = document.querySelector("#generateButton");
 const finishButton = document.querySelector("#finishButton");
 const discardButton = document.querySelector("#discardButton");
@@ -64,6 +68,21 @@ const questionMeta = document.querySelector("#questionMeta");
 const saveResult = document.querySelector("#saveResult");
 const evaluationResult = document.querySelector("#evaluationResult");
 const connectionStatus = document.querySelector("#connectionStatus");
+const playEyebrow = document.querySelector("#playEyebrow");
+const playTitle = document.querySelector("#playTitle");
+const playSummary = document.querySelector("#playSummary");
+const gameOverview = document.querySelector("#gameOverview");
+const gameWeekLabel = document.querySelector("#gameWeekLabel");
+const gameTopicTitle = document.querySelector("#gameTopicTitle");
+const gameTopicQuestion = document.querySelector("#gameTopicQuestion");
+const profileHeading = document.querySelector("#profileHeading");
+const profileSummary = document.querySelector("#profileSummary");
+const roleField = document.querySelector("#roleField");
+const leaderboardPanel = document.querySelector("#leaderboardPanel");
+const leaderboardTopic = document.querySelector("#leaderboardTopic");
+const leaderboardWeek = document.querySelector("#leaderboardWeek");
+const leaderboardSummary = document.querySelector("#leaderboardSummary");
+const leaderboardList = document.querySelector("#leaderboardList");
 const historyList = document.querySelector("#historyList");
 const playView = document.querySelector("#playView");
 const historyView = document.querySelector("#historyView");
@@ -84,6 +103,8 @@ const prepareSpinner = document.querySelector("#prepareSpinner");
 const prepareModalKicker = document.querySelector("#prepareModalKicker");
 const prepareModalTitle = document.querySelector("#prepareModalTitle");
 const prepareModalMessage = document.querySelector("#prepareModalMessage");
+const thinkingGuide = document.querySelector("#thinkingGuide");
+const thinkingInputs = document.querySelectorAll(".thinking-grid input");
 const countdownDisplay = document.querySelector("#countdownDisplay");
 const countdownSeconds = document.querySelector("#countdownSeconds");
 const prepareCameraGuidance = document.querySelector("#prepareCameraGuidance");
@@ -333,9 +354,7 @@ async function checkAuth() {
 
     setStatus(state.authUser ? "Signed in" : "Sign in");
     updateAuthView();
-    if (state.authUser && normalizeRoute(window.location.pathname) === "/history") {
-      await loadHistory();
-    }
+    if (state.authUser) setRoute(window.location.pathname);
   } catch {
     setStatus("Auth error");
     loginPanel.hidden = false;
@@ -364,6 +383,7 @@ function showGeneratingModal() {
   prepareModalKicker.textContent = "Generating";
   prepareModalTitle.textContent = "Preparing your question...";
   prepareModalMessage.textContent = "Please wait while the assessment question is generated.";
+  thinkingGuide.hidden = true;
   prepareSpinner.hidden = false;
   preparePreviewWrap.hidden = !state.stream;
   prepareCameraGuidance.hidden = true;
@@ -381,6 +401,7 @@ function showCountdownModal(question) {
   prepareModalKicker.textContent = "Question ready";
   prepareModalTitle.textContent = question.question;
   prepareModalMessage.textContent = "Take a moment to plan your answer. Recording starts when the timer reaches zero.";
+  thinkingGuide.hidden = false;
   prepareSpinner.hidden = true;
   preparePreviewWrap.hidden = !state.stream;
   prepareCameraGuidance.hidden = false;
@@ -401,6 +422,7 @@ function showMediaRequiredModal(error, retryAction = "record") {
   prepareModalTitle.textContent = "Turn on your camera and microphone to continue";
   prepareModalMessage.textContent =
     "OScanner-Eng needs both devices to record and evaluate your answer. Allow camera and microphone access in your browser, then try again.";
+  thinkingGuide.hidden = true;
   prepareSpinner.hidden = true;
   preparePreviewWrap.hidden = true;
   prepareCameraGuidance.hidden = false;
@@ -561,6 +583,12 @@ function setQuestion(question) {
   evaluationResult.innerHTML = "";
 }
 
+function clearThinkingNotes() {
+  thinkingInputs.forEach((input) => {
+    input.value = "";
+  });
+}
+
 function stopStream() {
   if (state.stream) {
     state.stream.getTracks().forEach((track) => track.stop());
@@ -609,6 +637,98 @@ async function loadHistory() {
   historyList.innerHTML = recordings
     .map((item, index) => renderHistoryItem(item, index))
     .join("");
+}
+
+function formatChallengeRange(challenge) {
+  if (!challenge?.startsAt || !challenge?.endsAt) return "Weekly challenge";
+  const options = { month: "short", day: "numeric", timeZone: "Asia/Shanghai" };
+  const start = new Intl.DateTimeFormat("en-US", options).format(new Date(challenge.startsAt));
+  const end = new Intl.DateTimeFormat("en-US", options).format(new Date(challenge.endsAt));
+  const year = new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    timeZone: "Asia/Shanghai",
+  }).format(new Date(challenge.startsAt));
+  return `${start} - ${end}, ${year}`;
+}
+
+function showGameChallenge(challenge) {
+  state.gameChallenge = challenge;
+  gameWeekLabel.textContent = formatChallengeRange(challenge);
+  gameTopicTitle.textContent = challenge.title;
+  gameTopicQuestion.textContent = challenge.question;
+  if (!state.question && normalizeRoute(window.location.pathname) === "/game") {
+    questionText.textContent = challenge.question;
+    questionMeta.textContent = `Fixed weekly topic. Target: ${challenge.expectedDurationSeconds} seconds.`;
+  }
+}
+
+function renderLeaderboard(data) {
+  leaderboardTopic.textContent = `${data.challenge.title}. ${formatChallengeRange(data.challenge)}.`;
+  leaderboardSummary.textContent = data.participantCount
+    ? `${data.participantCount} ${data.participantCount === 1 ? "player" : "players"}${data.viewerRank ? `. Your rank: ${data.viewerRank}.` : ". Complete an evaluated answer to join them."}`
+    : "No completed answers yet. Record the first one for this topic.";
+
+  if (!data.entries?.length) {
+    leaderboardList.innerHTML = '<li class="leaderboard-empty">The board is ready for its first completed answer.</li>';
+    return;
+  }
+
+  leaderboardList.innerHTML = data.entries
+    .map(
+      (entry) => `
+        <li class="leaderboard-row${entry.isViewer ? " is-viewer" : ""}">
+          <span class="leaderboard-rank">${entry.rank}</span>
+          <span class="leaderboard-person">
+            <strong>${escapeHtml(entry.name)}${entry.isViewer ? " (you)" : ""}</strong>
+            <span>${entry.attempts} ${entry.attempts === 1 ? "attempt" : "attempts"}</span>
+          </span>
+          <span class="leaderboard-score" aria-label="${entry.score} points">${entry.score}</span>
+        </li>
+      `,
+    )
+    .join("");
+}
+
+async function loadLeaderboard(challengeId) {
+  leaderboardSummary.textContent = "Loading weekly standings...";
+  leaderboardList.innerHTML = '<li class="leaderboard-loading">Loading leaderboard...</li>';
+  try {
+    const query = challengeId ? `?challengeId=${encodeURIComponent(challengeId)}` : "";
+    const response = await fetch(`/api/game/leaderboard${query}`, { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Unable to load the leaderboard.");
+    renderLeaderboard(data);
+  } catch (error) {
+    leaderboardSummary.textContent = "";
+    leaderboardList.innerHTML = `<li class="leaderboard-error">${escapeHtml(error.message)}</li>`;
+  }
+}
+
+async function loadGameChallenge() {
+  try {
+    const response = await fetch("/api/game/challenge", { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Unable to load this week's challenge.");
+
+    state.gameChallenges = data.challenges || [];
+    showGameChallenge(data.challenge);
+    const previousSelection = leaderboardWeek.value;
+    leaderboardWeek.innerHTML = state.gameChallenges
+      .map((challenge, index) => {
+        const prefix = index === 0 ? "Current: " : "";
+        return `<option value="${escapeHtml(challenge.id)}">${escapeHtml(`${prefix}${formatChallengeRange(challenge)} | ${challenge.title}`)}</option>`;
+      })
+      .join("");
+    if (state.gameChallenges.some((challenge) => challenge.id === previousSelection)) {
+      leaderboardWeek.value = previousSelection;
+    }
+    await loadLeaderboard(leaderboardWeek.value || data.challenge.id);
+  } catch (error) {
+    gameTopicTitle.textContent = "Weekly topic unavailable";
+    gameTopicQuestion.textContent = error.message;
+    leaderboardSummary.textContent = "";
+    leaderboardList.innerHTML = `<li class="leaderboard-error">${escapeHtml(error.message)}</li>`;
+  }
 }
 
 function escapeHtml(value) {
@@ -671,6 +791,15 @@ function renderScoreRows(evaluation) {
     .join("");
 }
 
+function renderAnswerParagraphs(value) {
+  return String(value)
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
 function renderEvaluationContent(evaluation, shareId = "") {
   if (evaluation.status === "skipped") {
     return `
@@ -713,6 +842,21 @@ function renderEvaluationContent(evaluation, shareId = "") {
           : ""
       }
       <p class="evaluation-summary">${escapeHtml(evaluation.summary || "")}</p>
+      ${
+        evaluation.improvedAnswer
+          ? `
+            <section class="improved-answer" aria-labelledby="improvedAnswerTitle-${escapeHtml(shareId || "current")}">
+              <div class="improved-answer-heading">
+                <h4 id="improvedAnswerTitle-${escapeHtml(shareId || "current")}">A stronger version</h4>
+                <span>Based only on your transcript</span>
+              </div>
+              <div class="improved-answer-text">
+                ${renderAnswerParagraphs(evaluation.improvedAnswer)}
+              </div>
+            </section>
+          `
+          : ""
+      }
       <div class="score-grid">${renderScoreRows(evaluation)}</div>
       ${
         strengths.length || tips.length
@@ -814,18 +958,66 @@ function renderHistoryItem(item, index) {
 }
 
 function normalizeRoute(pathname) {
-  return pathname === "/" || pathname === "/practice" ? "/examine" : pathname;
+  if (pathname === "/") return "/game";
+  if (pathname === "/practice") return "/examine";
+  return pathname;
+}
+
+function setPlayMode(route) {
+  const isGame = route === "/game";
+  gameOverview.hidden = !isGame;
+  leaderboardPanel.hidden = !isGame;
+  roleField.hidden = isGame;
+  nameField.hidden = isGame;
+  playEyebrow.textContent = isGame ? "Weekly speaking challenge" : "Live speaking evaluation";
+  playTitle.textContent = isGame ? "The Weekly Game" : "Examine";
+  playSummary.textContent = isGame
+    ? "Answer one shared everyday topic. Your best evaluated score enters the weekly board."
+    : "Get one focused question, record your answer, and receive feedback across all six dimensions.";
+  profileHeading.textContent = isGame ? "Enter this week's game" : "Candidate profile";
+  profileSummary.textContent = isGame
+    ? "The topic is fixed for everyone. Check your devices, plan clearly, and record your answer."
+    : "Used by the LLM to generate one targeted speaking question.";
+  generateButton.textContent = isGame
+    ? "Check camera & start challenge"
+    : "Check camera & generate question";
+
+  if (state.activeMode !== route) {
+    state.activeMode = route;
+    state.question = null;
+    evaluationResult.innerHTML = "";
+    saveResult.textContent = "";
+    clearThinkingNotes();
+  }
+
+  if (!state.question) {
+    if (isGame && state.gameChallenge) {
+      showGameChallenge(state.gameChallenge);
+    } else if (isGame) {
+      questionText.textContent = "Loading this week's fixed topic...";
+      questionMeta.textContent = "Every player receives the same question for the week.";
+    } else {
+      questionText.textContent = "Enter a profile, then generate one question.";
+      questionMeta.textContent = "Recording starts automatically after the question is ready.";
+    }
+  }
 }
 
 function setRoute(pathname) {
   const route = normalizeRoute(pathname);
   const isHistory = route === "/history";
+  const isGame = route === "/game";
 
   playView.hidden = !state.authUser || isHistory;
   historyView.hidden = !state.authUser || !isHistory;
   loginPanel.hidden = Boolean(state.authUser);
   connectionStatus.hidden = isHistory;
-  document.title = isHistory ? "History | OScanner-Eng" : "Examine | OScanner-Eng";
+  if (!isHistory) setPlayMode(route);
+  document.title = isHistory
+    ? "History | OScanner-Eng"
+    : isGame
+      ? "Weekly Game | OScanner-Eng"
+      : "Examine | OScanner-Eng";
   navLinks.forEach((link) => {
     link.classList.toggle("active", normalizeRoute(link.dataset.route) === route);
   });
@@ -837,6 +1029,9 @@ function setRoute(pathname) {
     loadHistory().catch(() => {
       historyList.innerHTML = '<p class="empty-history">Unable to load saved answers.</p>';
     });
+  } else if (isGame) {
+    setStatus("Weekly topic");
+    loadGameChallenge();
   } else {
     setStatus("Signed in");
   }
@@ -844,7 +1039,7 @@ function setRoute(pathname) {
 
 function navigateTo(pathname) {
   const normalized = normalizeRoute(pathname);
-  window.history.pushState({}, "", normalized === "/examine" ? "/" : normalized);
+  window.history.pushState({}, "", normalized);
   setRoute(normalized);
 }
 
@@ -888,16 +1083,24 @@ profileForm.addEventListener("submit", async (event) => {
   if (!mediaReady) return;
 
   state.profile = getProfileFromForm();
+  const isGame = normalizeRoute(window.location.pathname) === "/game";
+  clearThinkingNotes();
   setStatus("Generating");
   showGeneratingModal();
-  questionText.textContent = "Generating a question...";
-  questionMeta.textContent = "Calling the internally deployed model through the local server.";
+  prepareModalTitle.textContent = isGame ? "Preparing the weekly topic..." : "Preparing your question...";
+  prepareModalMessage.textContent = isGame
+    ? "The fixed topic is ready. We are setting up your private planning time."
+    : "Please wait while the assessment question is generated.";
+  questionText.textContent = isGame ? "Preparing the weekly topic..." : "Generating a question...";
+  questionMeta.textContent = isGame
+    ? "Creating your owned attempt for this week's challenge."
+    : "Calling the internally deployed model through the local server.";
 
   try {
-    const response = await fetch("/api/generate-question", {
+    const response = await fetch(isGame ? "/api/game/question" : "/api/generate-question", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile: state.profile }),
+      body: JSON.stringify(isGame ? {} : { profile: state.profile }),
     });
     const data = await response.json();
 
@@ -906,7 +1109,7 @@ profileForm.addEventListener("submit", async (event) => {
     }
 
     setQuestion(data.question);
-    setStatus(response.ok ? "Question ready" : "Fallback ready");
+    setStatus(isGame ? "Topic ready" : response.ok ? "Question ready" : "Fallback ready");
     if (data.error) {
       saveResult.textContent = `LLM fallback used: ${data.error}`;
     }
@@ -918,7 +1121,7 @@ profileForm.addEventListener("submit", async (event) => {
     closePrepareModal();
     stopStream();
     setStatus("Error");
-    questionText.textContent = "Question generation failed.";
+    questionText.textContent = isGame ? "Weekly topic setup failed." : "Question generation failed.";
     questionMeta.textContent = error.message;
   } finally {
     if ((!state.recorder || state.recorder.state === "inactive") && !state.mediaRetryPending) {
@@ -1103,6 +1306,9 @@ async function finishRecording() {
     generateButton.disabled = false;
     setDiscardAvailable(false);
     await loadHistory();
+    if (normalizeRoute(window.location.pathname) === "/game") {
+      await loadLeaderboard(state.gameChallenge?.id);
+    }
   } catch (error) {
     if (state.discardRequested) return;
     setStatus("Save failed");
@@ -1171,8 +1377,12 @@ async function discardCurrentAnswer() {
     state.saveAbortController = null;
     state.discardRequested = false;
     evaluationResult.innerHTML = "";
-    questionText.textContent = "Enter a profile, then generate one question.";
-    questionMeta.textContent = "Recording starts automatically after the question is ready.";
+    if (normalizeRoute(window.location.pathname) === "/game" && state.gameChallenge) {
+      showGameChallenge(state.gameChallenge);
+    } else {
+      questionText.textContent = "Enter a profile, then generate one question.";
+      questionMeta.textContent = "Recording starts automatically after the question is ready.";
+    }
     saveResult.textContent = "Answer discarded. No recording, evaluation, or score was saved.";
     finishButton.textContent = "Finish and save";
     generateButton.disabled = false;
@@ -1208,8 +1418,14 @@ logoutButton.addEventListener("click", async () => {
   await fetch("/auth/logout", { method: "POST" });
   state.authUser = null;
   state.privacyConsent = null;
+  state.profile = null;
+  state.question = null;
+  state.activeMode = null;
+  evaluationResult.innerHTML = "";
+  saveResult.textContent = "";
+  clearThinkingNotes();
   stopStream();
-  navigateTo("/examine");
+  navigateTo("/game");
   updateAuthView();
   setStatus("Sign in");
 });
@@ -1287,12 +1503,17 @@ historyList.addEventListener("click", (event) => {
   openVideoModal(button.dataset.videoSrc, button.dataset.videoTitle);
 });
 
+leaderboardWeek.addEventListener("change", () => {
+  loadLeaderboard(leaderboardWeek.value);
+});
+
 closeVideoModal.addEventListener("click", closeHistoryVideo);
 
 window.addEventListener("popstate", () => {
   if ((state.recorder && state.recorder.state !== "inactive") || state.activeSaveId) {
-    window.history.pushState({}, "", "/");
-    setRoute("/examine");
+    const activeRoute = state.activeMode === "/game" ? "/game" : "/examine";
+    window.history.pushState({}, "", activeRoute);
+    setRoute(activeRoute);
     openDiscardModal();
     return;
   }

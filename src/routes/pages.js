@@ -17,7 +17,8 @@ SwaggerUIBundle({url:"/openapi.yaml",dom_id:"#swagger-ui",deepLinking:true,prese
   });
 
   const sendAppShell = (_req, res) => res.sendFile(path.join(publicDir, "index.html"));
-  app.get("/", sendAppShell);
+  app.get("/", (_req, res) => res.redirect(302, "/game"));
+  app.get("/game", sendAppShell);
   app.get("/examine", sendAppShell);
   app.get("/practice", sendAppShell);
   app.get("/history", sendAppShell);

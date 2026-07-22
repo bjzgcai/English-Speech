@@ -134,3 +134,47 @@ test("privacy policy is available at both public routes", async (context) => {
     assert.doesNotMatch(policy, /OpenRouter|境外处理/);
   }
 });
+
+test("root redirects to the weekly game while examine remains directly addressable", async (context) => {
+  const server = app.listen(0);
+  context.after(() => new Promise((resolve) => server.close(resolve)));
+  await new Promise((resolve) => server.once("listening", resolve));
+
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  const rootResponse = await fetch(`${baseUrl}/`, { redirect: "manual" });
+  assert.equal(rootResponse.status, 302);
+  assert.equal(rootResponse.headers.get("location"), "/game");
+
+  for (const route of ["/game", "/examine"]) {
+    const response = await fetch(`${baseUrl}${route}`, { redirect: "manual" });
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /id="playView"/);
+  }
+});
+
+test("authenticated users can read the current weekly challenge and leaderboard", async (context) => {
+  const server = app.listen(0);
+  context.after(() => new Promise((resolve) => server.close(resolve)));
+  await new Promise((resolve) => server.once("listening", resolve));
+
+  const session = testHelpers.createSessionToken({
+    openId: `game-reader-${Date.now()}`,
+    name: "Game Reader",
+  });
+  const headers = { Cookie: `englisheval_session=${session}` };
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  const challengeResponse = await fetch(`${baseUrl}/api/game/challenge`, { headers });
+  assert.equal(challengeResponse.status, 200);
+  const challengeBody = await challengeResponse.json();
+  assert.match(challengeBody.challenge.id, /^weekly-\d{4}-\d{2}-\d{2}$/);
+  assert.equal(challengeBody.challenge.structuralGuide.length, 4);
+
+  const leaderboardResponse = await fetch(
+    `${baseUrl}/api/game/leaderboard?challengeId=${challengeBody.challenge.id}`,
+    { headers },
+  );
+  assert.equal(leaderboardResponse.status, 200);
+  const leaderboardBody = await leaderboardResponse.json();
+  assert.equal(leaderboardBody.challenge.id, challengeBody.challenge.id);
+  assert.ok(Array.isArray(leaderboardBody.entries));
+});

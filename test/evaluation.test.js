@@ -103,6 +103,30 @@ test("standalone speech prompt scores consistency instead of task relevance", ()
   assert.match(prompt, /internally consistent/);
   assert.match(prompt, /Do not assess task relevance/);
   assert.match(prompt, /No visual frames are available/);
+  assert.match(prompt, /improvedAnswer/);
+  assert.match(prompt, /Never invent or infer missing/);
+  assert.match(prompt, /more clearly structured version/);
+});
+
+test("normalizes a transcript-grounded improved answer only for scorable speech", () => {
+  const improvedAnswer = [
+    "I organize my mornings by preparing the night before.",
+    "This helps me start work calmly and arrive on time.",
+  ].join("\n\n");
+  const scored = testHelpers.normalizeEvaluation(
+    {
+      improvedAnswer: `  ${improvedAnswer}  `,
+      rubric: {},
+    },
+    { transcript: "I prepare before. It help me not late." },
+  );
+  assert.equal(scored.improvedAnswer, improvedAnswer);
+
+  const unscored = testHelpers.normalizeEvaluation(
+    { improvedAnswer },
+    { hasScorableSpeech: false, transcript: "[silence]" },
+  );
+  assert.equal(unscored.improvedAnswer, "");
 });
 
 test("audio-only evaluation excludes visual delivery from the weighted total", () => {
@@ -449,6 +473,7 @@ test("sends evaluations through the OpenRouter proxy with Gemini 3.5 Flash and J
               content: JSON.stringify({
                 summary: "Clear overall response.",
                 transcript: "A test answer.",
+                improvedAnswer: "I would like to describe a project that taught me how to collaborate more effectively.",
                 rubric: {
                   pronunciation: { score: 80, feedback: "Clear." },
                   fluency: { score: 80, feedback: "Smooth." },
@@ -485,4 +510,5 @@ test("sends evaluations through the OpenRouter proxy with Gemini 3.5 Flash and J
   assert.equal(body.messages[1].content[1].type, "image_url");
   assert.equal(evaluation.model.evaluate, "google/gemini-3.5-flash");
   assert.equal(evaluation.overallScore, 80);
+  assert.match(evaluation.improvedAnswer, /collaborate more effectively/);
 });
