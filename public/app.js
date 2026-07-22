@@ -18,6 +18,7 @@ const state = {
   wakeLock: null,
   authUser: null,
   authReady: false,
+  inAppAuthAttempted: false,
   privacyConsent: null,
   privacyConsentResolve: null,
   saveAbortController: null,
@@ -55,6 +56,8 @@ const finishButton = document.querySelector("#finishButton");
 const discardButton = document.querySelector("#discardButton");
 const controlRow = document.querySelector(".control-row");
 const recorderPanel = document.querySelector(".recorder-panel");
+const recorderPanelHome = recorderPanel.parentNode;
+const recorderPanelHomeNextSibling = recorderPanel.nextSibling;
 const preview = document.querySelector("#preview");
 const preparePreview = document.querySelector("#preparePreview");
 const preparePreviewWrap = document.querySelector("#preparePreviewWrap");
@@ -115,6 +118,7 @@ const prepareGuidanceTitle = document.querySelector("#prepareGuidanceTitle");
 const prepareGuidanceMessage = document.querySelector("#prepareGuidanceMessage");
 const prepareActions = document.querySelector("#prepareActions");
 const speakDirectlyButton = document.querySelector("#speakDirectlyButton");
+const recorderModalSlot = document.querySelector("#recorderModalSlot");
 const deviceStatus = document.querySelector("#deviceStatus");
 const privacyConsentModal = document.querySelector("#privacyConsentModal");
 const privacyPolicyAgree = document.querySelector("#privacyPolicyAgree");
@@ -254,7 +258,7 @@ function closeDiscardModal() {
   if (state.discardInProgress) return;
   state.discardTargetSaveId = null;
   discardModal.hidden = true;
-  document.body.classList.remove("modal-open");
+  document.body.classList.toggle("modal-open", !prepareModal.hidden);
   (discardButton.hidden ? generateButton : discardButton).focus();
 }
 
@@ -337,6 +341,80 @@ function updateAuthView() {
   loginPanelButton.href = loginHref;
 }
 
+function requestDingTalkInAppAuthCode(corpId) {
+  return new Promise((resolve, reject) => {
+    const requestAuthCode = window.dd?.runtime?.permission?.requestAuthCode;
+    if (typeof requestAuthCode !== "function") {
+      reject(new Error("The DingTalk in-app API is unavailable."));
+      return;
+    }
+
+    let settled = false;
+    const succeed = (result) => {
+      if (settled) return;
+      settled = true;
+      if (result?.code) resolve(result.code);
+      else reject(new Error("DingTalk did not return an in-app authorization code."));
+    };
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error instanceof Error ? error : new Error("DingTalk rejected in-app authentication."));
+    };
+
+    try {
+      const result = requestAuthCode.call(window.dd.runtime.permission, {
+        corpId,
+        onSuccess: succeed,
+        onFail: fail,
+      });
+      if (result?.then) result.then(succeed, fail);
+    } catch (error) {
+      fail(error);
+    }
+  });
+}
+
+async function tryDingTalkInAppAuth(inAppAuth) {
+  if (state.inAppAuthAttempted || !inAppAuth?.configured || !inAppAuth.corpId) return false;
+  state.inAppAuthAttempted = true;
+
+  const dd = window.dd;
+  if (!dd || dd.env?.platform === "notInDingTalk") return false;
+
+  setStatus("Signing in");
+  loginPanel.hidden = false;
+  loginPanel.querySelector("h2").textContent = "Signing in with DingTalk…";
+  loginPanel.querySelector("p:last-child").textContent =
+    "Confirming your DingTalk identity. You do not need to enter a password.";
+  loginPanelButton.hidden = true;
+
+  try {
+    const authCode = await requestDingTalkInAppAuthCode(inAppAuth.corpId);
+    const response = await fetch("/auth/dingtalk/in-app", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ authCode }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.user) {
+      throw new Error(data.error || "DingTalk in-app authentication failed.");
+    }
+    state.authUser = data.user;
+    state.authReady = true;
+    updateAuthView();
+    setRoute(window.location.pathname);
+    return true;
+  } catch (error) {
+    console.warn("Automatic DingTalk sign-in failed", error);
+    loginPanel.querySelector("h2").textContent = "Automatic DingTalk sign-in did not finish";
+    loginPanel.querySelector("p:last-child").textContent =
+      "Tap below to retry with the regular DingTalk sign-in flow.";
+    loginPanelButton.hidden = false;
+    return false;
+  }
+}
+
 async function checkAuth() {
   try {
     const response = await fetch("/api/me");
@@ -358,6 +436,8 @@ async function checkAuth() {
       return;
     }
 
+    if (!state.authUser && (await tryDingTalkInAppAuth(data.inAppAuth))) return;
+
     setStatus(state.authUser ? "Signed in" : "Sign in");
     updateAuthView();
     if (state.authUser) setRoute(window.location.pathname);
@@ -377,15 +457,29 @@ function stopPrepareCountdown() {
   }
 }
 
+function restoreRecorderPanel() {
+  if (recorderPanel.parentNode === recorderPanelHome) return;
+
+  recorderPanelHome.insertBefore(recorderPanel, recorderPanelHomeNextSibling);
+  recorderModalSlot.hidden = true;
+  prepareDialog.classList.remove("is-recording");
+  prepareModal.setAttribute("aria-labelledby", "prepareModalTitle");
+}
+
 function closePrepareModal() {
   stopPrepareCountdown();
   state.prepareCountdownResolve = null;
+  restoreRecorderPanel();
   prepareModal.hidden = true;
-  document.body.classList.remove("modal-open");
+  document.body.classList.toggle(
+    "modal-open",
+    !discardModal.hidden || !privacyConsentModal.hidden,
+  );
 }
 
 function showGeneratingModal() {
   stopPrepareCountdown();
+  restoreRecorderPanel();
   prepareDialog.classList.remove("is-countdown");
   prepareModalKicker.textContent = "Generating";
   prepareModalTitle.textContent = "Preparing your question...";
@@ -404,6 +498,7 @@ function showGeneratingModal() {
 function showCountdownModal(question) {
   state.mediaRetryPending = false;
   state.mediaRetryAction = null;
+  restoreRecorderPanel();
   prepareDialog.classList.add("is-countdown");
   prepareModalKicker.textContent = "Question ready";
   prepareModalTitle.textContent = question.question;
@@ -421,9 +516,23 @@ function showCountdownModal(question) {
   prepareDialog.scrollTop = 0;
 }
 
+function showRecorderInPrepareModal() {
+  stopPrepareCountdown();
+  prepareDialog.classList.remove("is-countdown");
+  prepareDialog.classList.add("is-recording");
+  recorderModalSlot.hidden = false;
+  recorderModalSlot.append(recorderPanel);
+  prepareModal.setAttribute("aria-labelledby", "questionText");
+  prepareModal.hidden = false;
+  document.body.classList.add("modal-open");
+  prepareDialog.scrollTop = 0;
+  window.setTimeout(() => finishButton.focus({ preventScroll: true }), 0);
+}
+
 function showMediaRequiredModal(error, retryAction = "record") {
   state.mediaRetryPending = true;
   state.mediaRetryAction = retryAction;
+  restoreRecorderPanel();
   prepareDialog.classList.remove("is-countdown");
   prepareModalKicker.textContent = "Devices required";
   prepareModalTitle.textContent = "Turn on your camera and microphone to continue";
@@ -1347,7 +1456,6 @@ profileForm.addEventListener("submit", async (event) => {
     }
     setStatus("Thinking time");
     await waitForPreparationCountdown(data.question);
-    closePrepareModal();
     await startRecording();
   } catch (error) {
     closePrepareModal();
@@ -1413,8 +1521,8 @@ async function startRecording() {
     state.mediaRetryPending = false;
     state.mediaRetryAction = null;
     resetPrepareGuidance();
-    closePrepareModal();
     recorderPanel.classList.add("is-recording");
+    showRecorderInPrepareModal();
     finishButton.disabled = false;
     setDiscardAvailable(true);
     generateButton.disabled = true;
@@ -1423,9 +1531,6 @@ async function startRecording() {
     startRecordingTimer();
     setStatus("Recording");
     saveResult.textContent = "Recording in progress. Answer the question in English. Recording is limited to 2 minutes.";
-    if (window.matchMedia("(max-width: 820px)").matches) {
-      recorderPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
     state.autoStopTimer = window.setTimeout(() => {
       finishRecording();
     }, MAX_RECORDING_MS);
@@ -1463,6 +1568,7 @@ async function finishRecording() {
     state.recorder.stop();
     await stopped;
     recorderPanel.classList.remove("is-recording");
+    closePrepareModal();
     stopRecordingTimer();
     stopStream();
     await releaseWakeLock();
@@ -1503,6 +1609,7 @@ async function finishRecording() {
   state.recorder.stop();
   await stopped;
   recorderPanel.classList.remove("is-recording");
+  closePrepareModal();
   recordingBadge.classList.remove("visible");
   stopStream();
   await releaseWakeLock();
@@ -1597,6 +1704,7 @@ async function discardCurrentAnswer() {
 
     stopRecordingTimer();
     recorderPanel.classList.remove("is-recording");
+    closePrepareModal();
     recordingBadge.classList.remove("visible");
     stopStream();
     await releaseWakeLock();

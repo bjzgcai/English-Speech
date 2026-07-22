@@ -54,6 +54,7 @@ release_id="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD 2>/dev/null 
 release_dir="$REMOTE_ROOT/releases/$release_id"
 remote_user="$(ssh "$TARGET" 'id -un')"
 remote_group="$(ssh "$TARGET" 'id -gn')"
+previous_release="$(ssh "$TARGET" "readlink -f '$REMOTE_ROOT/current' 2>/dev/null || true")"
 echo "Deploying release $release_id to $TARGET:$REMOTE_ROOT"
 ssh "$TARGET" "sudo install -d -m 0750 -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT' '$REMOTE_ROOT/releases' '$REMOTE_ROOT/shared' && sudo install -d -m 0700 -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' '$REMOTE_ROOT/backups' && mkdir -p '$release_dir'"
 ssh "$TARGET" "test -f '$REMOTE_ROOT/shared/.env' && test -f '$REMOTE_ROOT/shared/.env.prod'" || {
@@ -62,8 +63,8 @@ ssh "$TARGET" "test -f '$REMOTE_ROOT/shared/.env' && test -f '$REMOTE_ROOT/share
 }
 ssh "$TARGET" "chmod 0600 '$REMOTE_ROOT/shared/.env' '$REMOTE_ROOT/shared/.env.prod'"
 
-ssh "$TARGET" "grep -Eq '^DINGTALK_APP_KEY=.+$' '$REMOTE_ROOT/shared/.env' '$REMOTE_ROOT/shared/.env.prod' && grep -Eq '^DINGTALK_APP_SECRET=.+$' '$REMOTE_ROOT/shared/.env' '$REMOTE_ROOT/shared/.env.prod'" || {
-  echo "Production environment must set DINGTALK_APP_KEY and DINGTALK_APP_SECRET in shared .env or .env.prod." >&2
+ssh "$TARGET" "grep -Eq '^DINGTALK_CORP_ID=.+$' '$REMOTE_ROOT/shared/.env' '$REMOTE_ROOT/shared/.env.prod' && grep -Eq '^DINGTALK_APP_KEY=.+$' '$REMOTE_ROOT/shared/.env' '$REMOTE_ROOT/shared/.env.prod' && grep -Eq '^DINGTALK_APP_SECRET=.+$' '$REMOTE_ROOT/shared/.env' '$REMOTE_ROOT/shared/.env.prod'" || {
+  echo "Production environment must set DINGTALK_CORP_ID, DINGTALK_APP_KEY, and DINGTALK_APP_SECRET in shared .env or .env.prod." >&2
   exit 1
 }
 app_base_url="$(ssh "$TARGET" "sed -n 's/^APP_BASE_URL=//p' '$REMOTE_ROOT/shared/.env.prod' | tail -n 1")"
@@ -129,9 +130,17 @@ fi"
 ssh "$TARGET" "ln -sfn '$REMOTE_ROOT/shared/recordings' '$release_dir/recordings' && ln -sfn '$REMOTE_ROOT/shared/questions' '$release_dir/questions' && ln -sfn '$REMOTE_ROOT/shared/comments' '$release_dir/comments' && ln -sfn '$REMOTE_ROOT/shared/consents' '$release_dir/consents' && ln -sfn '$REMOTE_ROOT/shared/.env' '$release_dir/.env' && ln -sfn '$REMOTE_ROOT/shared/.env.prod' '$release_dir/.env.prod'"
 ssh "$TARGET" "chmod 0600 '$REMOTE_ROOT/shared/.env' '$REMOTE_ROOT/shared/.env.prod' && find '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' \\( -name lost+found -prune \\) -o -type d -exec chmod 0700 {} + && find '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' \\( -name lost+found -prune \\) -o -type f -exec chmod 0600 {} +"
 
-previous_release="$(ssh "$TARGET" "readlink -f '$REMOTE_ROOT/current' 2>/dev/null || true")"
+rollback() {
+  echo "Deployment failed after release activation; restoring the previous release." >&2
+  if [[ -n "$previous_release" ]]; then
+    ssh "$TARGET" "ln -sfn '$previous_release' '$REMOTE_ROOT/current' && sudo systemctl restart '$SERVICE_NAME.service'"
+  else
+    ssh "$TARGET" "sudo systemctl stop '$SERVICE_NAME.service'"
+  fi
+  ssh "$TARGET" "rm -rf '$release_dir'" || true
+}
 
-ssh "$TARGET" "set -eu
+if ! ssh "$TARGET" "set -eu
 sudo tee '/etc/systemd/system/$SERVICE_NAME.service' >/dev/null <<'UNIT'
 [Unit]
 Description=OScanner-Eng web service
@@ -199,26 +208,38 @@ sudo rm -f '/etc/systemd/system/$SERVICE_NAME.service.d/recording-mount.conf'
 sudo rm -f '/etc/systemd/system/$SERVICE_NAME-recording-maintenance.service.d/recording-mount.conf'
 ln -sfn '$release_dir' '$REMOTE_ROOT/current'
 sudo systemctl daemon-reload
-sudo systemctl enable --now '$SERVICE_NAME.service'
+sudo systemctl enable '$SERVICE_NAME.service'
 sudo systemctl enable --now '$SERVICE_NAME-recording-maintenance.timer'
-sudo systemctl start '$SERVICE_NAME-recording-maintenance.service'
+sudo systemctl restart '$SERVICE_NAME.service'
 if command -v ufw >/dev/null && sudo ufw status | grep -q '^Status: active'; then
   sudo ufw allow '$APP_PORT/tcp' >/dev/null
-fi"
-
-if ! ssh "$TARGET" "curl --fail --silent --show-error --max-time 10 'http://127.0.0.1:$APP_PORT/' >/dev/null"; then
-  echo "Health check failed; restoring the previous release." >&2
-  if [[ -n "$previous_release" ]]; then
-    ssh "$TARGET" "ln -sfn '$previous_release' '$REMOTE_ROOT/current' && sudo systemctl restart '$SERVICE_NAME.service'"
-  else
-    ssh "$TARGET" "sudo systemctl stop '$SERVICE_NAME.service'"
-  fi
+fi"; then
+  rollback
   exit 1
 fi
 
-auth_status="$(ssh "$TARGET" "curl --silent --show-error --max-time 10 --output /dev/null --write-out '%{http_code}' 'http://127.0.0.1:$APP_PORT/auth/dingtalk'")"
+health_ok=false
+for attempt in {1..10}; do
+  if ssh "$TARGET" "curl --fail --silent --show-error --max-time 10 'http://127.0.0.1:$APP_PORT/' >/dev/null"; then
+    health_ok=true
+    break
+  fi
+  sleep 2
+done
+if [[ "$health_ok" != true ]]; then
+  echo "Application health check did not succeed within 20 seconds." >&2
+  rollback
+  exit 1
+fi
+
+if ! auth_status="$(ssh "$TARGET" "curl --silent --show-error --max-time 10 --output /dev/null --write-out '%{http_code}' 'http://127.0.0.1:$APP_PORT/auth/dingtalk'")"; then
+  echo "DingTalk authentication check could not connect to the application." >&2
+  rollback
+  exit 1
+fi
 if [[ "$auth_status" != "302" ]]; then
   echo "DingTalk authentication check failed with HTTP $auth_status." >&2
+  rollback
   exit 1
 fi
 
