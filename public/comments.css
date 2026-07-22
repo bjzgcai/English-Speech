@@ -44,7 +44,7 @@
   gap: 9px;
   border-radius: var(--radius);
   background: var(--ink);
-  box-shadow: 0 14px 34px rgba(35, 54, 43, .22);
+  box-shadow: 0 14px 34px rgba(72, 62, 137, .22);
   color: #fff;
   padding: 13px 17px;
   font-size: 13px;
@@ -54,7 +54,7 @@
   transition: background 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
 .comment-fab svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-linejoin: round; stroke-width: 1.8; }
-.comment-fab:hover { background: var(--accent-dark); box-shadow: 0 17px 38px rgba(35, 54, 43, .28); transform: translateY(-2px); }
+.comment-fab:hover { background: var(--accent-dark); box-shadow: 0 17px 38px rgba(72, 62, 137, .28); transform: translateY(-2px); }
 .comment-fab:active { transform: translateY(1px); }
 .comment-fab:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 

@@ -24,6 +24,7 @@ const recordingsDir = path.join(rootDir, "recordings");
 const artifactsDir = path.join(recordingsDir, "artifacts");
 const recordingTmpDir = path.join(recordingsDir, "tmp");
 const metadataFile = path.join(recordingsDir, "metadata.jsonl");
+const leaderboardIdentitiesFile = path.join(recordingsDir, "leaderboard-identities.jsonl");
 const questionsDir = path.join(rootDir, "questions");
 const questionsMetadataFile = path.join(questionsDir, "metadata.jsonl");
 const commentsDir = path.join(rootDir, "comments");
@@ -51,6 +52,7 @@ module.exports = {
   artifactsDir,
   recordingTmpDir,
   metadataFile,
+  leaderboardIdentitiesFile,
   questionsMetadataFile,
   commentsMetadataFile,
   consentsMetadataFile,

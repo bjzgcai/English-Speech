@@ -27,6 +27,7 @@ const {
   artifactsDir,
   recordingTmpDir,
   metadataFile,
+  leaderboardIdentitiesFile,
   questionsMetadataFile,
   commentsMetadataFile,
   consentsMetadataFile,
@@ -505,6 +506,70 @@ function mergeUserInfo(current, incoming) {
     name: safeText(incoming.name) || safeText(current.name),
     email: safeText(incoming.email) || safeText(current.email),
     orgEmail: safeText(incoming.orgEmail) || safeText(current.orgEmail),
+  };
+}
+
+const cuteAliasAdjectives = Object.freeze([
+  "Breezy", "Bright", "Bubbly", "Cheery", "Clever", "Cozy", "Dapper", "Gentle",
+  "Happy", "Jolly", "Lucky", "Merry", "Peppy", "Sunny", "Swift", "Twinkly",
+]);
+const cuteAliasAnimals = Object.freeze([
+  "Alpaca", "Bunny", "Capybara", "Dolphin", "Fox", "Koala", "Otter", "Panda",
+  "Penguin", "Puffin", "Quokka", "Robin", "Seal", "Shiba", "Sparrow", "Turtle",
+]);
+
+function leaderboardIdentities() {
+  const identities = new Map();
+  readJsonLines(leaderboardIdentitiesFile).forEach((record) => {
+    const openId = safeText(record?.openId);
+    const alias = safeText(record?.alias);
+    if (openId && alias && typeof record?.useAlias === "boolean") {
+      identities.set(openId, { ...record, openId, alias });
+    }
+  });
+  return identities;
+}
+
+function cuteAliasForUser(openId, identities = leaderboardIdentities()) {
+  const digest = crypto.createHash("sha256").update(openId).digest();
+  const adjective = cuteAliasAdjectives[digest[0] % cuteAliasAdjectives.length];
+  const animal = cuteAliasAnimals[digest[1] % cuteAliasAnimals.length];
+  const usedAliases = new Set(
+    [...identities.values()]
+      .filter((identity) => identity.openId !== openId)
+      .map((identity) => identity.alias.toLocaleLowerCase("en-US")),
+  );
+
+  for (let offset = 0; offset < 10_000; offset += 1) {
+    const suffix = ((digest.readUInt16BE(2) + offset) % 10_000).toString().padStart(4, "0");
+    const candidate = `${adjective} ${animal} ${suffix}`;
+    if (!usedAliases.has(candidate.toLocaleLowerCase("en-US"))) return candidate;
+  }
+  return `Friendly Player ${crypto.randomBytes(4).toString("hex")}`;
+}
+
+function normalizeLeaderboardAlias(value) {
+  const alias = safeText(value).normalize("NFC").replace(/\s+/g, " ");
+  if (
+    alias.length < 2 ||
+    alias.length > 32 ||
+    /[\u0000-\u001f\u007f]/.test(alias)
+  ) {
+    return "";
+  }
+  return alias;
+}
+
+function leaderboardIdentityForClient(user, identity, identities = leaderboardIdentities()) {
+  const alias = identity?.alias || cuteAliasForUser(user.openId, identities);
+  const useAlias = identity?.useAlias === true;
+  const actualName = safeText(user.name, "DingTalk user");
+  return {
+    alias,
+    useAlias,
+    actualName,
+    displayName: useAlias ? alias : actualName,
+    saved: Boolean(identity),
   };
 }
 
@@ -1826,6 +1891,7 @@ function gameChallengeForClient(challenge) {
     startsAt: challenge.startsAt,
     endsAt: challenge.endsAt,
     structuralGuide: challenge.structuralGuide,
+    prizeDraft: challenge.prizeDraft || null,
   };
 }
 
@@ -1836,6 +1902,54 @@ app.get("/api/game/challenge", requireAuth, (_req, res) => {
     challenge: gameChallengeForClient(challenge),
     challenges: availableChallenges().map(gameChallengeForClient),
   });
+});
+
+app.get("/api/game/identity", requireAuth, (req, res) => {
+  const identities = leaderboardIdentities();
+  res.set("Cache-Control", "no-store");
+  res.json({
+    identity: leaderboardIdentityForClient(
+      req.user,
+      identities.get(req.user.openId),
+      identities,
+    ),
+  });
+});
+
+app.post("/api/game/identity", requireAuth, (req, res) => {
+  if (typeof req.body?.useAlias !== "boolean") {
+    return res.status(400).json({ error: "Choose whether to show your alias or actual name." });
+  }
+
+  const identities = leaderboardIdentities();
+  const current = identities.get(req.user.openId);
+  const alias = req.body?.alias === undefined
+    ? current?.alias || cuteAliasForUser(req.user.openId, identities)
+    : normalizeLeaderboardAlias(req.body.alias);
+  if (!alias) {
+    return res.status(400).json({ error: "Your alias must contain 2 to 32 characters." });
+  }
+
+  const duplicate = [...identities.values()].find(
+    (identity) =>
+      identity.openId !== req.user.openId &&
+      identity.alias.toLocaleLowerCase("en-US") === alias.toLocaleLowerCase("en-US"),
+  );
+  if (duplicate) {
+    return res.status(409).json({ error: "That alias is already in use. Try another cute name." });
+  }
+
+  const identity = {
+    id: crypto.randomUUID(),
+    openId: req.user.openId,
+    alias,
+    useAlias: req.body.useAlias,
+    actualName: safeText(req.user.name, "DingTalk user"),
+    updatedAt: new Date().toISOString(),
+  };
+  appendJsonLine(leaderboardIdentitiesFile, identity);
+  identities.set(req.user.openId, identity);
+  res.json({ identity: leaderboardIdentityForClient(req.user, identity, identities) });
 });
 
 app.get("/api/game/leaderboard", requireAuth, (req, res) => {
@@ -1852,6 +1966,7 @@ app.get("/api/game/leaderboard", requireAuth, (req, res) => {
     readJsonLines(metadataFile),
     challenge,
     req.user.openId,
+    leaderboardIdentities(),
   );
   res.set("Cache-Control", "no-store");
   res.json({ challenge: gameChallengeForClient(challenge), ...leaderboard });
