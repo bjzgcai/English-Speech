@@ -135,7 +135,7 @@ test("privacy policy is available at both public routes", async (context) => {
   }
 });
 
-test("root redirects to the weekly game while examine remains directly addressable", async (context) => {
+test("root redirects to the leaderboard while app views remain directly addressable", async (context) => {
   const server = app.listen(0);
   context.after(() => new Promise((resolve) => server.close(resolve)));
   await new Promise((resolve) => server.once("listening", resolve));
@@ -143,12 +143,14 @@ test("root redirects to the weekly game while examine remains directly addressab
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   const rootResponse = await fetch(`${baseUrl}/`, { redirect: "manual" });
   assert.equal(rootResponse.status, 302);
-  assert.equal(rootResponse.headers.get("location"), "/game");
+  assert.equal(rootResponse.headers.get("location"), "/leaderboard");
 
-  for (const route of ["/game", "/examine"]) {
+  for (const route of ["/leaderboard", "/game", "/examine"]) {
     const response = await fetch(`${baseUrl}${route}`, { redirect: "manual" });
     assert.equal(response.status, 200);
-    assert.match(await response.text(), /id="playView"/);
+    const shell = await response.text();
+    assert.match(shell, /id="playView"/);
+    assert.match(shell, /id="leaderboardView"/);
   }
 });
 
@@ -177,4 +179,51 @@ test("authenticated users can read the current weekly challenge and leaderboard"
   const leaderboardBody = await leaderboardResponse.json();
   assert.equal(leaderboardBody.challenge.id, challengeBody.challenge.id);
   assert.ok(Array.isArray(leaderboardBody.entries));
+});
+
+test("users can keep one leaderboard alias, rename it, and switch back to their actual name", async (context) => {
+  const server = app.listen(0);
+  context.after(() => new Promise((resolve) => server.close(resolve)));
+  await new Promise((resolve) => server.once("listening", resolve));
+
+  const openId = `identity-user-${Date.now()}-${Math.random()}`;
+  const aliasSuffix = openId.replace(/\D/g, "").slice(-8);
+  const firstAlias = `Cozy Panda ${aliasSuffix}`;
+  const secondAlias = `Sunny Otter ${aliasSuffix}`;
+  const session = testHelpers.createSessionToken({ openId, name: "Identity Tester" });
+  const headers = {
+    Cookie: `englisheval_session=${session}`,
+    "Content-Type": "application/json",
+  };
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+  const initialResponse = await fetch(`${baseUrl}/api/game/identity`, { headers });
+  assert.equal(initialResponse.status, 200);
+  const initial = (await initialResponse.json()).identity;
+  assert.equal(initial.actualName, "Identity Tester");
+  assert.equal(initial.useAlias, false);
+  assert.match(initial.alias, /\S+ \S+ \d{4}/);
+
+  const anonymousResponse = await fetch(`${baseUrl}/api/game/identity`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ useAlias: true, alias: firstAlias }),
+  });
+  assert.equal(anonymousResponse.status, 200);
+  const anonymous = (await anonymousResponse.json()).identity;
+  assert.equal(anonymous.displayName, firstAlias);
+  assert.equal(anonymous.saved, true);
+
+  const identifiedResponse = await fetch(`${baseUrl}/api/game/identity`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ useAlias: false, alias: secondAlias }),
+  });
+  assert.equal(identifiedResponse.status, 200);
+  const identified = (await identifiedResponse.json()).identity;
+  assert.equal(identified.alias, secondAlias);
+  assert.equal(identified.displayName, "Identity Tester");
+
+  const reloaded = await fetch(`${baseUrl}/api/game/identity`, { headers });
+  assert.equal((await reloaded.json()).identity.alias, secondAlias);
 });

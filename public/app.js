@@ -27,11 +27,12 @@ const state = {
   discardInProgress: false,
   gameChallenge: null,
   gameChallenges: [],
+  leaderboardIdentity: null,
   activeMode: null,
 };
 
 const MAX_RECORDING_MS = 2 * 60 * 1000;
-const PREPARE_COUNTDOWN_SECONDS = 60;
+const PREPARE_COUNTDOWN_SECONDS = 120;
 const dimensionDetails = {
   "Pronunciation / intelligibility":
     "Measures how easily the answer can be understood, including sound clarity, word stress, rhythm, and whether pronunciation issues interfere with meaning.",
@@ -78,13 +79,15 @@ const gameTopicQuestion = document.querySelector("#gameTopicQuestion");
 const profileHeading = document.querySelector("#profileHeading");
 const profileSummary = document.querySelector("#profileSummary");
 const roleField = document.querySelector("#roleField");
-const leaderboardPanel = document.querySelector("#leaderboardPanel");
 const leaderboardTopic = document.querySelector("#leaderboardTopic");
 const leaderboardWeek = document.querySelector("#leaderboardWeek");
 const leaderboardSummary = document.querySelector("#leaderboardSummary");
 const leaderboardList = document.querySelector("#leaderboardList");
+const leaderboardIdentitySettings = document.querySelector("#leaderboardIdentitySettings");
+const prizeDraft = document.querySelector("#prizeDraft");
 const historyList = document.querySelector("#historyList");
 const playView = document.querySelector("#playView");
+const leaderboardView = document.querySelector("#leaderboardView");
 const historyView = document.querySelector("#historyView");
 const loginPanel = document.querySelector("#loginPanel");
 const loginButton = document.querySelector("#loginButton");
@@ -92,7 +95,7 @@ const loginPanelButton = document.querySelector(".login-panel .login-button");
 const authChip = document.querySelector("#authChip");
 const authUserName = document.querySelector("#authUserName");
 const logoutButton = document.querySelector("#logoutButton");
-const navLinks = document.querySelectorAll("[data-route]");
+const navLinks = document.querySelectorAll(".main-nav [data-route]");
 const videoModal = document.querySelector("#videoModal");
 const videoModalTitle = document.querySelector("#videoModalTitle");
 const historyVideo = document.querySelector("#historyVideo");
@@ -319,12 +322,14 @@ function stopRecordingTimer() {
 
 function updateAuthView() {
   const isSignedIn = Boolean(state.authUser);
+  const route = normalizeRoute(window.location.pathname);
 
   loginPanel.hidden = isSignedIn;
   loginButton.hidden = isSignedIn;
   authChip.hidden = !isSignedIn;
-  playView.hidden = !isSignedIn || normalizeRoute(window.location.pathname) === "/history";
-  historyView.hidden = !isSignedIn || normalizeRoute(window.location.pathname) !== "/history";
+  playView.hidden = !isSignedIn || route === "/history" || route === "/leaderboard";
+  leaderboardView.hidden = !isSignedIn || route !== "/leaderboard";
+  historyView.hidden = !isSignedIn || route !== "/history";
   authUserName.textContent = state.authUser?.name || "DingTalk user";
   nameInput.value = state.authUser?.name || "";
   const loginHref = `/auth/dingtalk?redirect=${encodeURIComponent(window.location.pathname)}`;
@@ -348,6 +353,7 @@ async function checkAuth() {
       loginButton.hidden = true;
       loginPanelButton.hidden = true;
       playView.hidden = true;
+      leaderboardView.hidden = true;
       historyView.hidden = true;
       return;
     }
@@ -359,6 +365,7 @@ async function checkAuth() {
     setStatus("Auth error");
     loginPanel.hidden = false;
     playView.hidden = true;
+    leaderboardView.hidden = true;
     historyView.hidden = true;
   }
 }
@@ -662,7 +669,171 @@ function showGameChallenge(challenge) {
   }
 }
 
+function leaderboardIdentityForm(identity, context = "leaderboard") {
+  if (!identity) return '<p class="identity-loading">Loading your leaderboard name…</p>';
+  const suffix = context === "result" ? "result" : "leaderboard";
+  return `
+    <form class="leaderboard-identity-form" data-identity-form>
+      <div class="identity-copy">
+        <span class="identity-icon" aria-hidden="true">✦</span>
+        <div>
+          <h3>${context === "result" ? "Choose your leaderboard name" : "How you appear"}</h3>
+          <p>Your score always stays on the board. Switching names updates every challenge leaderboard.</p>
+        </div>
+      </div>
+      <label class="identity-toggle" for="useLeaderboardAlias-${suffix}">
+        <input
+          id="useLeaderboardAlias-${suffix}"
+          name="useAlias"
+          type="checkbox"
+          ${identity.useAlias ? "checked" : ""}
+        />
+        <span>
+          <strong>Appear anonymously</strong>
+          <small>Show a nickname instead of ${escapeHtml(identity.actualName)}.</small>
+        </span>
+      </label>
+      <label class="identity-alias" for="leaderboardAlias-${suffix}">
+        Your one alias
+        <input
+          id="leaderboardAlias-${suffix}"
+          name="alias"
+          type="text"
+          minlength="2"
+          maxlength="32"
+          autocomplete="off"
+          value="${escapeHtml(identity.alias)}"
+          required
+        />
+        <small>You can rename it anytime. Your current leaderboard name is <strong data-identity-display>${escapeHtml(identity.displayName)}</strong>.</small>
+      </label>
+      <button class="secondary-button identity-save" type="submit">Save leaderboard name</button>
+      <span class="identity-feedback" role="status" aria-live="polite"></span>
+    </form>
+  `;
+}
+
+function renderLeaderboardIdentitySettings() {
+  leaderboardIdentitySettings.innerHTML = leaderboardIdentityForm(
+    state.leaderboardIdentity,
+    "leaderboard",
+  );
+}
+
+function updateIdentityFormPreview(form) {
+  const useAlias = form.elements.useAlias.checked;
+  const alias = form.elements.alias.value.trim() || state.leaderboardIdentity?.alias || "your alias";
+  const displayName = useAlias ? alias : state.leaderboardIdentity?.actualName || "your actual name";
+  const target = form.querySelector("[data-identity-display]");
+  if (target) target.textContent = displayName;
+}
+
+function syncLeaderboardIdentityForms(message = "") {
+  document.querySelectorAll("[data-identity-form]").forEach((form) => {
+    form.elements.useAlias.checked = state.leaderboardIdentity.useAlias;
+    form.elements.alias.value = state.leaderboardIdentity.alias;
+    updateIdentityFormPreview(form);
+    const feedback = form.querySelector(".identity-feedback");
+    if (feedback) feedback.textContent = message;
+  });
+}
+
+async function loadLeaderboardIdentity() {
+  const response = await fetch("/api/game/identity", { cache: "no-store" });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Unable to load your leaderboard name.");
+  state.leaderboardIdentity = data.identity;
+  renderLeaderboardIdentitySettings();
+  return data.identity;
+}
+
+async function saveLeaderboardIdentity(form) {
+  const button = form.querySelector(".identity-save");
+  const feedback = form.querySelector(".identity-feedback");
+  button.disabled = true;
+  feedback.textContent = "Saving…";
+  try {
+    const response = await fetch("/api/game/identity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        useAlias: form.elements.useAlias.checked,
+        alias: form.elements.alias.value,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Unable to save your leaderboard name.");
+    state.leaderboardIdentity = data.identity;
+    syncLeaderboardIdentityForms(
+      data.identity.useAlias
+        ? `Saved. The leaderboard now shows ${data.identity.alias}.`
+        : `Saved. The leaderboard now shows ${data.identity.actualName}.`,
+    );
+    if (normalizeRoute(window.location.pathname) === "/leaderboard") {
+      await loadLeaderboard(leaderboardWeek.value);
+    }
+  } catch (error) {
+    feedback.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderPrizeDraft(data) {
+  const draft = data.challenge?.prizeDraft;
+  if (!draft) {
+    prizeDraft.hidden = true;
+    prizeDraft.innerHTML = "";
+    return;
+  }
+
+  const pickLabels = ["First pick", "Second pick", "Final prize"];
+  const pickDescriptions = [
+    "Chooses any one of the three prizes",
+    "Chooses from the two prizes left",
+    "Receives the remaining prize",
+  ];
+  const pickOrder = pickLabels
+    .map((label, index) => {
+      const player = data.entries?.[index];
+      return `
+        <li class="prize-pick prize-pick-${index + 1}">
+          <span class="prize-rank">${index + 1}</span>
+          <span class="prize-pick-copy">
+            <small>${label}</small>
+            <strong>${player ? escapeHtml(player.name) : "To be decided"}</strong>
+            <span>${pickDescriptions[index]}</span>
+          </span>
+        </li>
+      `;
+    })
+    .join("");
+
+  prizeDraft.innerHTML = `
+    <div class="prize-draft-visual">
+      <img src="${escapeHtml(draft.imagePath)}" alt="Week 1 prize pool: a Vinda tissue pack, Vaseline hand cream, and anti-fog wipes" />
+      <span class="prize-drop-sticker" aria-hidden="true">3<br /><small>PRIZES</small></span>
+    </div>
+    <div class="prize-draft-content">
+      <p class="prize-draft-kicker">✦ ${escapeHtml(draft.eyebrow)}</p>
+      <h2 id="prizeDraftTitle">${escapeHtml(draft.title)}</h2>
+      <p class="prize-draft-rule">${escapeHtml(draft.rule)}</p>
+      <div class="prize-rewards" aria-label="Available prizes">
+        ${draft.rewards.map((reward) => `<span>${escapeHtml(reward)}</span>`).join("")}
+      </div>
+      <ol class="prize-pick-order" aria-label="Prize selection order">${pickOrder}</ol>
+      <p class="prize-draft-note">Live ranking shown. Final pick order is locked when Week 1 closes.</p>
+      <a class="game-cta" href="/game" data-route="/game">
+        Play this week's game
+        <span aria-hidden="true">→</span>
+      </a>
+    </div>
+  `;
+  prizeDraft.hidden = false;
+}
+
 function renderLeaderboard(data) {
+  renderPrizeDraft(data);
   leaderboardTopic.textContent = `${data.challenge.title}. ${formatChallengeRange(data.challenge)}.`;
   leaderboardSummary.textContent = data.participantCount
     ? `${data.participantCount} ${data.participantCount === 1 ? "player" : "players"}${data.viewerRank ? `. Your rank: ${data.viewerRank}.` : ". Complete an evaluated answer to join them."}`
@@ -677,12 +848,18 @@ function renderLeaderboard(data) {
     .map(
       (entry) => `
         <li class="leaderboard-row${entry.isViewer ? " is-viewer" : ""}">
-          <span class="leaderboard-rank">${entry.rank}</span>
+          <span class="leaderboard-rank" aria-label="Rank ${entry.rank}">
+            <span aria-hidden="true">${entry.rank <= 3 ? "★" : "#"}</span>
+            <strong>${entry.rank}</strong>
+          </span>
           <span class="leaderboard-person">
             <strong>${escapeHtml(entry.name)}${entry.isViewer ? " (you)" : ""}</strong>
             <span>${entry.attempts} ${entry.attempts === 1 ? "attempt" : "attempts"}</span>
           </span>
-          <span class="leaderboard-score" aria-label="${entry.score} points">${entry.score}</span>
+          <span class="leaderboard-score" aria-label="${entry.score} points">
+            <strong>${entry.score}</strong>
+            <small>pts</small>
+          </span>
         </li>
       `,
     )
@@ -690,28 +867,71 @@ function renderLeaderboard(data) {
 }
 
 async function loadLeaderboard(challengeId) {
+  prizeDraft.hidden = true;
+  leaderboardList.setAttribute("aria-busy", "true");
   leaderboardSummary.textContent = "Loading weekly standings...";
   leaderboardList.innerHTML = '<li class="leaderboard-loading">Loading leaderboard...</li>';
   try {
     const query = challengeId ? `?challengeId=${encodeURIComponent(challengeId)}` : "";
     const response = await fetch(`/api/game/leaderboard${query}`, { cache: "no-store" });
     const data = await response.json();
+    if (response.status === 401) {
+      state.authUser = null;
+      state.authReady = true;
+      updateAuthView();
+      setStatus("Sign in");
+      return;
+    }
     if (!response.ok) throw new Error(data.error || "Unable to load the leaderboard.");
     renderLeaderboard(data);
   } catch (error) {
     leaderboardSummary.textContent = "";
     leaderboardList.innerHTML = `<li class="leaderboard-error">${escapeHtml(error.message)}</li>`;
+  } finally {
+    leaderboardList.setAttribute("aria-busy", "false");
   }
+}
+
+async function fetchGameChallengeCatalog() {
+  const response = await fetch("/api/game/challenge", { cache: "no-store" });
+  const data = await response.json();
+  if (response.status === 401) {
+    state.authUser = null;
+    state.authReady = true;
+    updateAuthView();
+    setStatus("Sign in");
+    return null;
+  }
+  if (!response.ok) throw new Error(data.error || "Unable to load this week's challenge.");
+
+  state.gameChallenges = data.challenges || [];
+  showGameChallenge(data.challenge);
+  return data;
 }
 
 async function loadGameChallenge() {
   try {
-    const response = await fetch("/api/game/challenge", { cache: "no-store" });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Unable to load this week's challenge.");
+    await fetchGameChallengeCatalog();
+  } catch (error) {
+    gameTopicTitle.textContent = "Weekly topic unavailable";
+    gameTopicQuestion.textContent = error.message;
+  }
+}
 
-    state.gameChallenges = data.challenges || [];
-    showGameChallenge(data.challenge);
+async function loadLeaderboardPage() {
+  leaderboardList.setAttribute("aria-busy", "true");
+  leaderboardSummary.textContent = "Loading this week's challenge…";
+  leaderboardList.innerHTML = '<li class="leaderboard-loading">Loading leaderboard…</li>';
+  try {
+    const [data] = await Promise.all([
+      fetchGameChallengeCatalog(),
+      loadLeaderboardIdentity(),
+    ]);
+    if (!data) {
+      leaderboardList.setAttribute("aria-busy", "false");
+      return;
+    }
+
     const previousSelection = leaderboardWeek.value;
     leaderboardWeek.innerHTML = state.gameChallenges
       .map((challenge, index) => {
@@ -724,10 +944,9 @@ async function loadGameChallenge() {
     }
     await loadLeaderboard(leaderboardWeek.value || data.challenge.id);
   } catch (error) {
-    gameTopicTitle.textContent = "Weekly topic unavailable";
-    gameTopicQuestion.textContent = error.message;
     leaderboardSummary.textContent = "";
     leaderboardList.innerHTML = `<li class="leaderboard-error">${escapeHtml(error.message)}</li>`;
+    leaderboardList.setAttribute("aria-busy", "false");
   }
 }
 
@@ -911,7 +1130,11 @@ function renderEvaluation(evaluation) {
 
   const shareId = evaluation.status === "completed" ? "latest" : "";
   if (shareId) window.EvaluationShare.register(shareId, evaluation);
-  evaluationResult.innerHTML = renderEvaluationContent(evaluation, shareId);
+  const identityChoice =
+    shareId && state.activeMode === "/game" && state.leaderboardIdentity
+      ? `<section class="post-evaluation-identity">${leaderboardIdentityForm(state.leaderboardIdentity, "result")}</section>`
+      : "";
+  evaluationResult.innerHTML = `${renderEvaluationContent(evaluation, shareId)}${identityChoice}`;
 }
 
 function renderHistoryItem(item, index) {
@@ -958,7 +1181,7 @@ function renderHistoryItem(item, index) {
 }
 
 function normalizeRoute(pathname) {
-  if (pathname === "/") return "/game";
+  if (pathname === "/") return "/leaderboard";
   if (pathname === "/practice") return "/examine";
   return pathname;
 }
@@ -966,7 +1189,6 @@ function normalizeRoute(pathname) {
 function setPlayMode(route) {
   const isGame = route === "/game";
   gameOverview.hidden = !isGame;
-  leaderboardPanel.hidden = !isGame;
   roleField.hidden = isGame;
   nameField.hidden = isGame;
   playEyebrow.textContent = isGame ? "Weekly speaking challenge" : "Live speaking evaluation";
@@ -1006,20 +1228,27 @@ function setPlayMode(route) {
 function setRoute(pathname) {
   const route = normalizeRoute(pathname);
   const isHistory = route === "/history";
+  const isLeaderboard = route === "/leaderboard";
   const isGame = route === "/game";
 
-  playView.hidden = !state.authUser || isHistory;
+  playView.hidden = !state.authUser || isHistory || isLeaderboard;
+  leaderboardView.hidden = !state.authUser || !isLeaderboard;
   historyView.hidden = !state.authUser || !isHistory;
   loginPanel.hidden = Boolean(state.authUser);
-  connectionStatus.hidden = isHistory;
-  if (!isHistory) setPlayMode(route);
-  document.title = isHistory
-    ? "History | OScanner-Eng"
-    : isGame
-      ? "Weekly Game | OScanner-Eng"
-      : "Examine | OScanner-Eng";
+  connectionStatus.hidden = isHistory || isLeaderboard;
+  if (!isHistory && !isLeaderboard) setPlayMode(route);
+  document.title = isLeaderboard
+    ? "Leaderboard | OScanner-Eng"
+    : isHistory
+      ? "History | OScanner-Eng"
+      : isGame
+        ? "Weekly Game | OScanner-Eng"
+        : "Examine | OScanner-Eng";
   navLinks.forEach((link) => {
-    link.classList.toggle("active", normalizeRoute(link.dataset.route) === route);
+    const isActive = normalizeRoute(link.dataset.route) === route;
+    link.classList.toggle("active", isActive);
+    if (isActive) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
   });
 
   if (!state.authUser) {
@@ -1029,6 +1258,9 @@ function setRoute(pathname) {
     loadHistory().catch(() => {
       historyList.innerHTML = '<p class="empty-history">Unable to load saved answers.</p>';
     });
+  } else if (isLeaderboard) {
+    setStatus("Leaderboard");
+    loadLeaderboardPage();
   } else if (isGame) {
     setStatus("Weekly topic");
     loadGameChallenge();
@@ -1301,14 +1533,14 @@ async function finishRecording() {
     }
 
     saveResult.innerHTML = `Saved as <a href="${escapeHtml(data.path)}" target="_blank" rel="noreferrer">${escapeHtml(data.filename)}</a>. Generate the next question when ready.`;
+    if (state.activeMode === "/game" && data.evaluation?.status === "completed") {
+      await loadLeaderboardIdentity().catch(() => {});
+    }
     renderEvaluation(data.evaluation);
     setStatus(data.evaluation?.status === "completed" ? "Evaluated" : "Saved");
     generateButton.disabled = false;
     setDiscardAvailable(false);
     await loadHistory();
-    if (normalizeRoute(window.location.pathname) === "/game") {
-      await loadLeaderboard(state.gameChallenge?.id);
-    }
   } catch (error) {
     if (state.discardRequested) return;
     setStatus("Save failed");
@@ -1420,12 +1652,13 @@ logoutButton.addEventListener("click", async () => {
   state.privacyConsent = null;
   state.profile = null;
   state.question = null;
+  state.leaderboardIdentity = null;
   state.activeMode = null;
   evaluationResult.innerHTML = "";
   saveResult.textContent = "";
   clearThinkingNotes();
   stopStream();
-  navigateTo("/game");
+  navigateTo("/leaderboard");
   updateAuthView();
   setStatus("Sign in");
 });
@@ -1480,19 +1713,38 @@ speakDirectlyButton.addEventListener("click", () => {
   }
 });
 
-navLinks.forEach((link) => {
-  link.addEventListener("click", (event) => {
-    event.preventDefault();
-    if ((state.recorder && state.recorder.state !== "inactive") || state.activeSaveId) {
-      openDiscardModal();
-      return;
-    }
-    navigateTo(link.getAttribute("href"));
-  });
+document.addEventListener("click", (event) => {
+  const link = event.target.closest("[data-route]");
+  if (!link) return;
+  event.preventDefault();
+  if ((state.recorder && state.recorder.state !== "inactive") || state.activeSaveId) {
+    openDiscardModal();
+    return;
+  }
+  navigateTo(link.getAttribute("href"));
 });
 
 evaluationResult.addEventListener("click", (event) => {
   window.EvaluationShare.handleClick(event);
+});
+
+document.addEventListener("change", (event) => {
+  const form = event.target.closest("[data-identity-form]");
+  if (form && ["useAlias", "alias"].includes(event.target.name)) {
+    updateIdentityFormPreview(form);
+  }
+});
+
+document.addEventListener("input", (event) => {
+  const form = event.target.closest("[data-identity-form]");
+  if (form && event.target.name === "alias") updateIdentityFormPreview(form);
+});
+
+document.addEventListener("submit", (event) => {
+  const form = event.target.closest("[data-identity-form]");
+  if (!form) return;
+  event.preventDefault();
+  saveLeaderboardIdentity(form);
 });
 
 historyList.addEventListener("click", (event) => {

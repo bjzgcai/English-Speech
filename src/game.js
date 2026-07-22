@@ -81,6 +81,19 @@ const structuralGuide = Object.freeze([
   { key: "close", label: "Close", prompt: "Finish with the result, lesson, or recommendation." },
 ]);
 
+const launchWeekPrizeDraft = Object.freeze({
+  eyebrow: "Week 1 prize drop",
+  title: "Top three unlock the prize draft",
+  imagePath: "/assets/week-one-prize-drop.png",
+  rewards: Object.freeze([
+    "Vinda tissue pack",
+    "Vaseline hand cream",
+    "Anti-fog wipes",
+  ]),
+  rule:
+    "After the Week 1 standings close, first place chooses first, second place chooses from the two remaining prizes, and third place receives the final prize.",
+});
+
 function challengeIndexAt(now = new Date()) {
   return Math.max(0, Math.floor((now.getTime() - CHALLENGE_ANCHOR_MS) / WEEK_MS));
 }
@@ -103,6 +116,7 @@ function challengeForIndex(index) {
     startsAt: new Date(startMs).toISOString(),
     endsAt: new Date(endMs).toISOString(),
     structuralGuide,
+    prizeDraft: index === 0 ? launchWeekPrizeDraft : null,
   };
 }
 
@@ -130,7 +144,7 @@ function challengeQuestion(challenge) {
   };
 }
 
-function leaderboardForChallenge(records, challenge, viewerOpenId) {
+function leaderboardForChallenge(records, challenge, viewerOpenId, identities = new Map()) {
   const bestByUser = new Map();
 
   records.forEach((record) => {
@@ -171,13 +185,19 @@ function leaderboardForChallenge(records, challenge, viewerOpenId) {
 
   const entries = [...bestByUser.values()]
     .sort((left, right) => right.score - left.score || left.finishedAt.localeCompare(right.finishedAt))
-    .map((entry, index) => ({
-      rank: index + 1,
-      name: entry.name,
-      score: entry.score,
-      attempts: entry.attempts,
-      isViewer: entry.openId === viewerOpenId,
-    }));
+    .map((entry, index) => {
+      const identity = identities.get(entry.openId);
+      return {
+        rank: index + 1,
+        name:
+          identity?.useAlias === true && identity.alias
+            ? identity.alias
+            : identity?.actualName || entry.name,
+        score: entry.score,
+        attempts: entry.attempts,
+        isViewer: entry.openId === viewerOpenId,
+      };
+    });
 
   return {
     entries,
@@ -193,6 +213,7 @@ module.exports = {
   challengeQuestion,
   currentChallenge,
   leaderboardForChallenge,
+  launchWeekPrizeDraft,
   structuralGuide,
   weeklyTopics,
 };

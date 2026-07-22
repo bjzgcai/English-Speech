@@ -3,20 +3,21 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Join the weekly English speaking game or complete a focused speaking examination." />
-    <title>Weekly Game | OScanner-Eng</title>
+    <meta name="description" content="See this week's English speaking leaderboard, join the friendly challenge, or complete a focused evaluation." />
+    <title>Leaderboard | OScanner-Eng</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <a class="skip-link" href="#mainContent">Skip to content</a>
     <header class="app-nav">
-      <a class="brand" href="/game" data-route="/game" aria-label="OScanner-Eng weekly game">
-        <span class="brand-mark" aria-hidden="true">E</span>
+      <a class="brand" href="/leaderboard" data-route="/leaderboard" aria-label="OScanner-Eng leaderboard">
+        <span class="brand-mark" aria-hidden="true"><span>E</span></span>
         <span>OScanner-Eng</span>
       </a>
       <div class="header-menu">
         <nav class="main-nav" aria-label="Primary navigation">
+          <a href="/leaderboard" data-route="/leaderboard">Leaderboard</a>
           <a href="/game" data-route="/game">Game</a>
           <a href="/examine" data-route="/examine">Examine</a>
           <a href="/history" data-route="/history">History</a>
@@ -40,6 +41,35 @@
           <p>Access to question generation, recording, and history is limited to authenticated DingTalk users.</p>
         </div>
         <a class="primary-button login-button" href="/auth/dingtalk">Sign in with DingTalk</a>
+      </section>
+
+      <section class="leaderboard-view view" id="leaderboardView" data-view="/leaderboard" hidden>
+        <section class="prize-draft" id="prizeDraft" aria-labelledby="prizeDraftTitle" hidden></section>
+
+        <section class="leaderboard-panel" id="leaderboardPanel" aria-labelledby="leaderboardTitle">
+          <div class="leaderboard-heading">
+            <div>
+              <p class="leaderboard-kicker">Live standings</p>
+              <h2 id="leaderboardTitle">This week's leaderboard</h2>
+              <p id="leaderboardTopic">Best completed score for this week's topic.</p>
+            </div>
+            <label class="leaderboard-picker">
+              Challenge week
+              <select id="leaderboardWeek" aria-label="Choose a challenge week"></select>
+            </label>
+          </div>
+          <section class="leaderboard-identity-settings" id="leaderboardIdentitySettings" aria-live="polite">
+            <p>Loading your leaderboard name…</p>
+          </section>
+          <div class="leaderboard-summary" id="leaderboardSummary" aria-live="polite"></div>
+          <ol class="leaderboard-list" id="leaderboardList" role="list" aria-live="polite">
+            <li class="leaderboard-loading">Loading leaderboard...</li>
+          </ol>
+          <footer class="leaderboard-footer">
+            <p>Your highest completed score is the one that counts.</p>
+            <a href="/game" data-route="/game">Ready for another round? <span aria-hidden="true">→</span></a>
+          </footer>
+        </section>
       </section>
 
       <section class="workspace view" id="playView" data-view="/examine">
@@ -151,7 +181,7 @@
           </aside>
 
           <div class="control-row">
-            <button type="button" class="danger-button" id="finishButton" disabled>
+            <button type="button" class="finish-button" id="finishButton" disabled>
               Finish and save
             </button>
             <button type="button" class="discard-button" id="discardButton" hidden>
@@ -163,22 +193,6 @@
           <div class="evaluation-result" id="evaluationResult" aria-live="polite"></div>
         </section>
 
-        <section class="leaderboard-panel" id="leaderboardPanel" aria-labelledby="leaderboardTitle" hidden>
-          <div class="leaderboard-heading">
-            <div>
-              <h2 id="leaderboardTitle">Weekly leaderboard</h2>
-              <p id="leaderboardTopic">Best completed score for this week's topic.</p>
-            </div>
-            <label class="leaderboard-picker">
-              Challenge week
-              <select id="leaderboardWeek" aria-label="Choose a challenge week"></select>
-            </label>
-          </div>
-          <div class="leaderboard-summary" id="leaderboardSummary" aria-live="polite"></div>
-          <ol class="leaderboard-list" id="leaderboardList" aria-live="polite">
-            <li class="leaderboard-loading">Loading leaderboard...</li>
-          </ol>
-        </section>
       </section>
 
       <section class="history view" id="historyView" data-view="/history" hidden>
@@ -253,7 +267,7 @@
             <span id="prepareGuidanceMessage">Both must stay on for the entire answer. Stand about one metre away and make sure your full upper body and posture are visible.</span>
           </div>
           <div class="countdown-display" id="countdownDisplay" hidden>
-            <span id="countdownSeconds">60</span>s
+            <span id="countdownSeconds">120</span>s
           </div>
           <div class="prepare-actions" id="prepareActions" hidden>
             <button type="button" class="primary-button" id="speakDirectlyButton">
