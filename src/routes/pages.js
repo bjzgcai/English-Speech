@@ -23,6 +23,7 @@ SwaggerUIBundle({url:"/openapi.yaml",dom_id:"#swagger-ui",deepLinking:true,prese
   app.get(protectedAppRoutes, requirePageAuth, sendAppShell);
 
   // Public page whitelist: these routes intentionally remain available without a session.
+  app.get("/intro", (_req, res) => res.sendFile(path.join(publicDir, "intro.html")));
   app.get("/methodology", (_req, res) => res.sendFile(path.join(publicDir, "docs.html")));
   app.get("/prepare", (_req, res) => res.sendFile(path.join(publicDir, "prepare.html")));
   app.get(["/privacy", "/policy"], (_req, res) =>

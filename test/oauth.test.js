@@ -186,7 +186,7 @@ test("protected pages start DingTalk login while public whitelist pages remain a
     assert.equal(loginUrl.searchParams.get("redirect"), route);
   }
 
-  for (const route of ["/methodology", "/prepare"]) {
+  for (const route of ["/intro", "/methodology", "/prepare"]) {
     const response = await fetch(`${baseUrl}${route}`, { redirect: "manual" });
     assert.equal(response.status, 200);
   }

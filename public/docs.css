@@ -579,16 +579,26 @@ h1 {
 .text-link span { transition: transform 180ms ease; }
 .text-link:hover span { transform: translate(3px, 3px); }
 
-.hero-visual { position: relative; }
+.hero-visual {
+  position: relative;
+  min-height: 600px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background:
+    radial-gradient(circle at 50% 42%, rgba(255, 255, 255, .92), transparent 40%),
+    var(--soft);
+}
 
 .hero-visual img {
   display: block;
-  width: 100%;
-  min-height: 530px;
-  max-height: 680px;
-  border-radius: var(--radius);
-  object-fit: cover;
-  object-position: 66% center;
+  width: min(78%, 460px);
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  border-radius: 50%;
+  object-fit: contain;
 }
 
 .hero-visual figcaption {
@@ -777,7 +787,8 @@ footer p { color: var(--muted); font-size: 13px; }
   .evaluation-modal-poster > img { height: min(56vw, 520px); min-height: 0; }
   .evaluation-modal-poster > video { position: static; height: min(56vw, 520px); }
   .hero { grid-template-columns: 1fr 1fr; gap: 34px; }
-  .hero-visual img { min-height: 460px; }
+  .hero-visual { min-height: 520px; }
+  .hero-visual img { min-height: 0; }
   .weight-map { display: grid; grid-template-columns: repeat(3, 1fr); }
   .weight-segment { min-height: 130px; }
   .dimension-detail { grid-template-columns: .65fr 1.35fr; }
@@ -797,6 +808,7 @@ footer p { color: var(--muted); font-size: 13px; }
   .docs-nav nav::-webkit-scrollbar { display: none; }
   .header-menu { min-width: 0; flex: 1; gap: 4px; overflow: hidden; }
   .docs-nav nav a { flex: none; padding: 8px 4px; font-size: 10px; }
+  .docs-nav nav a[href="/intro"]:not([aria-current="page"]),
   .docs-nav nav a[href="/methodology"]:not([aria-current="page"]),
   .docs-nav nav a[href="/prepare"]:not([aria-current="page"]) { display: none; }
   .auth-chip,
@@ -823,7 +835,8 @@ footer p { color: var(--muted); font-size: 13px; }
   .evaluator-submit-row button { width: 100%; }
   .hero { min-height: auto; grid-template-columns: 1fr; padding: 48px 0 72px; }
   h1 { font-size: clamp(47px, 14vw, 68px); }
-  .hero-visual img { min-height: 420px; max-height: 520px; }
+  .hero-visual { min-height: 460px; }
+  .hero-visual img { min-height: 0; max-height: none; }
   .hero-visual figcaption { grid-template-columns: 1fr; }
   .hero-visual figcaption span { padding: 10px; border-left: 0; border-top: 1px solid var(--line); }
   .hero-visual figcaption span:first-child { border-top: 0; }

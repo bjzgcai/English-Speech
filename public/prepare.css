@@ -41,6 +41,72 @@
   line-height: 1.55;
 }
 
+.club-invite {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 390px);
+  gap: clamp(48px, 9vw, 132px);
+  align-items: center;
+  padding: clamp(76px, 10vw, 132px) 0;
+  border-top: 1px solid var(--line);
+}
+
+.club-invite-copy {
+  max-width: 720px;
+}
+
+.club-invite-label {
+  margin: 0 0 18px;
+  color: var(--accent-dark);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.club-invite h2 {
+  max-width: 760px;
+  margin: 0;
+  font-size: clamp(40px, 5.2vw, 70px);
+  line-height: 1;
+  letter-spacing: -.045em;
+}
+
+.club-invite-copy > p:not(.club-invite-label) {
+  max-width: 620px;
+  margin: 24px 0 0;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.club-invite-copy .club-invite-note {
+  max-width: 580px;
+  padding-left: 18px;
+  border-left: 2px solid var(--accent);
+  font-size: 14px;
+}
+
+.club-qr {
+  width: min(100%, 390px);
+  margin: 0;
+  justify-self: end;
+}
+
+.club-qr img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 0 28px 80px rgba(72, 62, 137, .12);
+}
+
+.club-qr figcaption {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+
 .practice-notes {
   min-height: 620px;
   padding: clamp(88px, 11vw, 156px) 0;
@@ -278,6 +344,17 @@
   }
 
   .prepare-intro h1 { font-size: clamp(48px, 14vw, 64px); }
+
+  .club-invite {
+    grid-template-columns: 1fr;
+    gap: 42px;
+    padding: 72px 0 88px;
+  }
+
+  .club-qr {
+    width: min(88%, 390px);
+    justify-self: center;
+  }
 
   .practice-notes { min-height: 500px; }
 
