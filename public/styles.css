@@ -2765,6 +2765,7 @@ video {
     font-size: 12px;
   }
 
+  .main-nav a[href="/intro"],
   .main-nav a[href="/methodology"],
   .main-nav a[href="/prepare"] {
     display: none;
