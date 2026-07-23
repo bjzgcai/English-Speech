@@ -2153,7 +2153,6 @@ video {
     "kicker kicker"
     "question question"
     "message message"
-    "thinking thinking"
     "preview countdown"
     "guidance actions";
   align-items: center;
@@ -2257,61 +2256,30 @@ video {
   margin-top: 0;
 }
 
-.thinking-guide {
-  grid-area: thinking;
-  display: grid;
-  gap: 10px;
-  width: 100%;
-  border: 1px solid #dad6f0;
-  border-radius: 16px;
-  background: #f6f4ff;
-  padding: 14px;
-  text-align: left;
-}
-
-.thinking-guide-heading {
+.prepare-dialog.is-countdown #prepareModalMessage {
   display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: baseline;
-}
-
-.thinking-guide-heading h3 {
-  margin: 0;
-  font-size: 15px;
-}
-
-.thinking-guide-heading span {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.thinking-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 10px;
-}
-
-.thinking-grid label {
-  display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
-  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px 8px;
   align-items: center;
-  margin: 0;
+  max-width: none;
 }
 
-.thinking-grid label > span {
-  color: var(--accent-dark);
-  font-size: 11px;
+.prepare-dialog.is-countdown #prepareModalMessage strong {
+  color: var(--text);
+  font-size: 12px;
   font-weight: 800;
 }
 
-.thinking-grid input {
-  min-width: 0;
-  border-color: #d4d0e8;
-  background: var(--panel);
-  padding: 8px 10px;
+.answer-flow-steps {
+  color: var(--muted);
   font-size: 12px;
+}
+
+.answer-flow-note {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .prepare-dialog.is-countdown .prepare-preview {
@@ -3152,7 +3120,6 @@ video {
       "kicker kicker"
       "question question"
       "message message"
-      "thinking thinking"
       "preview preview"
       "guidance guidance"
       "countdown actions";
@@ -3188,10 +3155,6 @@ video {
     width: 100%;
     max-height: min(25dvh, 210px);
     margin-top: 0;
-  }
-
-  .thinking-grid {
-    grid-template-columns: 1fr;
   }
 
   .prepare-dialog.is-countdown .countdown-display {
