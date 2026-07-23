@@ -460,6 +460,20 @@ function requireAuth(req, res, next) {
   next();
 }
 
+function requirePageAuth(req, res, next) {
+  const user = readSession(req);
+  if (safeText(user?.openId)) {
+    req.user = user;
+    return next();
+  }
+
+  const redirectPath = normalizeRedirectPath(req.originalUrl || req.url);
+  return res.redirect(
+    302,
+    `/auth/dingtalk?redirect=${encodeURIComponent(redirectPath)}`,
+  );
+}
+
 function findCurrentPrivacyConsent(openId) {
   return readJsonLines(consentsMetadataFile)
     .reverse()
@@ -2532,7 +2546,7 @@ app.get("/api/recordings/:id/video", requireAuth, (req, res) => {
   res.sendFile(videoPath);
 });
 
-registerPageRoutes(app);
+registerPageRoutes(app, { requirePageAuth });
 
 app.use((error, _req, res, next) => {
   if (error instanceof multer.MulterError) {

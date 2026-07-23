@@ -1,7 +1,7 @@
 const path = require("path");
 const { openApiFile, publicDir } = require("../config");
 
-function registerPageRoutes(app) {
+function registerPageRoutes(app, { requirePageAuth }) {
   app.get("/openapi.yaml", (_req, res) => {
     res.type("application/yaml").sendFile(openApiFile);
   });
@@ -17,12 +17,12 @@ SwaggerUIBundle({url:"/openapi.yaml",dom_id:"#swagger-ui",deepLinking:true,prese
   });
 
   const sendAppShell = (_req, res) => res.sendFile(path.join(publicDir, "index.html"));
-  app.get("/", (_req, res) => res.redirect(302, "/leaderboard"));
-  app.get("/leaderboard", sendAppShell);
-  app.get("/game", sendAppShell);
-  app.get("/examine", sendAppShell);
-  app.get("/practice", sendAppShell);
-  app.get("/history", sendAppShell);
+  const protectedAppRoutes = ["/leaderboard", "/game", "/examine", "/practice", "/history"];
+
+  app.get("/", requirePageAuth, (_req, res) => res.redirect(302, "/leaderboard"));
+  app.get(protectedAppRoutes, requirePageAuth, sendAppShell);
+
+  // Public page whitelist: these routes intentionally remain available without a session.
   app.get("/methodology", (_req, res) => res.sendFile(path.join(publicDir, "docs.html")));
   app.get("/prepare", (_req, res) => res.sendFile(path.join(publicDir, "prepare.html")));
   app.get(["/privacy", "/policy"], (_req, res) =>

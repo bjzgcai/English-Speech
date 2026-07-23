@@ -172,22 +172,46 @@ test("privacy policy is available at both public routes", async (context) => {
   }
 });
 
-test("root redirects to the leaderboard while app views remain directly addressable", async (context) => {
+test("protected pages start DingTalk login while public whitelist pages remain accessible", async (context) => {
   const server = app.listen(0);
   context.after(() => new Promise((resolve) => server.close(resolve)));
   await new Promise((resolve) => server.once("listening", resolve));
 
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
-  const rootResponse = await fetch(`${baseUrl}/`, { redirect: "manual" });
+  for (const route of ["/", "/leaderboard", "/game", "/examine", "/practice", "/history"]) {
+    const response = await fetch(`${baseUrl}${route}`, { redirect: "manual" });
+    assert.equal(response.status, 302);
+    const loginUrl = new URL(response.headers.get("location"), baseUrl);
+    assert.equal(loginUrl.pathname, "/auth/dingtalk");
+    assert.equal(loginUrl.searchParams.get("redirect"), route);
+  }
+
+  for (const route of ["/methodology", "/prepare"]) {
+    const response = await fetch(`${baseUrl}${route}`, { redirect: "manual" });
+    assert.equal(response.status, 200);
+  }
+});
+
+test("authenticated users can open protected app pages", async (context) => {
+  const server = app.listen(0);
+  context.after(() => new Promise((resolve) => server.close(resolve)));
+  await new Promise((resolve) => server.once("listening", resolve));
+
+  const session = testHelpers.createSessionToken({
+    openId: `page-reader-${Date.now()}`,
+    name: "Page Reader",
+  });
+  const headers = { Cookie: `englisheval_session=${session}` };
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+  const rootResponse = await fetch(`${baseUrl}/`, { headers, redirect: "manual" });
   assert.equal(rootResponse.status, 302);
   assert.equal(rootResponse.headers.get("location"), "/leaderboard");
 
-  for (const route of ["/leaderboard", "/game", "/examine"]) {
-    const response = await fetch(`${baseUrl}${route}`, { redirect: "manual" });
+  for (const route of ["/leaderboard", "/game", "/examine", "/practice", "/history"]) {
+    const response = await fetch(`${baseUrl}${route}`, { headers, redirect: "manual" });
     assert.equal(response.status, 200);
-    const shell = await response.text();
-    assert.match(shell, /id="playView"/);
-    assert.match(shell, /id="leaderboardView"/);
+    assert.match(await response.text(), /id="playView"/);
   }
 });
 
