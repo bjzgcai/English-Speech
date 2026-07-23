@@ -4,8 +4,9 @@ const QRCode = require("qrcode");
 
 process.env.NODE_ENV = "test";
 process.env.APP_BASE_URL = "https://english.example.test/service";
+process.env.SESSION_SECRET = "share-test-session-secret";
 
-const { app } = require("../src/app");
+const { app, testHelpers } = require("../src/app");
 
 test("share QR points to the configured public service origin", async (context) => {
   const server = app.listen(0);
@@ -38,9 +39,15 @@ test("methodology and history load the shared evaluation image controls", async 
 
   const { port } = server.address();
   const origin = `http://127.0.0.1:${port}`;
+  const session = testHelpers.createSessionToken({
+    openId: `share-page-reader-${Date.now()}`,
+    name: "Share Page Reader",
+  });
   const [methodologyResponse, historyResponse, scriptResponse] = await Promise.all([
     fetch(`${origin}/methodology`),
-    fetch(`${origin}/history`),
+    fetch(`${origin}/history`, {
+      headers: { Cookie: `englisheval_session=${session}` },
+    }),
     fetch(`${origin}/evaluation-share.js`),
   ]);
   const [methodology, history, script] = await Promise.all([
