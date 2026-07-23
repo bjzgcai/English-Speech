@@ -109,8 +109,6 @@ const prepareSpinner = document.querySelector("#prepareSpinner");
 const prepareModalKicker = document.querySelector("#prepareModalKicker");
 const prepareModalTitle = document.querySelector("#prepareModalTitle");
 const prepareModalMessage = document.querySelector("#prepareModalMessage");
-const thinkingGuide = document.querySelector("#thinkingGuide");
-const thinkingInputs = document.querySelectorAll(".thinking-grid input");
 const countdownDisplay = document.querySelector("#countdownDisplay");
 const countdownSeconds = document.querySelector("#countdownSeconds");
 const prepareCameraGuidance = document.querySelector("#prepareCameraGuidance");
@@ -484,7 +482,6 @@ function showGeneratingModal() {
   prepareModalKicker.textContent = "Generating";
   prepareModalTitle.textContent = "Preparing your question...";
   prepareModalMessage.textContent = "Please wait while the assessment question is generated.";
-  thinkingGuide.hidden = true;
   prepareSpinner.hidden = false;
   preparePreviewWrap.hidden = !state.stream;
   prepareCameraGuidance.hidden = true;
@@ -502,8 +499,16 @@ function showCountdownModal(question) {
   prepareDialog.classList.add("is-countdown");
   prepareModalKicker.textContent = "Question ready";
   prepareModalTitle.textContent = question.question;
-  prepareModalMessage.textContent = "Take a moment to plan your answer. Recording starts when the timer reaches zero.";
-  thinkingGuide.hidden = false;
+  prepareModalMessage.replaceChildren();
+  const answerFlowLabel = document.createElement("strong");
+  answerFlowLabel.textContent = "Answer flow";
+  const answerFlowSteps = document.createElement("span");
+  answerFlowSteps.className = "answer-flow-steps";
+  answerFlowSteps.textContent = "Your point → Reasons → Example → Close ending";
+  const answerFlowNote = document.createElement("span");
+  answerFlowNote.className = "answer-flow-note";
+  answerFlowNote.textContent = "Recording starts when the timer reaches zero.";
+  prepareModalMessage.append(answerFlowLabel, answerFlowSteps, answerFlowNote);
   prepareSpinner.hidden = true;
   preparePreviewWrap.hidden = !state.stream;
   prepareCameraGuidance.hidden = false;
@@ -538,7 +543,6 @@ function showMediaRequiredModal(error, retryAction = "record") {
   prepareModalTitle.textContent = "Turn on your camera and microphone to continue";
   prepareModalMessage.textContent =
     "OScanner-Eng needs both devices to record and evaluate your answer. Allow camera and microphone access in your browser, then try again.";
-  thinkingGuide.hidden = true;
   prepareSpinner.hidden = true;
   preparePreviewWrap.hidden = true;
   prepareCameraGuidance.hidden = false;
@@ -697,12 +701,6 @@ function setQuestion(question) {
     .join(" · ");
   saveResult.textContent = "";
   evaluationResult.innerHTML = "";
-}
-
-function clearThinkingNotes() {
-  thinkingInputs.forEach((input) => {
-    input.value = "";
-  });
 }
 
 function stopStream() {
@@ -1318,7 +1316,6 @@ function setPlayMode(route) {
     state.question = null;
     evaluationResult.innerHTML = "";
     saveResult.textContent = "";
-    clearThinkingNotes();
   }
 
   if (!state.question) {
@@ -1425,7 +1422,6 @@ profileForm.addEventListener("submit", async (event) => {
 
   state.profile = getProfileFromForm();
   const isGame = normalizeRoute(window.location.pathname) === "/game";
-  clearThinkingNotes();
   setStatus("Generating");
   showGeneratingModal();
   prepareModalTitle.textContent = isGame ? "Preparing the weekly topic..." : "Preparing your question...";
@@ -1764,7 +1760,6 @@ logoutButton.addEventListener("click", async () => {
   state.activeMode = null;
   evaluationResult.innerHTML = "";
   saveResult.textContent = "";
-  clearThinkingNotes();
   stopStream();
   navigateTo("/leaderboard");
   updateAuthView();
