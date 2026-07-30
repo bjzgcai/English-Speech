@@ -790,13 +790,18 @@ h1 {
 
 .leaderboard-identity-form {
   display: grid;
-  grid-template-columns: minmax(220px, 1.2fr) minmax(230px, 0.9fr) minmax(210px, 0.9fr) auto;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(230px, 0.9fr) minmax(210px, 0.9fr) minmax(190px, auto);
   gap: 14px;
   align-items: start;
   border: 1px solid #d9d5ee;
   border-radius: 16px;
   background: #f8f7ff;
   padding: 16px;
+}
+
+.leaderboard-identity-form > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .identity-copy {
@@ -901,7 +906,7 @@ h1 {
 .identity-save {
   min-height: 46px;
   margin-top: 24px;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .identity-feedback {
@@ -1920,9 +1925,32 @@ video {
 }
 
 .post-evaluation-identity .leaderboard-identity-form {
-  grid-template-columns: minmax(220px, 1.2fr) minmax(220px, 0.9fr) minmax(200px, 0.9fr) auto;
+  grid-template-columns: minmax(220px, 1.1fr) minmax(220px, 1fr) minmax(220px, 1fr);
   border: 2px solid rgba(71, 59, 183, 0.25);
   background: var(--mint-soft);
+}
+
+.post-evaluation-identity .identity-copy {
+  grid-row: 1 / span 2;
+}
+
+.post-evaluation-identity .identity-toggle {
+  grid-column: 2;
+}
+
+.post-evaluation-identity .identity-alias {
+  grid-column: 3;
+}
+
+.post-evaluation-identity .identity-save {
+  grid-column: 3;
+  width: 100%;
+  margin-top: 0;
+}
+
+.post-evaluation-identity .identity-feedback {
+  grid-column: 2;
+  align-self: center;
 }
 
 .evaluation-share-actions {
@@ -2780,6 +2808,15 @@ video {
     grid-template-columns: 1fr 1fr;
   }
 
+  .post-evaluation-identity .identity-copy,
+  .post-evaluation-identity .identity-toggle,
+  .post-evaluation-identity .identity-alias,
+  .post-evaluation-identity .identity-save,
+  .post-evaluation-identity .identity-feedback {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
   .identity-copy,
   .identity-feedback {
     grid-column: 1 / -1;
@@ -2891,6 +2928,15 @@ video {
   .leaderboard-identity-form,
   .post-evaluation-identity .leaderboard-identity-form {
     grid-template-columns: 1fr;
+  }
+
+  .post-evaluation-identity .identity-copy,
+  .post-evaluation-identity .identity-toggle,
+  .post-evaluation-identity .identity-alias,
+  .post-evaluation-identity .identity-save,
+  .post-evaluation-identity .identity-feedback {
+    grid-column: 1;
+    grid-row: auto;
   }
 
   .identity-feedback {
