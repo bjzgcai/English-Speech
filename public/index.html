@@ -192,6 +192,70 @@
 
           <div class="save-result" id="saveResult" aria-live="polite"></div>
           <div class="evaluation-result" id="evaluationResult" aria-live="polite"></div>
+          <section
+            class="experience-rating"
+            id="experienceRatingPrompt"
+            aria-labelledby="experienceRatingTitle"
+            hidden
+          >
+            <div data-rating-form>
+              <header class="experience-rating-header">
+                <div>
+                  <p class="muted-label">Evaluation complete</p>
+                  <h3 id="experienceRatingTitle">How was your OScanner-Eng experience?</h3>
+                </div>
+                <button
+                  class="experience-rating-close"
+                  id="dismissExperienceRating"
+                  type="button"
+                  aria-label="Not now"
+                >
+                  ×
+                </button>
+              </header>
+              <div class="experience-rating-scores" role="group" aria-label="Satisfaction rating">
+                <button type="button" data-rating-score="1" aria-pressed="false">
+                  <strong>1</strong><span>Very dissatisfied</span>
+                </button>
+                <button type="button" data-rating-score="2" aria-pressed="false">
+                  <strong>2</strong><span>Dissatisfied</span>
+                </button>
+                <button type="button" data-rating-score="3" aria-pressed="false">
+                  <strong>3</strong><span>Neutral</span>
+                </button>
+                <button type="button" data-rating-score="4" aria-pressed="false">
+                  <strong>4</strong><span>Satisfied</span>
+                </button>
+                <button type="button" data-rating-score="5" aria-pressed="false">
+                  <strong>5</strong><span>Very satisfied</span>
+                </button>
+              </div>
+              <div class="experience-rating-details" id="experienceRatingDetails" hidden>
+                <p id="experienceRatingTagQuestion"></p>
+                <div
+                  class="experience-rating-tags"
+                  id="experienceRatingTags"
+                  role="group"
+                  aria-label="Rating reasons"
+                ></div>
+                <button class="primary-button" id="submitExperienceRating" type="button">
+                  Submit rating
+                </button>
+              </div>
+              <p class="experience-rating-error" id="experienceRatingError" role="alert" hidden></p>
+              <p class="experience-rating-privacy">
+                Your rating is saved separately and does not include your question, answer,
+                transcript, recording, or evaluation.
+              </p>
+            </div>
+            <div class="experience-rating-thanks" data-rating-thanks hidden aria-live="polite">
+              <span aria-hidden="true">✓</span>
+              <div>
+                <strong>Thank you for your rating</strong>
+                <p>Your feedback will help us improve the speaking evaluation experience.</p>
+              </div>
+            </div>
+          </section>
         </section>
 
       </section>
