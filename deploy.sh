@@ -13,11 +13,11 @@ usage() {
 Usage: ./deploy.sh [--migrate-data]
 
 Deploy OScanner-Eng to the configured SSH target. Code is installed as a
-versioned release while .env, recordings, questions, comments, and consents remain in shared
+versioned release while .env, recordings, questions, comments, consents, and ratings remain in shared
 persistent storage.
 
 Options:
-  --migrate-data  Copy local recordings/, questions/, comments/, and consents/ on the first migration.
+  --migrate-data  Copy local recordings/, questions/, comments/, consents/, and ratings/ on the first migration.
                   The command refuses to overwrite non-empty remote data.
   -h, --help      Show this help.
 
@@ -56,7 +56,7 @@ remote_user="$(ssh "$TARGET" 'id -un')"
 remote_group="$(ssh "$TARGET" 'id -gn')"
 previous_release="$(ssh "$TARGET" "readlink -f '$REMOTE_ROOT/current' 2>/dev/null || true")"
 echo "Deploying release $release_id to $TARGET:$REMOTE_ROOT"
-ssh "$TARGET" "sudo install -d -m 0750 -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT' '$REMOTE_ROOT/releases' '$REMOTE_ROOT/shared' && sudo install -d -m 0700 -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' '$REMOTE_ROOT/backups' && mkdir -p '$release_dir'"
+ssh "$TARGET" "sudo install -d -m 0750 -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT' '$REMOTE_ROOT/releases' '$REMOTE_ROOT/shared' && sudo install -d -m 0700 -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' '$REMOTE_ROOT/shared/ratings' '$REMOTE_ROOT/backups' && mkdir -p '$release_dir'"
 ssh "$TARGET" "test -f '$REMOTE_ROOT/shared/.env' && test -f '$REMOTE_ROOT/shared/.env.prod'" || {
   echo "Production environment files must already exist under $REMOTE_ROOT/shared; refusing to upload local credentials." >&2
   exit 1
@@ -93,11 +93,12 @@ rsync -az --delete \
   --exclude 'questions/' \
   --exclude 'comments/' \
   --exclude 'consents/' \
+  --exclude 'ratings/' \
   --exclude '.DS_Store' \
   ./ "$TARGET:$release_dir/"
 
 if [[ "$MIGRATE_DATA" == true ]]; then
-  remote_data_count="$(ssh "$TARGET" "find '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' -type f 2>/dev/null | wc -l")"
+  remote_data_count="$(ssh "$TARGET" "find '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' '$REMOTE_ROOT/shared/ratings' -type f 2>/dev/null | wc -l")"
   if [[ "$remote_data_count" != "0" ]]; then
     echo "Remote persistent storage is not empty; refusing to overwrite it." >&2
     echo "Back up and reconcile remote data manually before retrying." >&2
@@ -111,6 +112,9 @@ if [[ "$MIGRATE_DATA" == true ]]; then
   fi
   if [[ -d consents ]]; then
     rsync -az consents/ "$TARGET:$REMOTE_ROOT/shared/consents/"
+  fi
+  if [[ -d ratings ]]; then
+    rsync -az ratings/ "$TARGET:$REMOTE_ROOT/shared/ratings/"
   fi
   echo "Migrated local persistent data. Encrypted backup runs before retention below."
 fi
@@ -127,8 +131,8 @@ else
   cd \"\$release_ffmpeg\"
   node install.js
 fi"
-ssh "$TARGET" "ln -sfn '$REMOTE_ROOT/shared/recordings' '$release_dir/recordings' && ln -sfn '$REMOTE_ROOT/shared/questions' '$release_dir/questions' && ln -sfn '$REMOTE_ROOT/shared/comments' '$release_dir/comments' && ln -sfn '$REMOTE_ROOT/shared/consents' '$release_dir/consents' && ln -sfn '$REMOTE_ROOT/shared/.env' '$release_dir/.env' && ln -sfn '$REMOTE_ROOT/shared/.env.prod' '$release_dir/.env.prod'"
-ssh "$TARGET" "chmod 0600 '$REMOTE_ROOT/shared/.env' '$REMOTE_ROOT/shared/.env.prod' && find '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' \\( -name lost+found -prune \\) -o -type d -exec chmod 0700 {} + && find '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' \\( -name lost+found -prune \\) -o -type f -exec chmod 0600 {} +"
+ssh "$TARGET" "ln -sfn '$REMOTE_ROOT/shared/recordings' '$release_dir/recordings' && ln -sfn '$REMOTE_ROOT/shared/questions' '$release_dir/questions' && ln -sfn '$REMOTE_ROOT/shared/comments' '$release_dir/comments' && ln -sfn '$REMOTE_ROOT/shared/consents' '$release_dir/consents' && ln -sfn '$REMOTE_ROOT/shared/ratings' '$release_dir/ratings' && ln -sfn '$REMOTE_ROOT/shared/.env' '$release_dir/.env' && ln -sfn '$REMOTE_ROOT/shared/.env.prod' '$release_dir/.env.prod'"
+ssh "$TARGET" "chmod 0600 '$REMOTE_ROOT/shared/.env' '$REMOTE_ROOT/shared/.env.prod' && find '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' '$REMOTE_ROOT/shared/ratings' \\( -name lost+found -prune \\) -o -type d -exec chmod 0700 {} + && find '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' '$REMOTE_ROOT/shared/ratings' \\( -name lost+found -prune \\) -o -type f -exec chmod 0600 {} +"
 
 rollback() {
   echo "Deployment failed after release activation; restoring the previous release." >&2
@@ -163,7 +167,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=$REMOTE_ROOT/shared/recordings $REMOTE_ROOT/shared/questions $REMOTE_ROOT/shared/comments $REMOTE_ROOT/shared/consents
+ReadWritePaths=$REMOTE_ROOT/shared/recordings $REMOTE_ROOT/shared/questions $REMOTE_ROOT/shared/comments $REMOTE_ROOT/shared/consents $REMOTE_ROOT/shared/ratings
 UMask=0077
 
 [Install]
@@ -189,7 +193,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=$REMOTE_ROOT/shared/recordings $REMOTE_ROOT/shared/questions $REMOTE_ROOT/shared/comments $REMOTE_ROOT/shared/consents $REMOTE_ROOT/backups
+ReadWritePaths=$REMOTE_ROOT/shared/recordings $REMOTE_ROOT/shared/questions $REMOTE_ROOT/shared/comments $REMOTE_ROOT/shared/consents $REMOTE_ROOT/shared/ratings $REMOTE_ROOT/backups
 UMask=0077
 UNIT
 sudo tee '/etc/systemd/system/$SERVICE_NAME-recording-maintenance.timer' >/dev/null <<'UNIT'

@@ -12,6 +12,13 @@ const { appendJsonLine, readJsonLines, writeJsonLines } = require("./storage");
 const { createQuestionService } = require("./questions");
 const { registerPageRoutes } = require("./routes/pages");
 const { buildMockPartnerUsers } = require("./mock-evaluations");
+const { buildAdminStatistics } = require("./admin-statistics");
+const {
+  ExperienceRatingValidationError,
+  experienceRatingStatus,
+  listExperienceRatingsForAdmin,
+  parseExperienceRating,
+} = require("./experience-ratings");
 const {
   availableChallenges,
   challengeQuestion,
@@ -31,6 +38,7 @@ const {
   questionsMetadataFile,
   commentsMetadataFile,
   consentsMetadataFile,
+  ratingsMetadataFile,
 } = config;
 const sessionCookieName = "englisheval_session";
 const sessionTtlMs = 7 * 24 * 60 * 60 * 1000;
@@ -472,6 +480,34 @@ function requirePageAuth(req, res, next) {
     302,
     `/auth/dingtalk?redirect=${encodeURIComponent(redirectPath)}`,
   );
+}
+
+function adminTokensMatch(receivedToken, configuredToken = process.env.ADMIN_ACCESS_TOKEN) {
+  const received = safeText(receivedToken);
+  const configured = safeText(configuredToken);
+  if (!received || !configured) return false;
+
+  const receivedDigest = crypto.createHash("sha256").update(received).digest();
+  const configuredDigest = crypto.createHash("sha256").update(configured).digest();
+  return crypto.timingSafeEqual(receivedDigest, configuredDigest);
+}
+
+function requireAdminAccess(req, res, next) {
+  if (!safeText(process.env.ADMIN_ACCESS_TOKEN)) {
+    return res.status(503).json({
+      code: "ADMIN_ACCESS_NOT_CONFIGURED",
+      error: "Admin access is not configured.",
+    });
+  }
+
+  if (!adminTokensMatch(req.get("x-admin-access-token"))) {
+    return res.status(403).json({
+      code: "INVALID_ADMIN_ACCESS_TOKEN",
+      error: "The admin access token is invalid.",
+    });
+  }
+
+  next();
 }
 
 function findCurrentPrivacyConsent(openId) {
@@ -1952,6 +1988,46 @@ app.post("/api/privacy-consent", requireAuth, (req, res) => {
   });
 });
 
+app.get("/api/experience-ratings", requireAuth, (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json(experienceRatingStatus(readJsonLines(ratingsMetadataFile), req.user.openId));
+});
+
+app.post("/api/experience-ratings", requireAuth, (req, res) => {
+  let input;
+  try {
+    input = parseExperienceRating(req.body);
+  } catch (error) {
+    if (error instanceof ExperienceRatingValidationError) {
+      return res.status(400).json({ error: error.message });
+    }
+    throw error;
+  }
+
+  const ratings = readJsonLines(ratingsMetadataFile);
+  const status = experienceRatingStatus(ratings, req.user.openId);
+  res.set("Cache-Control", "no-store");
+  if (!status.eligible) return res.json(status);
+
+  appendJsonLine(ratingsMetadataFile, {
+    id: crypto.randomUUID(),
+    openId: req.user.openId,
+    userId: safeText(req.user.userId),
+    jobNumber: safeText(req.user.jobNumber),
+    userName: safeText(req.user.name, "DingTalk user"),
+    context: "EVALUATION",
+    outcome: input.outcome,
+    score: input.score,
+    tags: input.tags,
+    createdAt: new Date().toISOString(),
+  });
+
+  res.status(201).json({
+    eligible: false,
+    cooldownDays: status.cooldownDays,
+  });
+});
+
 const commentPages = new Set(["prepare", "methodology"]);
 
 function commentForClient(comment) {
@@ -2104,6 +2180,22 @@ app.get("/api/game/leaderboard", requireAuth, (req, res) => {
   );
   res.set("Cache-Control", "no-store");
   res.json({ challenge: gameChallengeForClient(challenge), ...leaderboard });
+});
+
+app.get("/api/admin/statistics", requireAuth, requireAdminAccess, (_req, res) => {
+  const statistics = buildAdminStatistics({
+    questions: readJsonLines(questionsMetadataFile),
+    recordings: readJsonLines(metadataFile),
+    currentChallenge: currentChallenge(),
+  });
+  res.set({
+    "Cache-Control": "no-store",
+    "Referrer-Policy": "no-referrer",
+  });
+  res.json({
+    statistics,
+    ratings: listExperienceRatingsForAdmin(readJsonLines(ratingsMetadataFile)),
+  });
 });
 
 app.post("/api/game/question", requireAuth, requirePrivacyConsent, (req, res) => {
@@ -2568,6 +2660,8 @@ module.exports = {
   startServer,
   testHelpers: {
     buildEvaluationPrompt,
+    adminTokensMatch,
+    buildAdminStatistics,
     createOAuthState,
     createSessionToken,
     decodeUtf8UploadFilename,

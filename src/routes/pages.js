@@ -1,5 +1,5 @@
 const path = require("path");
-const { openApiFile, publicDir } = require("../config");
+const { openApiFile, publicDir, rootDir } = require("../config");
 
 function registerPageRoutes(app, { requirePageAuth }) {
   app.get("/openapi.yaml", (_req, res) => {
@@ -21,6 +21,9 @@ SwaggerUIBundle({url:"/openapi.yaml",dom_id:"#swagger-ui",deepLinking:true,prese
 
   app.get("/", requirePageAuth, (_req, res) => res.redirect(302, "/leaderboard"));
   app.get(protectedAppRoutes, requirePageAuth, sendAppShell);
+  app.get("/admin", requirePageAuth, (_req, res) =>
+    res.sendFile(path.join(rootDir, "views", "admin.html")),
+  );
 
   // Public page whitelist: these routes intentionally remain available without a session.
   app.get("/intro", (_req, res) => res.sendFile(path.join(publicDir, "intro.html")));

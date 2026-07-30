@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow, noarchive" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      name="description"
+      content="Private participation statistics for OScanner-Eng event operators."
+    />
+    <title>Admin statistics | OScanner-Eng</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/admin.css" />
+    <script src="/admin.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#adminMain">Skip to statistics</a>
+
+    <header class="admin-header">
+      <a class="admin-brand" href="/leaderboard" aria-label="Return to OScanner-Eng">
+        <span class="admin-brand-mark" aria-hidden="true">E</span>
+        <span>OScanner-Eng</span>
+      </a>
+      <div class="operator-area">
+        <span class="operator-label">Private admin</span>
+        <span id="adminUserName">DingTalk user</span>
+        <button class="text-button" id="logoutButton" type="button">Sign out</button>
+      </div>
+    </header>
+
+    <main class="admin-main" id="adminMain">
+      <section class="access-panel" id="accessPanel" aria-labelledby="accessTitle">
+        <div class="access-copy">
+          <p class="section-label">Restricted statistics</p>
+          <h1 id="accessTitle">Open the admin dashboard</h1>
+          <p>
+            Sign-in confirms your DingTalk identity. Enter the separate admin access token to
+            load aggregate participation data.
+          </p>
+        </div>
+        <form class="access-form" id="accessForm">
+          <label for="accessToken">Admin access token</label>
+          <div class="token-control">
+            <input
+              id="accessToken"
+              name="accessToken"
+              type="password"
+              autocomplete="off"
+              spellcheck="false"
+              required
+              aria-describedby="tokenHelp accessError"
+            />
+            <button class="secondary-button" id="toggleTokenButton" type="button">Show</button>
+          </div>
+          <p class="form-help" id="tokenHelp">
+            The token is sent only in a protected request header and is not saved by this page.
+          </p>
+          <p class="form-error" id="accessError" role="alert" hidden></p>
+          <button class="primary-button" id="unlockButton" type="submit">View statistics</button>
+        </form>
+      </section>
+
+      <section class="dashboard" id="dashboard" aria-labelledby="dashboardTitle" hidden>
+        <header class="dashboard-heading">
+          <div>
+            <p class="section-label">Participation overview</p>
+            <h1 id="dashboardTitle">Admin statistics</h1>
+            <p id="challengeSummary">Loading the current challenge...</p>
+          </div>
+          <div class="dashboard-actions">
+            <button class="secondary-button" id="refreshButton" type="button">Refresh data</button>
+            <button class="text-button lock-button" id="lockButton" type="button">
+              Lock dashboard
+            </button>
+          </div>
+        </header>
+
+        <div class="dashboard-status" id="dashboardStatus" role="status" aria-live="polite"></div>
+
+        <section class="loading-state" id="loadingState" aria-label="Loading statistics">
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+        </section>
+
+        <div id="statisticsContent" hidden>
+          <section class="metric-grid" aria-label="Key participation metrics">
+            <article class="metric metric-featured">
+              <span>Current week submitters</span>
+              <strong id="currentWeekSubmitters">0</strong>
+              <small>People who saved at least one game attempt</small>
+            </article>
+            <article class="metric">
+              <span>Current week entrants</span>
+              <strong id="currentWeekEntrants">0</strong>
+              <small>People who generated a weekly question</small>
+            </article>
+            <article class="metric">
+              <span>All-time entrants</span>
+              <strong id="allTimeEntrants">0</strong>
+              <small>Unique people across every game week</small>
+            </article>
+            <article class="metric">
+              <span>Total game attempts</span>
+              <strong id="totalGameAttempts">0</strong>
+              <small>Every submitted weekly game answer</small>
+            </article>
+          </section>
+
+          <section class="funnel-section" aria-labelledby="funnelTitle">
+            <div class="section-heading">
+              <h2 id="funnelTitle">Current week funnel</h2>
+              <p>Question generation, submission, and completed scoring are counted separately.</p>
+            </div>
+            <div class="funnel" id="currentWeekFunnel"></div>
+          </section>
+
+          <section class="support-grid" aria-label="Supporting indicators">
+            <article class="support-metric">
+              <span>Scored this week</span>
+              <strong id="currentWeekScored">0</strong>
+            </article>
+            <article class="support-metric">
+              <span>Average best score</span>
+              <strong id="averageBestScore">Not available</strong>
+            </article>
+            <article class="support-metric">
+              <span>Attempt completion rate</span>
+              <strong id="completionRate">0%</strong>
+            </article>
+            <article class="support-metric">
+              <span>Returning participants</span>
+              <strong id="repeatParticipants">0</strong>
+            </article>
+            <article class="support-metric">
+              <span>Entered, no submission</span>
+              <strong id="noSubmission">0</strong>
+            </article>
+            <article class="support-metric">
+              <span>Stored media</span>
+              <strong id="storedMedia">0 B</strong>
+            </article>
+          </section>
+
+          <section class="analytics-grid">
+            <article class="data-panel activity-panel" aria-labelledby="activityTitle">
+              <div class="section-heading">
+                <h2 id="activityTitle">Last 14 days</h2>
+                <p>Daily unique activity and submitted attempts in Shanghai time.</p>
+              </div>
+              <div class="activity-chart" id="activityChart" aria-label="Daily activity chart"></div>
+            </article>
+
+            <article class="data-panel" aria-labelledby="scoreBandsTitle">
+              <div class="section-heading">
+                <h2 id="scoreBandsTitle">Current score bands</h2>
+                <p>Each participant appears once with their best completed score.</p>
+              </div>
+              <div class="score-bands" id="scoreBands"></div>
+            </article>
+          </section>
+
+          <section class="analytics-grid analytics-grid-lower">
+            <article class="data-panel" aria-labelledby="attemptStatusTitle">
+              <div class="section-heading">
+                <h2 id="attemptStatusTitle">Attempt outcomes</h2>
+                <p>Evaluation status for all weekly game submissions.</p>
+              </div>
+              <dl class="outcome-list" id="attemptOutcomes"></dl>
+            </article>
+
+            <article class="data-panel interpretation-panel" aria-labelledby="interpretationTitle">
+              <div class="section-heading">
+                <h2 id="interpretationTitle">How counts work</h2>
+              </div>
+              <dl class="definition-list">
+                <div>
+                  <dt>Entrants</dt>
+                  <dd>Unique DingTalk users who generated a weekly game question.</dd>
+                </div>
+                <div>
+                  <dt>Submitters</dt>
+                  <dd>Unique users who saved at least one weekly answer.</dd>
+                </div>
+                <div>
+                  <dt>Scored participants</dt>
+                  <dd>Unique users with a completed evaluation and numeric score.</dd>
+                </div>
+              </dl>
+            </article>
+          </section>
+
+          <section class="ratings-section" aria-labelledby="experienceRatingsTitle">
+            <div class="section-heading ratings-heading">
+              <div>
+                <h2 id="experienceRatingsTitle">Experience ratings</h2>
+                <p id="experienceRatingsSummary">
+                  Ratings are stored separately from questions, answers, and evaluation content.
+                </p>
+              </div>
+              <div class="ratings-overview" aria-label="Experience rating summary">
+                <span><strong id="ratingResponseCount">0</strong> responses</span>
+                <span><strong id="ratingAverage">—</strong> average</span>
+                <span><strong id="ratingDismissedCount">0</strong> dismissed</span>
+              </div>
+            </div>
+            <div class="ratings-empty" id="experienceRatingsEmpty">
+              <strong>No rating records yet</strong>
+              <span>User ratings and dismissed prompts will appear here.</span>
+            </div>
+            <div
+              class="ratings-scroll"
+              id="experienceRatingsScroll"
+              tabindex="0"
+              aria-label="Experience rating records"
+              hidden
+            >
+              <div class="ratings-list" id="experienceRatingsList"></div>
+            </div>
+          </section>
+
+          <section class="weekly-section" aria-labelledby="weeklyTitle">
+            <div class="section-heading">
+              <h2 id="weeklyTitle">Weekly performance</h2>
+              <p>Compare reach, submission activity, completion, and best-score averages.</p>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Challenge</th>
+                    <th scope="col">Entrants</th>
+                    <th scope="col">Submitters</th>
+                    <th scope="col">Scored</th>
+                    <th scope="col">Attempts</th>
+                    <th scope="col">Completion</th>
+                    <th scope="col">Avg. best score</th>
+                  </tr>
+                </thead>
+                <tbody id="weeklyTableBody"></tbody>
+              </table>
+              <p class="empty-table" id="weeklyEmpty" hidden>No weekly game data is available yet.</p>
+            </div>
+          </section>
+
+          <footer class="data-freshness">
+            <span id="generatedAt">Data refreshed just now</span>
+            <span>Participation statistics are aggregate; rating records show the submitted user snapshot.</span>
+          </footer>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

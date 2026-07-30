@@ -193,7 +193,7 @@ transcript, and evaluation workflow above. The active rubric is:
 
 Generated questions are appended to `questions/metadata.jsonl` with the DingTalk OAuth `openId` and an organization user snapshot containing `userId`, `jobNumber`, `email`, and `orgEmail` when the organization contact API returns them. These fields are stored both at the record's top level and in its nested `user` object. Answer attempts are appended to `recordings/metadata.jsonl` with the same user fields plus the owned `questionId`. Attempts without a video are retained with `hasVideo: false` and a skipped evaluation; uploaded answer videos are stored in `recordings/` and use `hasVideo: true`.
 
-The JSONL files and the video/artifact directories live on the server filesystem, so they survive application restarts. Privacy acknowledgements are stored separately in `consents/metadata.jsonl` by DingTalk `openId` and policy version. The current per-user leaderboard alias and actual-name/alias choice are stored in `recordings/leaderboard-identities.jsonl`, so changing either updates all leaderboard views without rewriting answer records. In production, these records live in raw persistent directories under `/opt/englisheval/shared`. If the app will run on multiple instances, migrate these records to a shared database/object store rather than relying on instance-local files.
+The JSONL files and the video/artifact directories live on the server filesystem, so they survive application restarts. Privacy acknowledgements are stored separately in `consents/metadata.jsonl` by DingTalk `openId` and policy version. Experience ratings are stored in `ratings/metadata.jsonl` with only the DingTalk user snapshot, 1–5 score, selected reason tags, outcome, and timestamp; they do not contain the user's question, answer, transcript, recording, or evaluation. The current per-user leaderboard alias and actual-name/alias choice are stored in `recordings/leaderboard-identities.jsonl`, so changing either updates all leaderboard views without rewriting answer records. In production, these records live in raw persistent directories under `/opt/englisheval/shared`. If the app will run on multiple instances, migrate these records to a shared database/object store rather than relying on instance-local files.
 
 History and video endpoints always filter by the signed-in DingTalk `openId`. The recordings directory is not publicly served. Application startup never deletes or migrates persistent records; any future migration must be run explicitly with a verified backup.
 
@@ -259,7 +259,7 @@ directory.
 ## Deploy
 
 The included script deploys versioned releases over SSH, installs a systemd
-service, and keeps `.env`, `.env.prod`, `recordings/`, `questions/`, `comments/`, and `consents/` in shared persistent
+service, and keeps `.env`, `.env.prod`, `recordings/`, `questions/`, `comments/`, `consents/`, and `ratings/` in shared persistent
 storage on the target host. `.env` contains settings shared by development and
 production, while `.env.local` and `.env.prod` override environment-specific
 values. Deployment never copies `.env.local`.

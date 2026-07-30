@@ -30,6 +30,9 @@ const state = {
   gameChallenges: [],
   leaderboardIdentity: null,
   activeMode: null,
+  experienceRatingScore: null,
+  experienceRatingTags: [],
+  experienceRatingSubmitting: false,
 };
 
 const MAX_RECORDING_MS = 2 * 60 * 1000;
@@ -71,6 +74,14 @@ const questionText = document.querySelector("#questionText");
 const questionMeta = document.querySelector("#questionMeta");
 const saveResult = document.querySelector("#saveResult");
 const evaluationResult = document.querySelector("#evaluationResult");
+const experienceRatingPrompt = document.querySelector("#experienceRatingPrompt");
+const experienceRatingDetails = document.querySelector("#experienceRatingDetails");
+const experienceRatingTagQuestion = document.querySelector("#experienceRatingTagQuestion");
+const experienceRatingTags = document.querySelector("#experienceRatingTags");
+const experienceRatingError = document.querySelector("#experienceRatingError");
+const submitExperienceRatingButton = document.querySelector("#submitExperienceRating");
+const dismissExperienceRatingButton = document.querySelector("#dismissExperienceRating");
+const experienceRatingScoreButtons = document.querySelectorAll("[data-rating-score]");
 const connectionStatus = document.querySelector("#connectionStatus");
 const playEyebrow = document.querySelector("#playEyebrow");
 const playTitle = document.querySelector("#playTitle");
@@ -128,6 +139,136 @@ const discardModal = document.querySelector("#discardModal");
 const discardError = document.querySelector("#discardError");
 const keepAnswerButton = document.querySelector("#keepAnswerButton");
 const confirmDiscardButton = document.querySelector("#confirmDiscardButton");
+const experienceRatingReasons = {
+  positive: [
+    "Clear workflow",
+    "Fast and responsive",
+    "Helpful feedback",
+    "Recording was easy",
+  ],
+  negative: [
+    "Workflow was unclear",
+    "Page felt slow",
+    "Feedback was not useful",
+    "Recording had issues",
+  ],
+};
+
+function setExperienceRatingSubmitting(submitting) {
+  state.experienceRatingSubmitting = submitting;
+  submitExperienceRatingButton.disabled = submitting;
+  dismissExperienceRatingButton.disabled = submitting;
+  experienceRatingScoreButtons.forEach((button) => {
+    button.disabled = submitting;
+  });
+  experienceRatingTags.querySelectorAll("button").forEach((button) => {
+    button.disabled = submitting;
+  });
+  submitExperienceRatingButton.textContent = submitting ? "Submitting…" : "Submit rating";
+}
+
+function hideExperienceRating() {
+  experienceRatingPrompt.hidden = true;
+  experienceRatingError.hidden = true;
+  experienceRatingError.textContent = "";
+}
+
+function resetExperienceRating() {
+  state.experienceRatingScore = null;
+  state.experienceRatingTags = [];
+  setExperienceRatingSubmitting(false);
+  experienceRatingDetails.hidden = true;
+  experienceRatingTags.replaceChildren();
+  experienceRatingScoreButtons.forEach((button) => {
+    button.classList.remove("selected");
+    button.setAttribute("aria-pressed", "false");
+  });
+  experienceRatingPrompt.querySelector("[data-rating-form]").hidden = false;
+  experienceRatingPrompt.querySelector("[data-rating-thanks]").hidden = true;
+  experienceRatingError.hidden = true;
+  experienceRatingError.textContent = "";
+}
+
+function renderExperienceRatingTags() {
+  const score = state.experienceRatingScore;
+  const tags = score >= 4
+    ? experienceRatingReasons.positive
+    : experienceRatingReasons.negative;
+  experienceRatingTagQuestion.textContent =
+    score >= 4 ? "What worked well? (optional)" : "What was the main issue? (optional)";
+  experienceRatingTags.replaceChildren();
+  tags.forEach((tag) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = tag;
+    button.dataset.ratingTag = tag;
+    button.setAttribute("aria-pressed", "false");
+    experienceRatingTags.append(button);
+  });
+}
+
+function chooseExperienceRatingScore(score) {
+  state.experienceRatingScore = score;
+  state.experienceRatingTags = [];
+  experienceRatingError.hidden = true;
+  experienceRatingScoreButtons.forEach((button) => {
+    const selected = Number(button.dataset.ratingScore) === score;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+  renderExperienceRatingTags();
+  experienceRatingDetails.hidden = false;
+}
+
+async function activateExperienceRating() {
+  resetExperienceRating();
+  hideExperienceRating();
+  try {
+    const response = await fetch("/api/experience-ratings", { cache: "no-store" });
+    const data = await response.json();
+    if (response.ok && data.eligible === true) {
+      experienceRatingPrompt.hidden = false;
+    }
+  } catch {
+    hideExperienceRating();
+  }
+}
+
+async function submitExperienceRating(outcome) {
+  if (state.experienceRatingSubmitting) return;
+  if (outcome === "RATED" && state.experienceRatingScore === null) return;
+
+  setExperienceRatingSubmitting(true);
+  experienceRatingError.hidden = true;
+  try {
+    const body = outcome === "RATED"
+      ? {
+          outcome,
+          score: state.experienceRatingScore,
+          tags: state.experienceRatingTags,
+        }
+      : { outcome };
+    const response = await fetch("/api/experience-ratings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Unable to save your rating.");
+
+    if (outcome === "DISMISSED") {
+      hideExperienceRating();
+      return;
+    }
+    experienceRatingPrompt.querySelector("[data-rating-form]").hidden = true;
+    experienceRatingPrompt.querySelector("[data-rating-thanks]").hidden = false;
+  } catch (error) {
+    experienceRatingError.textContent = error.message;
+    experienceRatingError.hidden = false;
+  } finally {
+    setExperienceRatingSubmitting(false);
+  }
+}
 
 function updatePrivacyAcceptButton() {
   acceptPrivacyButton.disabled = !(privacyPolicyAgree.checked && sensitiveInfoAgree.checked);
@@ -1640,6 +1781,11 @@ async function finishRecording() {
       await loadLeaderboardIdentity().catch(() => {});
     }
     renderEvaluation(data.evaluation);
+    if (data.evaluation?.status === "completed") {
+      await activateExperienceRating();
+    } else {
+      hideExperienceRating();
+    }
     setStatus(data.evaluation?.status === "completed" ? "Evaluated" : "Saved");
     generateButton.disabled = false;
     setDiscardAvailable(false);
@@ -1759,6 +1905,7 @@ logoutButton.addEventListener("click", async () => {
   state.leaderboardIdentity = null;
   state.activeMode = null;
   evaluationResult.innerHTML = "";
+  hideExperienceRating();
   saveResult.textContent = "";
   stopStream();
   navigateTo("/leaderboard");
@@ -1829,6 +1976,32 @@ document.addEventListener("click", (event) => {
 
 evaluationResult.addEventListener("click", (event) => {
   window.EvaluationShare.handleClick(event);
+});
+
+experienceRatingScoreButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    chooseExperienceRatingScore(Number(button.dataset.ratingScore));
+  });
+});
+
+experienceRatingTags.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-rating-tag]");
+  if (!button || state.experienceRatingSubmitting) return;
+  const tag = button.dataset.ratingTag;
+  const selected = state.experienceRatingTags.includes(tag);
+  state.experienceRatingTags = selected
+    ? state.experienceRatingTags.filter((item) => item !== tag)
+    : [...state.experienceRatingTags, tag];
+  button.classList.toggle("selected", !selected);
+  button.setAttribute("aria-pressed", String(!selected));
+});
+
+submitExperienceRatingButton.addEventListener("click", () => {
+  submitExperienceRating("RATED");
+});
+
+dismissExperienceRatingButton.addEventListener("click", () => {
+  submitExperienceRating("DISMISSED");
 });
 
 document.addEventListener("change", (event) => {
