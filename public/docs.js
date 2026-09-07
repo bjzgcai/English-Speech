@@ -97,7 +97,7 @@ function renderEvaluationGallery() {
       <div class="evaluation-gallery-empty">
         <span aria-hidden="true">01</span>
         <h3>The first shared evaluation will appear here.</h3>
-        <p>Upload a video above to add its poster and dimension scores to this collection.</p>
+        <p>Public evaluations will appear here.</p>
       </div>
     `;
     evaluationGalleryStatus.textContent = "No shared evaluations yet.";
@@ -326,9 +326,15 @@ evaluatorForm.addEventListener("submit", async (event) => {
 });
 
 loadPublicEvaluations();
-fetch("/api/me").then(response => response.json()).then(data => {
+window.VisitorSession.fetch("/api/me").then(response => response.json()).then(data => {
   if (data.user) window.EvaluationQueue.restore().catch(() => {});
 }).catch(() => {});
+window.addEventListener("visitoridentitychange", () => {
+  evaluatorResult.innerHTML = "";
+  evaluatorStatus.textContent = "";
+  videoInput.value = "";
+  window.EvaluationQueue.restore().catch(() => {});
+});
 window.addEventListener("evaluation-job-completed", event => {
   if (event.detail.evaluation?.status === "completed") {
     renderVideoEvaluation(event.detail.evaluation);

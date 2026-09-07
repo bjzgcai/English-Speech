@@ -17,10 +17,10 @@ SwaggerUIBundle({url:"/openapi.yaml",dom_id:"#swagger-ui",deepLinking:true,prese
   });
 
   const sendAppShell = (_req, res) => res.sendFile(path.join(publicDir, "index.html"));
-  const protectedAppRoutes = ["/leaderboard", "/game", "/examine", "/practice", "/history"];
+  const learnerRoutes = ["/leaderboard", "/game", "/examine", "/practice", "/history"];
 
-  app.get("/", requirePageAuth, (_req, res) => res.redirect(302, "/leaderboard"));
-  app.get(protectedAppRoutes, requirePageAuth, sendAppShell);
+  app.get("/", (_req, res) => res.redirect(302, "/leaderboard"));
+  app.get(learnerRoutes, sendAppShell);
   app.get("/admin", requirePageAuth, (_req, res) =>
     res.sendFile(path.join(rootDir, "views", "admin.html")),
   );

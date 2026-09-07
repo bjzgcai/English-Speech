@@ -29,7 +29,7 @@ async function main() {
       return `${payload}.${crypto.createHmac("sha256", env.SESSION_SECRET).update(payload).digest("base64url")}`;
     };
     for (let i = 0; i < 51; i++) {
-      const headers = { Cookie: `englisheval_session=${token(i)}`, "Content-Type": "application/json" };
+      const headers = { "X-Expected-Owner": `browser-${i}`, Cookie: `englisheval_session=${token(i)}`, "Content-Type": "application/json" };
       await fetch(base + "/api/privacy-consent", { method: "POST", headers, body: JSON.stringify({ privacyAgreed: true, sensitiveInfoAgreed: true }) });
       if (i < 50) await fetch(base + "/api/admission", { method: "POST", headers });
     }
@@ -57,7 +57,7 @@ async function main() {
       await page.evaluate(() => EvaluationQueue.show({ state: "draft" }));
       await page.locator(".queue-progress").scrollIntoViewIfNeeded();
       await page.screenshot({ path: path.join(data, `upload-${viewport.width}.png`) });
-      await fetch(base + "/api/admission", { method: "DELETE", headers: { Cookie: `englisheval_session=${token(0)}` } });
+      await fetch(base + "/api/admission", { method: "DELETE", headers: { "X-Expected-Owner": `browser-${0}`, Cookie: `englisheval_session=${token(0)}` } });
       await page.route("**/api/evaluate-video", route => route.abort());
       await page.locator("#evaluationVideo").setInputFiles({ name: "pending.mp4", mimeType: "video/mp4", buffer: Buffer.from("synthetic pending upload") });
       await page.locator("#evaluateVideoButton").click();
@@ -67,7 +67,7 @@ async function main() {
       assert.match(await page.locator(".queue-progress").innerText(), /saved on this device/);
       await page.getByRole("button", { name: "Discard pending upload", exact: true }).click();
       await page.locator(".queue-progress").waitFor({ state: "hidden" });
-      await fetch(base + "/api/admission", { method: "POST", headers: { Cookie: `englisheval_session=${token(0)}` } });
+      await fetch(base + "/api/admission", { method: "POST", headers: { "X-Expected-Owner": `browser-${0}`, Cookie: `englisheval_session=${token(0)}` } });
       await context.close();
     }
     assert.deepEqual(errors, []);

@@ -32,6 +32,7 @@ async function main() {
   const fixture = arg("fixture", path.join(data, "fixture.mp4"));
   const failScoring = process.argv.includes("--fail-scoring");
   const invalidMedia = process.argv.includes("--invalid-media");
+  const guests = process.argv.includes("--guests");
   const expectedState = failScoring || invalidMedia ? "failed" : "completed";
   try {
     if (invalidMedia) fs.writeFileSync(fixture, "Synthetic invalid media fixture");
@@ -62,6 +63,7 @@ async function main() {
       for (const file of [".env", ".env.prod"]) if (fs.existsSync(path.join(root, file))) Object.assign(upstreamEnv, dotenv.parse(fs.readFileSync(path.join(root, file))));
     }
     const env = { ...process.env, ...upstreamEnv, NODE_ENV: "test", DATA_DIR: data, PORT: String(port), QUEUE_ENABLED: "true", QUEUE_START_PAUSED: "false", SESSION_SECRET: "isolated-load-test-secret", DINGTALK_APP_KEY: "test", DINGTALK_APP_SECRET: "test", DINGTALK_CORP_ID: "test", COOKIE_SECURE: "false", ...(real ? {} : { INTERNAL_LLM_API_KEY: "test", OPENROUTER_API_KEY: "test", INTERNAL_LLM_TRANSCRIPTIONS_URL: `${upstreamUrl}/asr`, OPENROUTER_CHAT_COMPLETIONS_URL: `${upstreamUrl}/score` }) };
+    if (guests) Object.assign(env, { DINGTALK_APP_KEY: "", DINGTALK_APP_SECRET: "", DINGTALK_CORP_ID: "" });
     const launch = name => {
       const child = spawn(process.execPath, [path.join(root, name)], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
       child.diagnostics = "";
@@ -76,13 +78,25 @@ async function main() {
       if (i === 99) throw new Error(`Services did not become ready: ${server.diagnostics} ${worker.diagnostics}`);
       await sleep(100);
     }
+    const visitors = new Map();
+    if (guests) {
+      for (const index of Array.from({ length: arrivals }, (_, i) => [i, i + 1000]).flat()) {
+        const response = await fetch(base + "/api/me");
+        assert.equal(response.status, 200);
+        const data = await response.json();
+        assert.equal(data.identityType, "guest");
+        visitors.set(index, { owner: data.user.openId, cookie: response.headers.get("set-cookie").split(";")[0] });
+      }
+    }
+    const expectedOwner = index => guests ? visitors.get(index).owner : `load-${index}`;
     const cookie = index => {
+      if (guests) return visitors.get(index).cookie;
       const payload = Buffer.from(JSON.stringify({ user: { openId: `load-${index}`, name: "Synthetic load participant" }, exp: Date.now() + 3600000 })).toString("base64url");
       return `englisheval_session=${payload}.${crypto.createHmac("sha256", env.SESSION_SECRET).update(payload).digest("base64url")}`;
     };
     const call = async (index, route, body, extra = {}) => {
       const start = performance.now();
-      const response = await fetch(base + route, { headers: { Cookie: cookie(index), "Content-Type": "application/json", ...extra.headers }, method: body === undefined ? "GET" : "POST", body: body === undefined ? undefined : JSON.stringify(body) });
+      const response = await fetch(base + route, { headers: { "X-Expected-Owner": expectedOwner(index), Cookie: cookie(index), "Content-Type": "application/json", ...extra.headers }, method: body === undefined ? "GET" : "POST", body: body === undefined ? undefined : JSON.stringify(body) });
       latencies.push(performance.now() - start);
       return { status: response.status, data: await response.json() };
     };
@@ -105,7 +119,7 @@ async function main() {
       form.append("questionId", question.data.question.id);
       form.append("submissionId", id);
       const start = performance.now();
-      const response = await fetch(`${base}/api/save-answer`, { method: "POST", headers: { Cookie: cookie(i), "X-Submission-Id": id, "X-Question-Id": question.data.question.id, "X-Upload-Grant": grant }, body: form });
+      const response = await fetch(`${base}/api/save-answer`, { method: "POST", headers: { "X-Expected-Owner": expectedOwner(i), Cookie: cookie(i), "X-Submission-Id": id, "X-Question-Id": question.data.question.id, "X-Upload-Grant": grant }, body: form });
       uploadMs.push(performance.now() - start);
       const timing = response.headers.get("server-timing")?.match(/upload_ack;dur=([\d.]+)/);
       assert.ok(timing, "Upload acknowledgement timing missing");
@@ -139,8 +153,8 @@ async function main() {
       assert.equal(history.data.recordings.filter(r => r.id === job.id).length, 1);
       if (invalidMedia) assert.equal(history.data.recordings[0].path, null);
       else {
-        assert.equal((await fetch(base + history.data.recordings[0].path, { headers: { Cookie: cookie(job.i + 1000) } })).status, 404);
-        const video = await fetch(base + history.data.recordings[0].path, { headers: { Cookie: cookie(job.i), Range: "bytes=0-15" } });
+        assert.equal((await fetch(base + history.data.recordings[0].path, { headers: { "X-Expected-Owner": expectedOwner(job.i + 1000), Cookie: cookie(job.i + 1000) } })).status, 404);
+        const video = await fetch(base + history.data.recordings[0].path, { headers: { "X-Expected-Owner": expectedOwner(job.i), Cookie: cookie(job.i), Range: "bytes=0-15" } });
         assert.equal(video.status, 206);
         await video.arrayBuffer();
       }

@@ -33,7 +33,7 @@ EVAL_MAX_FRAMES=18
 EVAL_REQUEST_TIMEOUT_MS=600000
 ```
 
-DingTalk authentication is required before users can generate questions, save recordings, or view history:
+Everyone can generate questions, save recordings, and view their own history as a guest. DingTalk login is optional; configure it with:
 
 ```bash
 DINGTALK_UNIFIED_APP_ID=...
@@ -51,7 +51,26 @@ The DingTalk app callback URL must match `APP_BASE_URL` plus `/auth/dingtalk/cal
 opened inside DingTalk. The configured 端内免登地址 is an allowlist; the browser
 must still call DingTalk's `requestAuthCode` JSAPI and the server must exchange
 that one-time code. Outside DingTalk, the existing nonce-protected OAuth flow is
-used instead.
+available as an optional sign-in instead.
+
+Guest access uses a server-issued signed HttpOnly `englisheval_guest` cookie with
+a renewable 180-day lifetime. Set `SESSION_SECRET` even without DingTalk configuration
+(the existing `DINGTALK_APP_SECRET` fallback remains supported). No IP hash or
+localStorage credential is used. Cookie loss or expiry creates a new guest identity.
+`GET /api/me` returns the effective `user` and `identityType` (`guest` or `dingtalk`).
+Guest `openId` values are synthetic `guest:<UUID>` ownership keys. DingTalk sessions
+take priority; signing out restores the browser's separate guest history. Records,
+consent, and pending jobs are never merged. Guest videos are private and excluded
+from partner exports; weekly scores use generated aliases. All learners share the
+same queue limits. Clearing cookies can create another identity; global queue and
+worker limits remain the resource protection.
+
+Learner API mutations require `X-Expected-Owner` matching `/api/me`'s `user.openId`.
+Missing or mismatched values return `409` with `code: IDENTITY_CHANGED` before
+upload processing. Reads also reject a mismatched header when provided. Refresh
+the session and reset identity-bound UI before retrying; never replay a previous
+owner's upload under the new identity. Admin routes still require DingTalk and
+the admin token; partner routes still require their bearer token.
 In production, `APP_BASE_URL` must use HTTPS and `COOKIE_SECURE` must be `true`.
 Local HTTP development may set `COOKIE_SECURE=false`.
 
@@ -77,19 +96,20 @@ authentication, question-generation, recording, or evaluation code changes.
 
 1. The browser checks `GET /api/me`. Inside DingTalk it automatically requests
    a one-time H5 auth code and posts it to `POST /auth/dingtalk/in-app`. In a
-   regular browser, an unauthenticated user is sent to `GET /auth/dingtalk`
-   with a safe local redirect path.
+   regular browser, visitors continue with a signed guest cookie and may choose
+   `GET /auth/dingtalk` with a safe local redirect path. In-app sign-in is bounded
+   and falls back to guest access on failure.
 2. The server creates a nonce-protected OAuth state and redirects to DingTalk.
    At `/auth/dingtalk/callback`, it exchanges the authorization code, obtains
    the user's `openId`, optionally enriches the session with organization
    fields (`userId`, `jobNumber`, `email`, and `orgEmail`), and sets a signed,
    HTTP-only session cookie. Authentication can continue if optional
    organization enrichment fails, but it cannot continue without `openId`.
-3. Before question generation, the authenticated user must accept both current
+3. Before question generation, the effective user must accept both current
    privacy acknowledgements. Consent is versioned and persisted by `openId`.
 4. The browser submits the candidate profile to
    `POST /api/generate-question`. The server replaces the submitted name with
-   the authenticated DingTalk name, asks the configured internal chat model for
+   the DingTalk name or generated guest alias, asks the configured internal chat model for
    a structured interview-style question, and persists the generated question
    with its owner and profile. If model generation fails, a persisted fallback
    question is returned with the error.
@@ -107,12 +127,12 @@ authentication, question-generation, recording, or evaluation code changes.
    the recording and a failed evaluation status are still persisted.
 8. The recording metadata, evaluation, and owned question reference are
    appended to `recordings/metadata.jsonl`. History and video requests are
-   always filtered by the signed-in user's `openId`.
+   always filtered by the effective user's ownership key.
 
 In compact form:
 
 ```text
-DingTalk OAuth -> signed session -> versioned privacy consent
+Guest cookie or DingTalk OAuth -> effective owner -> versioned privacy consent
     -> generate and persist owned question -> prepare -> record answer
     -> verify owned question -> normalize and save video -> evaluate
     -> persist result -> show owner-filtered history
@@ -161,7 +181,7 @@ evaluation worker; production uses separate `englisheval` and
 `npm run worker` starts only the worker.
 
 The default capacity is 50 admitted sessions and 200 waiting-room positions,
-with one outstanding session per DingTalk `openId`. Recording happens in the
+with one outstanding session per effective owner `openId`. Recording happens in the
 browser. Upload transfers are limited to four and processing to four pipelines,
 one single-threaded FFmpeg process, two ASR calls, and two scoring calls.
 Question generation is limited to two calls and is reused within an admission.
@@ -259,7 +279,7 @@ Generated questions are appended to `questions/metadata.jsonl` with the DingTalk
 
 The JSONL files and the video/artifact directories live on the server filesystem, so they survive application restarts. Privacy acknowledgements are stored separately in `consents/metadata.jsonl` by DingTalk `openId` and policy version. Experience ratings are stored in `ratings/metadata.jsonl` with only the DingTalk user snapshot, 1–5 score, selected reason tags, outcome, and timestamp; they do not contain the user's question, answer, transcript, recording, or evaluation. The current per-user leaderboard alias and actual-name/alias choice are stored in `recordings/leaderboard-identities.jsonl`, so changing either updates all leaderboard views without rewriting answer records. In production, these records live in raw persistent directories under `/opt/englisheval/shared`. If the app will run on multiple instances, migrate these records to a shared database/object store rather than relying on instance-local files.
 
-History and video endpoints always filter by the signed-in DingTalk `openId`. The recordings directory is not publicly served. Application startup never deletes or migrates persistent records; any future migration must be run explicitly with a verified backup.
+History and private video endpoints always filter by the effective DingTalk or guest ownership key. Guest videos are excluded from the public standalone gallery and its video/poster endpoints. The recordings directory is not publicly served. Application startup never deletes or migrates persistent records; any future migration must be run explicitly with a verified backup.
 
 The production service applies a `0077` umask. Persistent directories are mode
 `0700`, and data files are mode `0600`, limiting access to the service account.
