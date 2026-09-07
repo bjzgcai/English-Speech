@@ -119,7 +119,7 @@ test("question generation is blocked until the current privacy policy is accepte
     {
       method: "POST",
       headers: {
-        Cookie: `englisheval_session=${session}`,
+        "X-Expected-Owner": JSON.parse(Buffer.from(session.split(".")[0], "base64url")).user.openId, Cookie: `englisheval_session=${session}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ profile: { name: "Test", role: "Tester" } }),
@@ -146,7 +146,7 @@ test("privacy consent endpoint rejects incomplete acknowledgement", async (conte
     {
       method: "POST",
       headers: {
-        Cookie: `englisheval_session=${session}`,
+        "X-Expected-Owner": JSON.parse(Buffer.from(session.split(".")[0], "base64url")).user.openId, Cookie: `englisheval_session=${session}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ privacyAgreed: true, sensitiveInfoAgreed: false }),
@@ -172,7 +172,7 @@ test("privacy policy is available at both public routes", async (context) => {
   }
 });
 
-test("protected pages start DingTalk login while public whitelist pages remain accessible", async (context) => {
+test("learner pages are available without DingTalk login", async (context) => {
   const server = app.listen(0);
   context.after(() => new Promise((resolve) => server.close(resolve)));
   await new Promise((resolve) => server.once("listening", resolve));
@@ -180,10 +180,8 @@ test("protected pages start DingTalk login while public whitelist pages remain a
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   for (const route of ["/", "/leaderboard", "/game", "/examine", "/practice", "/history"]) {
     const response = await fetch(`${baseUrl}${route}`, { redirect: "manual" });
-    assert.equal(response.status, 302);
-    const loginUrl = new URL(response.headers.get("location"), baseUrl);
-    assert.equal(loginUrl.pathname, "/auth/dingtalk");
-    assert.equal(loginUrl.searchParams.get("redirect"), route);
+    assert.equal(response.status, route === "/" ? 302 : 200);
+    if (route === "/") assert.equal(response.headers.get("location"), "/leaderboard");
   }
 
   for (const route of ["/intro", "/methodology", "/prepare"]) {
@@ -201,7 +199,7 @@ test("authenticated users can open protected app pages", async (context) => {
     openId: `page-reader-${Date.now()}`,
     name: "Page Reader",
   });
-  const headers = { Cookie: `englisheval_session=${session}` };
+  const headers = { "X-Expected-Owner": JSON.parse(Buffer.from(session.split(".")[0], "base64url")).user.openId, Cookie: `englisheval_session=${session}` };
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
 
   const rootResponse = await fetch(`${baseUrl}/`, { headers, redirect: "manual" });
@@ -224,7 +222,7 @@ test("authenticated users can read the current weekly challenge and leaderboard"
     openId: `game-reader-${Date.now()}`,
     name: "Game Reader",
   });
-  const headers = { Cookie: `englisheval_session=${session}` };
+  const headers = { "X-Expected-Owner": JSON.parse(Buffer.from(session.split(".")[0], "base64url")).user.openId, Cookie: `englisheval_session=${session}` };
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   const challengeResponse = await fetch(`${baseUrl}/api/game/challenge`, { headers });
   assert.equal(challengeResponse.status, 200);
@@ -253,7 +251,7 @@ test("users can keep one leaderboard alias, rename it, and switch back to their 
   const secondAlias = `Sunny Otter ${aliasSuffix}`;
   const session = testHelpers.createSessionToken({ openId, name: "Identity Tester" });
   const headers = {
-    Cookie: `englisheval_session=${session}`,
+    "X-Expected-Owner": JSON.parse(Buffer.from(session.split(".")[0], "base64url")).user.openId, Cookie: `englisheval_session=${session}`,
     "Content-Type": "application/json",
   };
   const baseUrl = `http://127.0.0.1:${server.address().port}`;

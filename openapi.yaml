@@ -8,6 +8,11 @@ info:
     Responses intentionally exclude recorded videos, video URLs, filenames, MIME
     metadata, extracted audio paths, sampled-frame artifacts, transcripts, raw
     audio metrics, improved-answer text, and internal model metadata.
+    Guest records are excluded from partner user exports. Learner endpoints accept
+    either a signed DingTalk session or a signed guest cookie issued by GET /api/me.
+    All learner mutations require X-Expected-Owner equal to the effective user.openId;
+    a missing or mismatched value returns 409 with code IDENTITY_CHANGED before upload
+    processing. The same header is optional on reads, where mismatches are also rejected.
 servers:
   - url: /
     description: Current OScanner-Eng server
@@ -19,11 +24,35 @@ tags:
 security:
   - bearerAuth: []
 paths:
+  /api/me:
+    get:
+      summary: Resolve the effective DingTalk or guest identity
+      description: DingTalk takes priority. Otherwise renew or issue a signed HttpOnly guest cookie with a 180-day lifetime. No login is required.
+      security: []
+      responses:
+        '200':
+          description: Effective identity and optional DingTalk configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configured: {type: boolean}
+                  identityType: {type: string, enum: [guest, dingtalk]}
+                  user:
+                    type: object
+                    properties:
+                      openId: {type: string, description: 'Ownership key; guest values use guest:<UUID>.'}
+                      name: {type: string}
+                      identityType: {type: string, enum: [guest, dingtalk]}
+                  inAppAuth: {type: object}
+        '503':
+          description: Session signing is not configured
   /api/admission:
     post:
       summary: Enter or resume the FIFO waiting room
-      description: Requires current privacy consent. One outstanding session per signed-in owner. Heartbeat every 20 seconds; unsubmitted reservations expire after three minutes.
-      security: [{sessionCookie: []}]
+      description: Requires current privacy consent. One outstanding session per guest or DingTalk owner. Heartbeat every 20 seconds; unsubmitted reservations expire after three minutes.
+      security: [{sessionCookie: []}, {guestCookie: []}]
       responses:
         '200':
           description: Admission with waiting, admitted, or submitted state and current wait estimate
@@ -36,20 +65,20 @@ paths:
         '429': {$ref: '#/components/responses/QueueBusy'}
     get:
       summary: Read the current owner's admission without creating one
-      security: [{sessionCookie: []}]
+      security: [{sessionCookie: []}, {guestCookie: []}]
       responses:
         '200':
           description: admission object or null
     delete:
       summary: Release an unsubmitted admission or waiting-room position
-      security: [{sessionCookie: []}]
+      security: [{sessionCookie: []}, {guestCookie: []}]
       responses:
         '200':
           description: Released; accepted jobs continue processing
   /api/admission/heartbeat:
     post:
       summary: Renew an existing admission lease
-      security: [{sessionCookie: []}]
+      security: [{sessionCookie: []}, {guestCookie: []}]
       responses:
         '200':
           description: Current admission, or null when expired
@@ -57,7 +86,7 @@ paths:
     post:
       summary: Reserve one of four upload transfer slots
       description: Grants expire after 30 seconds unless the upload starts. Requires admission and privacy consent.
-      security: [{sessionCookie: []}]
+      security: [{sessionCookie: []}, {guestCookie: []}]
       responses:
         '200':
           description: Single-use grant and expiresAt in Unix milliseconds
@@ -68,7 +97,7 @@ paths:
     post:
       summary: Durably accept an owned recorded answer for background evaluation
       description: The question must already belong to the owner. Inspection and MP4 normalization happen after HTTP 202. Retry the same submission ID to recover its existing job without duplicate scoring.
-      security: [{sessionCookie: []}]
+      security: [{sessionCookie: []}, {guestCookie: []}]
       parameters:
         - {$ref: '#/components/parameters/SubmissionId'}
         - {$ref: '#/components/parameters/UploadGrant'}
@@ -97,8 +126,8 @@ paths:
   /api/evaluate-video:
     post:
       summary: Durably accept a standalone speech upload
-      description: Uses the same admission, grant, and asynchronous status flow as recorded answers. Existing completed standalone-gallery visibility rules apply.
-      security: [{sessionCookie: []}]
+      description: Uses the same admission, grant, and asynchronous status flow as recorded answers. Guest uploads remain private and never enter the public gallery.
+      security: [{sessionCookie: []}, {guestCookie: []}]
       parameters:
         - {$ref: '#/components/parameters/SubmissionId'}
         - {$ref: '#/components/parameters/UploadGrant'}
@@ -107,7 +136,7 @@ paths:
   /api/jobs/{id}:
     get:
       summary: Read owner-only job progress or the final evaluation
-      security: [{sessionCookie: []}]
+      security: [{sessionCookie: []}, {guestCookie: []}]
       parameters:
         - name: id
           in: path
@@ -124,7 +153,7 @@ paths:
   /api/save-answer/{id}/cancel:
     post:
       summary: Discard an owned submission and prevent late results
-      security: [{sessionCookie: []}]
+      security: [{sessionCookie: []}, {guestCookie: []}]
       parameters:
         - name: id
           in: path
@@ -274,6 +303,10 @@ paths:
           $ref: '#/components/responses/NotConfigured'
 components:
   securitySchemes:
+    guestCookie:
+      type: apiKey
+      in: cookie
+      name: englisheval_guest
     sessionCookie:
       type: apiKey
       in: cookie

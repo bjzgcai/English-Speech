@@ -224,7 +224,7 @@ async function activateExperienceRating() {
   resetExperienceRating();
   hideExperienceRating();
   try {
-    const response = await fetch("/api/experience-ratings", { cache: "no-store" });
+    const response = await window.VisitorSession.fetch("/api/experience-ratings", { cache: "no-store" });
     const data = await response.json();
     if (response.ok && data.eligible === true) {
       experienceRatingPrompt.hidden = false;
@@ -248,7 +248,7 @@ async function submitExperienceRating(outcome) {
           tags: state.experienceRatingTags,
         }
       : { outcome };
-    const response = await fetch("/api/experience-ratings", {
+    const response = await window.VisitorSession.fetch("/api/experience-ratings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -302,7 +302,7 @@ async function ensurePrivacyConsent() {
   if (state.privacyConsent === true) return true;
 
   try {
-    const response = await fetch("/api/privacy-consent", { cache: "no-store" });
+    const response = await window.VisitorSession.fetch("/api/privacy-consent", { cache: "no-store" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Unable to check privacy consent.");
     state.privacyConsent = data.agreed === true;
@@ -405,7 +405,7 @@ async function requestAnswerCancellation(submissionId) {
   let lastError;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const response = await fetch(`/api/save-answer/${encodeURIComponent(submissionId)}/cancel`, {
+      const response = await window.VisitorSession.fetch(`/api/save-answer/${encodeURIComponent(submissionId)}/cancel`, {
         method: "POST",
         keepalive: true,
       });
@@ -468,8 +468,10 @@ function updateAuthView() {
   const route = normalizeRoute(window.location.pathname);
 
   loginPanel.hidden = isSignedIn;
-  loginButton.hidden = isSignedIn;
+  loginButton.hidden = state.authUser?.identityType !== "guest" || state.dingTalkConfigured === false;
+  logoutButton.hidden = state.authUser?.identityType === "guest";
   authChip.hidden = !isSignedIn;
+  authChip.classList.toggle("is-guest", state.authUser?.identityType === "guest");
   playView.hidden = !isSignedIn || route === "/history" || route === "/leaderboard";
   leaderboardView.hidden = !isSignedIn || route !== "/leaderboard";
   historyView.hidden = !isSignedIn || route !== "/history";
@@ -489,15 +491,18 @@ function requestDingTalkInAppAuthCode(corpId) {
     }
 
     let settled = false;
+    const timeout = window.setTimeout(() => fail(new Error("DingTalk sign-in timed out.")), 4000);
     const succeed = (result) => {
       if (settled) return;
       settled = true;
+      window.clearTimeout(timeout);
       if (result?.code) resolve(result.code);
       else reject(new Error("DingTalk did not return an in-app authorization code."));
     };
     const fail = (error) => {
       if (settled) return;
       settled = true;
+      window.clearTimeout(timeout);
       reject(error instanceof Error ? error : new Error("DingTalk rejected in-app authentication."));
     };
 
@@ -521,71 +526,49 @@ async function tryDingTalkInAppAuth(inAppAuth) {
   const dd = window.dd;
   if (!dd || dd.env?.platform === "notInDingTalk") return false;
 
-  setStatus("Signing in");
-  loginPanel.hidden = false;
-  loginPanel.querySelector("h2").textContent = "Signing in with DingTalk…";
-  loginPanel.querySelector("p:last-child").textContent =
-    "Confirming your DingTalk identity. You do not need to enter a password.";
-  loginPanelButton.hidden = true;
-
   try {
     const authCode = await requestDingTalkInAppAuthCode(inAppAuth.corpId);
-    const response = await fetch("/auth/dingtalk/in-app", {
+    const response = await window.VisitorSession.fetch("/auth/dingtalk/in-app", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ authCode }),
+      signal: AbortSignal.timeout(4000),
     });
     const data = await response.json();
     if (!response.ok || !data.user) {
       throw new Error(data.error || "DingTalk in-app authentication failed.");
     }
-    state.authUser = data.user;
+    await window.VisitorSession.announce();
+    state.authUser = window.VisitorSession.user;
     state.authReady = true;
     updateAuthView();
     setRoute(window.location.pathname);
     return true;
   } catch (error) {
-    console.warn("Automatic DingTalk sign-in failed", error);
-    loginPanel.querySelector("h2").textContent = "Automatic DingTalk sign-in did not finish";
-    loginPanel.querySelector("p:last-child").textContent =
-      "Tap below to retry with the regular DingTalk sign-in flow.";
-    loginPanelButton.hidden = false;
     return false;
   }
 }
 
 async function checkAuth() {
   try {
-    const response = await fetch("/api/me");
+    const response = await window.VisitorSession.fetch("/api/me");
     const data = await response.json();
     state.authUser = data.user || null;
     state.authReady = true;
-
-    if (!data.configured) {
-      setStatus("Auth missing");
-      loginPanel.hidden = false;
-      loginPanel.querySelector("h2").textContent = "DingTalk authentication is not configured";
-      loginPanel.querySelector("p:last-child").textContent =
-        "Set DINGTALK_APP_KEY and DINGTALK_APP_SECRET in the server environment.";
-      loginButton.hidden = true;
-      loginPanelButton.hidden = true;
-      playView.hidden = true;
-      leaderboardView.hidden = true;
-      historyView.hidden = true;
-      return;
-    }
-
-    if (!state.authUser && (await tryDingTalkInAppAuth(data.inAppAuth))) return;
-
-    setStatus(state.authUser ? "Signed in" : "Sign in");
+    state.dingTalkConfigured = data.configured;
+    setStatus(state.authUser?.identityType === "guest" ? "Guest" : "Signed in");
     updateAuthView();
     if (state.authUser) {
       setRoute(window.location.pathname);
       window.EvaluationQueue.restore().catch(() => {});
     }
+    if (state.authUser?.identityType === "guest") void tryDingTalkInAppAuth(data.inAppAuth);
   } catch {
-    setStatus("Auth error");
+    setStatus("Session unavailable");
     loginPanel.hidden = false;
+    loginPanel.querySelector("h2").textContent = "Unable to open your session";
+    loginPanel.querySelector("p:last-child").textContent = "Please reload to try again.";
+    loginPanelButton.hidden = true;
     playView.hidden = true;
     leaderboardView.hidden = true;
     historyView.hidden = true;
@@ -880,7 +863,7 @@ async function releaseWakeLock() {
 
 let historyOffset = 0;
 async function loadHistory(offset = 0) {
-  const response = await fetch(`/api/recordings?limit=20&offset=${offset}`);
+  const response = await window.VisitorSession.fetch(`/api/recordings?limit=20&offset=${offset}`);
   if (response.status === 401) {
     state.authUser = null;
     updateAuthView();
@@ -979,6 +962,10 @@ function leaderboardIdentityForm(identity, context = "leaderboard") {
 }
 
 function renderLeaderboardIdentitySettings() {
+  if (state.authUser?.identityType === "guest") {
+    leaderboardIdentitySettings.innerHTML = "";
+    return;
+  }
   leaderboardIdentitySettings.innerHTML = leaderboardIdentityForm(
     state.leaderboardIdentity,
     "leaderboard",
@@ -1004,7 +991,7 @@ function syncLeaderboardIdentityForms(message = "") {
 }
 
 async function loadLeaderboardIdentity() {
-  const response = await fetch("/api/game/identity", { cache: "no-store" });
+  const response = await window.VisitorSession.fetch("/api/game/identity", { cache: "no-store" });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Unable to load your leaderboard name.");
   state.leaderboardIdentity = data.identity;
@@ -1018,7 +1005,7 @@ async function saveLeaderboardIdentity(form) {
   button.disabled = true;
   feedback.textContent = "Saving…";
   try {
-    const response = await fetch("/api/game/identity", {
+    const response = await window.VisitorSession.fetch("/api/game/identity", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1138,7 +1125,7 @@ async function loadLeaderboard(challengeId) {
   leaderboardList.innerHTML = '<li class="leaderboard-loading">Loading leaderboard...</li>';
   try {
     const query = challengeId ? `?challengeId=${encodeURIComponent(challengeId)}` : "";
-    const response = await fetch(`/api/game/leaderboard${query}`, { cache: "no-store" });
+    const response = await window.VisitorSession.fetch(`/api/game/leaderboard${query}`, { cache: "no-store" });
     const data = await response.json();
     if (response.status === 401) {
       state.authUser = null;
@@ -1158,7 +1145,7 @@ async function loadLeaderboard(challengeId) {
 }
 
 async function fetchGameChallengeCatalog() {
-  const response = await fetch("/api/game/challenge", { cache: "no-store" });
+  const response = await window.VisitorSession.fetch("/api/game/challenge", { cache: "no-store" });
   const data = await response.json();
   if (response.status === 401) {
     state.authUser = null;
@@ -1534,7 +1521,7 @@ function setRoute(pathname) {
     setStatus("Weekly topic");
     loadGameChallenge();
   } else {
-    setStatus("Signed in");
+    setStatus(state.authUser?.identityType === "guest" ? "Guest" : "Signed in");
   }
 }
 
@@ -1559,6 +1546,7 @@ function closeHistoryVideo() {
 
 profileForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  const actionOwner = state.authUser?.openId;
 
   if (!state.authUser) {
     window.location.href = `/auth/dingtalk?redirect=${encodeURIComponent(window.location.pathname)}`;
@@ -1572,6 +1560,7 @@ profileForm.addEventListener("submit", async (event) => {
 
   generateButton.disabled = true;
   const privacyReady = await ensurePrivacyConsent();
+  if (actionOwner !== state.authUser?.openId) return;
   if (!privacyReady) {
     generateButton.disabled = false;
     setStatus("Privacy consent required");
@@ -1587,6 +1576,7 @@ profileForm.addEventListener("submit", async (event) => {
     return;
   }
   const mediaReady = await requireMediaBeforeQuestion();
+  if (actionOwner !== state.authUser?.openId) return;
   if (!mediaReady) return;
 
   state.profile = getProfileFromForm();
@@ -1603,7 +1593,7 @@ profileForm.addEventListener("submit", async (event) => {
     : "Calling the internally deployed model through the local server.";
 
   try {
-    const response = await fetch(isGame ? "/api/game/question" : "/api/generate-question", {
+    const response = await window.VisitorSession.fetch(isGame ? "/api/game/question" : "/api/generate-question", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(isGame ? {} : { profile: state.profile }),
@@ -1620,9 +1610,11 @@ profileForm.addEventListener("submit", async (event) => {
       saveResult.textContent = `LLM fallback used: ${data.error}`;
     }
     setStatus("Thinking time");
-    await waitForPreparationCountdown(data.question);
+    const preparation = await waitForPreparationCountdown(data.question);
+    if (preparation !== "record" || actionOwner !== state.authUser?.openId) return;
     await startRecording();
   } catch (error) {
+    if (actionOwner !== state.authUser?.openId) return;
     closePrepareModal();
     stopStream();
     setStatus("Error");
@@ -1637,6 +1629,7 @@ profileForm.addEventListener("submit", async (event) => {
 
 async function startRecording() {
   if (!state.question) return;
+  const actionOwner = state.authUser?.openId;
 
   try {
     state.mimeType = getSupportedMimeType();
@@ -1645,6 +1638,7 @@ async function startRecording() {
     stopRecordingTimer();
     setVideoLoading(false);
     await acquireRequiredMedia();
+    if (actionOwner !== state.authUser?.openId) { stopStream(); return; }
 
     const requiredTracks = [
       ...state.stream.getAudioTracks(),
@@ -1672,10 +1666,11 @@ async function startRecording() {
     const options = { ...(state.mimeType ? { mimeType: state.mimeType } : {}), videoBitsPerSecond: 1500000, audioBitsPerSecond: 64000 };
     state.recorder = new MediaRecorder(state.stream, options);
     state.startedAt = new Date().toISOString();
+    const recordingChunks = state.chunks;
 
     state.recorder.addEventListener("dataavailable", (event) => {
       if (event.data && event.data.size > 0) {
-        state.chunks.push(event.data);
+        recordingChunks.push(event.data);
       }
     });
 
@@ -1683,6 +1678,7 @@ async function startRecording() {
     // implementations. Let the recorder finalize one complete file on stop.
     state.recorder.start();
     await requestWakeLock();
+    if (actionOwner !== state.authUser?.openId) return;
     state.mediaRetryPending = false;
     state.mediaRetryAction = null;
     resetPrepareGuidance();
@@ -1718,6 +1714,10 @@ async function startRecording() {
 
 async function finishRecording() {
   if (!state.recorder || state.recorder.state === "inactive") return;
+  const recordingOwner = state.authUser.openId;
+  const recordingQuestionId = state.question.id;
+  const recordingStartedAt = state.startedAt;
+  const recordingChunks = state.chunks;
 
   const unavailableDevice = state.requiredDeviceInterrupted || getUnavailableRequiredDevice();
   if (unavailableDevice) {
@@ -1779,17 +1779,23 @@ async function finishRecording() {
   stopStream();
   await releaseWakeLock();
 
-  const blobType = state.mimeType || state.chunks[0]?.type || "video/webm";
+  const blobType = state.mimeType || recordingChunks[0]?.type || "video/webm";
   const extension = blobType.includes("mp4") ? "mp4" : "webm";
-  const videoBlob = new Blob(state.chunks, { type: blobType });
+  const videoBlob = new Blob(recordingChunks, { type: blobType });
   const formData = new FormData();
   formData.append("video", videoBlob, `answer.${extension}`);
-  formData.append("questionId", state.question.id);
-  formData.append("startedAt", state.startedAt);
+  formData.append("questionId", recordingQuestionId);
+  formData.append("startedAt", recordingStartedAt);
   formData.append("submissionId", submissionId);
+
+  if (recordingOwner !== state.authUser?.openId) {
+    await window.EvaluationQueue.retain(formData, recordingOwner);
+    return;
+  }
 
   try {
     const data = await window.EvaluationQueue.submit(formData, {
+      owner: recordingOwner,
       signal: state.saveAbortController.signal,
       onAccepted: () => {
         state.activeSaveId = null;
@@ -1820,20 +1826,23 @@ async function finishRecording() {
     setDiscardAvailable(false);
     await loadHistory();
   } catch (error) {
+    if (recordingOwner !== state.authUser?.openId) return;
     if (state.discardRequested) return;
     setStatus(error.name === "AbortError" ? "Discarded" : "Upload needs attention");
     saveResult.textContent = error.name === "AbortError" ? "Recording discarded." : error.message;
     generateButton.disabled = false;
     setDiscardAvailable(false);
   } finally {
-    setVideoLoading(false);
-    state.recorder = null;
-    state.chunks = [];
-    logoutButton.disabled = false;
-    finishButton.textContent = "Finish and save";
-    if (state.activeSaveId === submissionId && !state.discardRequested) {
-      state.activeSaveId = null;
-      state.saveAbortController = null;
+    if (recordingOwner === state.authUser?.openId) {
+      setVideoLoading(false);
+      state.recorder = null;
+      state.chunks = [];
+      logoutButton.disabled = false;
+      finishButton.textContent = "Finish and save";
+      if (state.activeSaveId === submissionId && !state.discardRequested) {
+        state.activeSaveId = null;
+        state.saveAbortController = null;
+      }
     }
   }
 }
@@ -1929,8 +1938,49 @@ confirmDiscardButton.addEventListener("click", discardCurrentAnswer);
 
 logoutButton.addEventListener("click", async () => {
   await window.EvaluationQueue.release();
-  await fetch("/auth/logout", { method: "POST" });
-  state.authUser = null;
+  await window.VisitorSession.fetch("/auth/logout", { method: "POST" });
+  state.inAppAuthAttempted = true;
+  await window.VisitorSession.announce();
+});
+
+window.addEventListener("visitoridentitychange", (event) => {
+  const recorder = state.recorder;
+  if (recorder && recorder.state !== "inactive") {
+    const chunks = state.chunks;
+    const questionId = state.question?.id;
+    const startedAt = state.startedAt;
+    const valid = !state.requiredDeviceInterrupted && !getUnavailableRequiredDevice();
+    recorder.addEventListener("stop", () => {
+      if (!valid || !questionId) return;
+      const type = chunks[0]?.type || "video/webm";
+      const form = new FormData();
+      form.append("video", new Blob(chunks, { type }), type.includes("mp4") ? "answer.mp4" : "answer.webm");
+      form.append("questionId", questionId);
+      form.append("startedAt", startedAt);
+      void window.EvaluationQueue.retain(form, event.detail.previous).catch(() => {});
+    }, { once: true });
+    recorder.stop();
+  }
+  state.saveAbortController?.abort();
+  void releaseWakeLock();
+  state.activeSaveId = null;
+  state.recorder = null;
+  state.chunks = [];
+  window.clearTimeout(state.autoStopTimer);
+  state.prepareCountdownResolve?.("cancel");
+  closePrivacyConsentModal(false);
+  closePrepareModal();
+  closeHistoryVideo();
+  logoutButton.disabled = false;
+  generateButton.disabled = false;
+  finishButton.disabled = true;
+  finishButton.textContent = "Finish and save";
+  setVideoLoading(false);
+  recorderPanel.classList.remove("is-recording");
+  recordingBadge.classList.remove("visible");
+  setDiscardAvailable(false);
+  state.authUser = event.detail.user;
+  state.authReady = true;
   state.privacyConsent = null;
   state.profile = null;
   state.question = null;
@@ -1940,9 +1990,13 @@ logoutButton.addEventListener("click", async () => {
   hideExperienceRating();
   saveResult.textContent = "";
   stopStream();
+  stopPrepareCountdown();
+  stopRecordingTimer();
+  historyList.innerHTML = "";
   navigateTo("/leaderboard");
   updateAuthView();
-  setStatus("Sign in");
+  setStatus(state.authUser?.identityType === "guest" ? "Guest" : "Signed in");
+  window.EvaluationQueue.restore().catch(() => {});
 });
 
 privacyPolicyAgree.addEventListener("change", updatePrivacyAcceptButton);
@@ -1959,7 +2013,7 @@ acceptPrivacyButton.addEventListener("click", async () => {
   declinePrivacyButton.disabled = true;
   privacyConsentError.hidden = true;
   try {
-    const response = await fetch("/api/privacy-consent", {
+    const response = await window.VisitorSession.fetch("/api/privacy-consent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ privacyAgreed: true, sensitiveInfoAgreed: true }),

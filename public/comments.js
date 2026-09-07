@@ -59,8 +59,8 @@
     list.setAttribute("aria-busy", "true");
     try {
       const [commentsResponse, authResponse] = await Promise.all([
-        fetch(`/api/comments?page=${encodeURIComponent(page)}`),
-        fetch("/api/me"),
+        window.VisitorSession.fetch(`/api/comments?page=${encodeURIComponent(page)}`),
+        window.VisitorSession.fetch("/api/me"),
       ]);
       if (!commentsResponse.ok) throw new Error("Unable to load comments.");
       comments = (await commentsResponse.json()).comments || [];
@@ -107,7 +107,7 @@
     submitButton.disabled = true;
     feedback.textContent = "Posting...";
     try {
-      const response = await fetch("/api/comments", {
+      const response = await window.VisitorSession.fetch("/api/comments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ page, content, parentId }),
@@ -127,4 +127,10 @@
   });
 
   load();
+  window.addEventListener("visitoridentitychange", () => {
+    authUser = window.VisitorSession.user;
+    textarea.value = "";
+    clearReply();
+    void load();
+  });
 })();

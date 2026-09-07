@@ -718,6 +718,7 @@ h3 {
   .auth-chip [data-auth-user-name] {
     display: none;
   }
+  .auth-chip.is-guest::before { content: "Guest"; }
 
   .intro-hero {
     gap: 38px;

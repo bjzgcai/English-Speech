@@ -814,6 +814,7 @@ footer p { color: var(--muted); font-size: 13px; }
   .auth-chip,
   .header-login { padding: 7px; }
   .auth-chip [data-auth-user-name] { display: none; }
+  .auth-chip.is-guest::before { content: "Guest"; }
   .brand > span:last-child { display: none; }
   .video-evaluator { padding-top: 46px; gap: 38px; }
   .video-evaluator-form { padding: 24px 18px; }

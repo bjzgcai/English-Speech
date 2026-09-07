@@ -10,6 +10,7 @@ const processing = require("./processing");
 const { appendJsonLine, readJsonLines, writeJsonLines } = require("./storage");
 const { createQuestionService } = require("./questions");
 const { registerPageRoutes } = require("./routes/pages");
+const { createVisitorAccess, isGuest } = require("./visitor");
 const { buildMockPartnerUsers } = require("./mock-evaluations");
 const { buildAdminStatistics } = require("./admin-statistics");
 const {
@@ -43,7 +44,7 @@ const sessionCookieName = "englisheval_session";
 const sessionTtlMs = 7 * 24 * 60 * 60 * 1000;
 const oauthNonceCookieName = "englisheval_oauth_nonce";
 const oauthStateTtlMs = 10 * 60 * 1000;
-const privacyPolicyVersion = "2026-07-15";
+const privacyPolicyVersion = "2026-09-07";
 const internalLlmChatCompletionsUrl =
   process.env.INTERNAL_LLM_CHAT_COMPLETIONS_URL ||
   "https://llm.zgci.org/hub/v1/chat/completions";
@@ -206,6 +207,7 @@ function standaloneEvaluationTitle(filename) {
 function isPublicEvaluation(record) {
   const id = safeText(record?.id);
   return (
+    !isGuest(record) && !isGuest(record?.user) &&
     record?.sourceType === "upload" &&
     record?.evaluation?.status === "completed" &&
     /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(id)
@@ -345,9 +347,11 @@ function parseCookies(req) {
     .reduce((cookies, item) => {
       const separatorIndex = item.indexOf("=");
       if (separatorIndex === -1) return cookies;
-      const key = decodeURIComponent(item.slice(0, separatorIndex));
-      const value = decodeURIComponent(item.slice(separatorIndex + 1));
-      cookies[key] = value;
+      try {
+        const key = decodeURIComponent(item.slice(0, separatorIndex));
+        const value = decodeURIComponent(item.slice(separatorIndex + 1));
+        cookies[key] = value;
+      } catch { /* Ignore malformed cookies supplied by the browser. */ }
       return cookies;
     }, {});
 }
@@ -396,8 +400,8 @@ function readSession(req) {
   const token = parseCookies(req)[sessionCookieName];
   if (!token) return null;
 
-  const [payload, signature] = token.split(".");
-  if (!payload || !signature || signature !== signSessionPayload(payload)) {
+  const [payload, signature, extra] = token.split(".");
+  if (!payload || !signature || extra || !secureTextEqual(signature, signSessionPayload(payload))) {
     return null;
   }
 
@@ -406,7 +410,7 @@ function readSession(req) {
     if (!session.exp || session.exp < Date.now()) {
       return null;
     }
-    return session.user || null;
+    return session.user && !isGuest(session.user) ? session.user : null;
   } catch {
     return null;
   }
@@ -484,6 +488,10 @@ function requirePageAuth(req, res, next) {
     `/auth/dingtalk?redirect=${encodeURIComponent(redirectPath)}`,
   );
 }
+
+const { requireVisitor } = createVisitorAccess({
+  readSession, parseCookies, useSecureSessionCookie,
+});
 
 function adminTokensMatch(receivedToken, configuredToken = process.env.ADMIN_ACCESS_TOKEN) {
   const received = safeText(receivedToken);
@@ -618,6 +626,7 @@ function normalizeLeaderboardAlias(value) {
 }
 
 function leaderboardIdentityForClient(user, identity, identities = leaderboardIdentities()) {
+  if (isGuest(user)) return { alias: user.name, useAlias: true, actualName: user.name, displayName: user.name, saved: true };
   const alias = identity?.alias || cuteAliasForUser(user.openId, identities);
   const useAlias = identity?.useAlias === true;
   const actualName = safeText(user.name, "DingTalk user");
@@ -686,8 +695,8 @@ function partnerEvaluation(record) {
 }
 
 function partnerUsers() {
-  const questions = readJsonLines(questionsMetadataFile);
-  const recordings = readJsonLines(metadataFile);
+  const questions = readJsonLines(questionsMetadataFile).filter(record => !isGuest(record) && !isGuest(record.user));
+  const recordings = readJsonLines(metadataFile).filter(record => !isGuest(record) && !isGuest(record.user));
   const users = new Map(
     buildMockPartnerUsers(evaluationRubricStandard).map((user) => [user.openId, user]),
   );
@@ -1907,7 +1916,7 @@ app.get("/api/v1/rubrics", requirePartnerApiKey, (_req, res) => {
   res.json({ rubric: evaluationRubricStandard });
 });
 
-app.get("/api/me", (req, res) => {
+app.get("/api/me", requireVisitor, (req, res) => {
   res.set("Cache-Control", "no-store");
   res.json({
     configured: isDingTalkConfigured(),
@@ -1915,11 +1924,12 @@ app.get("/api/me", (req, res) => {
       configured: isDingTalkInAppConfigured(),
       corpId: isDingTalkInAppConfigured() ? safeText(process.env.DINGTALK_CORP_ID) : "",
     },
-    user: readSession(req),
+    user: req.user,
+    identityType: req.user.identityType,
   });
 });
 
-app.get("/api/privacy-consent", requireAuth, (req, res) => {
+app.get("/api/privacy-consent", requireVisitor, (req, res) => {
   const consent = findCurrentPrivacyConsent(req.user.openId);
   res.set("Cache-Control", "no-store");
   res.json({
@@ -1929,7 +1939,7 @@ app.get("/api/privacy-consent", requireAuth, (req, res) => {
   });
 });
 
-app.post("/api/privacy-consent", requireAuth, (req, res) => {
+app.post("/api/privacy-consent", requireVisitor, (req, res) => {
   if (req.body?.privacyAgreed !== true || req.body?.sensitiveInfoAgreed !== true) {
     return res.status(400).json({
       error: "Both privacy acknowledgements are required to use the speaking evaluation.",
@@ -1962,12 +1972,12 @@ app.post("/api/privacy-consent", requireAuth, (req, res) => {
   });
 });
 
-app.get("/api/experience-ratings", requireAuth, (req, res) => {
+app.get("/api/experience-ratings", requireVisitor, (req, res) => {
   res.set("Cache-Control", "no-store");
   res.json(experienceRatingStatus(readJsonLines(ratingsMetadataFile), req.user.openId));
 });
 
-app.post("/api/experience-ratings", requireAuth, (req, res) => {
+app.post("/api/experience-ratings", requireVisitor, (req, res) => {
   let input;
   try {
     input = parseExperienceRating(req.body);
@@ -2028,7 +2038,7 @@ app.get("/api/comments", (req, res) => {
   res.json({ comments });
 });
 
-app.post("/api/comments", requireAuth, (req, res) => {
+app.post("/api/comments", requireVisitor, (req, res) => {
   const page = safeText(req.body?.page).toLowerCase();
   const content = safeText(req.body?.content);
   const requestedParentId = safeText(req.body?.parentId);
@@ -2079,7 +2089,7 @@ function gameChallengeForClient(challenge) {
   };
 }
 
-app.get("/api/game/challenge", requireAuth, (_req, res) => {
+app.get("/api/game/challenge", requireVisitor, (_req, res) => {
   const challenge = currentChallenge();
   res.set("Cache-Control", "no-store");
   res.json({
@@ -2088,7 +2098,7 @@ app.get("/api/game/challenge", requireAuth, (_req, res) => {
   });
 });
 
-app.get("/api/game/identity", requireAuth, (req, res) => {
+app.get("/api/game/identity", requireVisitor, (req, res) => {
   const identities = leaderboardIdentities();
   res.set("Cache-Control", "no-store");
   res.json({
@@ -2100,7 +2110,8 @@ app.get("/api/game/identity", requireAuth, (req, res) => {
   });
 });
 
-app.post("/api/game/identity", requireAuth, (req, res) => {
+app.post("/api/game/identity", requireVisitor, (req, res) => {
+  if (isGuest(req.user)) return res.json({ identity: leaderboardIdentityForClient(req.user) });
   if (typeof req.body?.useAlias !== "boolean") {
     return res.status(400).json({ error: "Choose whether to show your alias or actual name." });
   }
@@ -2136,7 +2147,7 @@ app.post("/api/game/identity", requireAuth, (req, res) => {
   res.json({ identity: leaderboardIdentityForClient(req.user, identity, identities) });
 });
 
-app.get("/api/game/leaderboard", requireAuth, (req, res) => {
+app.get("/api/game/leaderboard", requireVisitor, (req, res) => {
   const challenges = availableChallenges();
   const requestedId = safeText(req.query.challengeId);
   const challenge = requestedId
@@ -2175,12 +2186,12 @@ app.get("/api/admin/statistics", requireAuth, requireAdminAccess, (_req, res) =>
 });
 
 const queueApi = config.queueEnabled && process.env.QUEUE_WORKER !== "true" ? require("./queue-routes").registerQueueRoutes(app, {
-  config, requireAuth, requirePrivacyConsent, requireAdminAccess, upload, findOwnedQuestion,
+  config, requireAuth, requireVisitor, requirePrivacyConsent, requireAdminAccess, upload, findOwnedQuestion,
   validAnswerSaveId, decodeUtf8UploadFilename, standaloneEvaluationTitle,
 }) : null;
 const requireAdmission = queueApi?.required || ((_req, _res, next) => next());
 
-app.post("/api/game/question", requireAuth, requirePrivacyConsent, requireAdmission, (req, res) => {
+app.post("/api/game/question", requireVisitor, requirePrivacyConsent, requireAdmission, (req, res) => {
   const challenge = currentChallenge();
   const profile = {
     name: safeText(req.user.name, "DingTalk user"),
@@ -2200,7 +2211,7 @@ app.post("/api/game/question", requireAuth, requirePrivacyConsent, requireAdmiss
   });
 });
 
-app.post("/api/generate-question", requireAuth, requirePrivacyConsent, requireAdmission, async (req, res) => {
+app.post("/api/generate-question", requireVisitor, requirePrivacyConsent, requireAdmission, async (req, res) => {
   const profile = {
     ...(req.body?.profile || {}),
     name: safeText(req.user.name, "DingTalk user"),
@@ -2271,7 +2282,7 @@ app.post("/api/generate-question", requireAuth, requirePrivacyConsent, requireAd
   }
 });
 
-app.post("/api/save-answer/:id/cancel", requireAuth, (req, res) => {
+app.post("/api/save-answer/:id/cancel", requireVisitor, (req, res) => {
   const id = validAnswerSaveId(req.params.id);
   if (!id) {
     return res.status(400).json({ error: "A valid answer save ID is required." });
@@ -2291,7 +2302,7 @@ app.post("/api/save-answer/:id/cancel", requireAuth, (req, res) => {
   });
 });
 
-app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, res) => {
+app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, upload.single("video"), async (req, res) => {
   const questionId = safeText(req.body.questionId);
   const questionRecord = findOwnedQuestion(questionId, req.user.openId);
   if (!questionRecord) {
@@ -2442,7 +2453,8 @@ app.post("/api/save-answer", requireAuth, upload.single("video"), async (req, re
 
 app.post(
   "/api/evaluate-video",
-  requireAuth,
+  requireVisitor,
+  requirePrivacyConsent,
   upload.single("video"),
   async (req, res) => {
     if (!req.file) {
@@ -2589,7 +2601,7 @@ app.get("/api/public-evaluations/:id/video", (req, res) => {
   res.sendFile(videoPath);
 });
 
-app.get("/api/recordings", requireAuth, (req, res) => {
+app.get("/api/recordings", requireVisitor, (req, res) => {
   queueApi?.project();
   const recordings = readJsonLines(metadataFile)
     .filter((record) => recordOpenId(record) === req.user.openId)
@@ -2605,7 +2617,7 @@ app.get("/api/recordings", requireAuth, (req, res) => {
   res.json({ recordings: recordings.slice(offset, offset + limit), pagination: { total: recordings.length, limit, offset } });
 });
 
-app.get("/api/recordings/:id/video", requireAuth, (req, res) => {
+app.get("/api/recordings/:id/video", requireVisitor, (req, res) => {
   const record = readJsonLines(metadataFile).find(
     (item) => item.id === req.params.id && recordOpenId(item) === req.user.openId,
   );
@@ -2635,6 +2647,9 @@ app.use((error, _req, res, next) => {
 });
 
 function startServer() {
+  if (!process.env.SESSION_SECRET && !process.env.DINGTALK_APP_SECRET) {
+    throw new Error("SESSION_SECRET is required when DingTalk credentials are absent.");
+  }
   const timer = queueApi ? setInterval(() => {
     try { queueApi.project(); queueApi.queue.transaction(() => queueApi.queue.sweep()); }
     catch { console.error("Queue projection temporarily unavailable; retrying."); }

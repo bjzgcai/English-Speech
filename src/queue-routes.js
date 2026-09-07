@@ -6,7 +6,7 @@ const { readJsonLines, writeJsonLines } = require("./storage");
 const { readMonitorStatus, monitorFile } = require("./monitoring");
 
 function registerQueueRoutes(app, deps) {
-  const { config, requireAuth, requirePrivacyConsent, requireAdminAccess, upload, findOwnedQuestion, validAnswerSaveId, decodeUtf8UploadFilename, standaloneEvaluationTitle } = deps;
+  const { config, requireAuth, requireVisitor, requirePrivacyConsent, requireAdminAccess, upload, findOwnedQuestion, validAnswerSaveId, decodeUtf8UploadFilename, standaloneEvaluationTitle } = deps;
   const queue = new Queue(config.queueFile);
   require("./processing").setQuestionObserver(data => queue.run("INSERT INTO telemetry(job,stage,created,data) VALUES(NULL,'question',?,?)", Date.now(), JSON.stringify(data)));
   // An interrupted web process cannot leave upload-transfer permits held forever.
@@ -77,20 +77,20 @@ function registerQueueRoutes(app, deps) {
     res.status(workerReady ? 200 : 503).json({ ok: workerReady, workerReady });
   });
   app.use("/api", (_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
-  app.get("/api/admission", requireAuth, wrap((req, res) => res.json({ admission: queue.admission(req.user.openId) })));
-  app.post("/api/admission", requireAuth, requirePrivacyConsent, wrap((req, res) => res.json({ admission: queue.enter(req.user.openId) })));
-  app.post("/api/admission/heartbeat", requireAuth, wrap((req, res) => {
+  app.get("/api/admission", requireVisitor, wrap((req, res) => res.json({ admission: queue.admission(req.user.openId) })));
+  app.post("/api/admission", requireVisitor, requirePrivacyConsent, wrap((req, res) => res.json({ admission: queue.enter(req.user.openId) })));
+  app.post("/api/admission/heartbeat", requireVisitor, wrap((req, res) => {
     queue.transaction(() => { queue.run("UPDATE admissions SET heartbeat=? WHERE owner=?", Date.now(), req.user.openId); queue.sweep(); });
     res.json({ admission: queue.admission(req.user.openId) });
   }));
-  app.delete("/api/admission", requireAuth, wrap((req, res) => { queue.release(req.user.openId); res.json({ ok: true }); }));
-  app.post("/api/admission/upload-grant", requireAuth, requirePrivacyConsent, wrap((req, res) => res.json(queue.grant(req.user.openId))));
-  app.get("/api/jobs/:id", requireAuth, wrap((req, res) => {
+  app.delete("/api/admission", requireVisitor, wrap((req, res) => { queue.release(req.user.openId); res.json({ ok: true }); }));
+  app.post("/api/admission/upload-grant", requireVisitor, requirePrivacyConsent, wrap((req, res) => res.json(queue.grant(req.user.openId))));
+  app.get("/api/jobs/:id", requireVisitor, wrap((req, res) => {
     const status = queue.status(req.params.id, req.user.openId);
     if (!status) return res.status(404).json({ error: "Job not found." });
     res.json(status);
   }));
-  app.post("/api/save-answer/:id/cancel", requireAuth, wrap((req, res, next) => {
+  app.post("/api/save-answer/:id/cancel", requireVisitor, wrap((req, res, next) => {
     if (!validAnswerSaveId(req.params.id)) return res.status(400).json({ error: "A valid submission ID is required." });
     const canceled = queue.cancel(req.params.id, req.user.openId);
     if (!canceled) return next();
@@ -157,7 +157,7 @@ function registerQueueRoutes(app, deps) {
     queue.run("INSERT INTO telemetry(job,stage,created,data) VALUES(?,'upload',?,?)", id, Date.now(), JSON.stringify({ durationMs: Math.round(acknowledgementMs), bytes: req.file.size }));
     res.status(202).json(status);
   });
-  for (const route of ["/api/save-answer", "/api/evaluate-video"]) app.post(route, requireAuth, requirePrivacyConsent, gate, upload.single("video"), accept);
+  for (const route of ["/api/save-answer", "/api/evaluate-video"]) app.post(route, requireVisitor, requirePrivacyConsent, gate, upload.single("video"), accept);
   return { queue, project, required };
 }
 module.exports = { registerQueueRoutes };

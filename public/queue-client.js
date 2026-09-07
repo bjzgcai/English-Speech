@@ -5,12 +5,19 @@
   let currentController;
   let acceptedId = null;
   let volatileDraft = null;
+  const volatileDrafts = new Map();
+  let generation = 0;
+  const identityChanged = () => Object.assign(new Error("Your active identity changed. Please try again."), { code: "IDENTITY_CHANGED" });
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const terminal = state => ["completed", "failed", "canceled"].includes(state);
   async function request(url, options = {}) {
-    const response = await fetch(url, { cache: "no-store", ...options });
+    const started = generation;
+    const headers = new Headers(options.headers);
+    if (owner) headers.set("X-Expected-Owner", owner);
+    const response = await window.VisitorSession.fetch(url, { cache: "no-store", ...options, headers });
+    if (started !== generation) throw identityChanged();
     const data = await response.json();
-    if (!response.ok) throw Object.assign(new Error(data.error || "Request failed."), { status: response.status, retryAfter: Number(response.headers.get("Retry-After")) || 5 });
+    if (!response.ok) throw Object.assign(new Error(data.error || "Request failed."), { code: data.code, status: response.status, retryAfter: Number(response.headers.get("Retry-After")) || 5 });
     return data;
   }
   function mount() {
@@ -63,11 +70,16 @@
     cancel.textContent = acceptedId ? "Discard recording" : data.state === "waiting" ? "Leave queue" : data.state === "draft" ? "Discard pending upload" : "Cancel";
   }
   async function identity() {
-    if (!owner) owner = (await request("/api/me")).user?.openId;
-    if (!owner) { location.assign(`/auth/dingtalk?redirect=${encodeURIComponent(location.pathname)}`); throw new Error("Sign in required."); }
+    const previous = owner;
+    const data = await window.VisitorSession.refresh();
+    if (previous && previous !== data.user?.openId) throw identityChanged();
+    owner = data.user?.openId;
+    volatileDraft = volatileDrafts.get(owner) || null;
+    if (!owner) throw new Error("Unable to establish your session.");
     return owner;
   }
   async function consent() {
+    const started = generation;
     if ((await request("/api/privacy-consent")).agreed) return;
     const dialog = document.createElement("dialog");
     dialog.className = "queue-consent";
@@ -78,12 +90,15 @@
     const agreed = await accepted;
     dialog.remove();
     if (!agreed) throw new DOMException("Consent required", "AbortError");
+    if (started !== generation) throw identityChanged();
     await request("/api/privacy-consent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ privacyAgreed: true, sensitiveInfoAgreed: true }) });
   }
-  async function draft(operation, value) {
-    if (operation === "put") volatileDraft = value;
-    if (operation === "delete") volatileDraft = null;
-    if (!owner || !window.indexedDB) return volatileDraft;
+  async function draft(operation, value, draftOwner = owner) {
+    if (!draftOwner) return null;
+    if (operation === "put") volatileDrafts.set(draftOwner, value);
+    if (operation === "delete") volatileDrafts.delete(draftOwner);
+    volatileDraft = volatileDrafts.get(owner) || null;
+    if (!window.indexedDB) return volatileDrafts.get(draftOwner) || null;
     const db = await new Promise((resolve, reject) => {
       const open = indexedDB.open("englisheval-pending", 1);
       open.onupgradeneeded = () => open.result.createObjectStore("recordings");
@@ -94,7 +109,7 @@
       return await new Promise((resolve, reject) => {
         const transaction = db.transaction("recordings", operation === "get" ? "readonly" : "readwrite");
         const store = transaction.objectStore("recordings");
-        const action = operation === "get" ? store.get(owner) : operation === "put" ? store.put(value, owner) : store.delete(owner);
+        const action = operation === "get" ? store.get(draftOwner) : operation === "put" ? store.put(value, draftOwner) : store.delete(draftOwner);
         transaction.oncomplete = () => resolve(action.result);
         transaction.onerror = () => reject(transaction.error);
       });
@@ -126,6 +141,10 @@
     }
   }
   async function follow(id, signal) {
+    if (!signal) {
+      currentController = new AbortController();
+      signal = currentController.signal;
+    }
     acceptedId = id;
     clearInterval(heartbeat); heartbeat = null;
     while (true) {
@@ -133,7 +152,7 @@
       let data;
       try { data = await request(`/api/jobs/${id}`, { signal }); }
       catch (error) {
-        if (signal?.aborted || [401, 403, 404].includes(error.status)) throw error;
+        if (signal?.aborted || error.code === "IDENTITY_CHANGED" || [401, 403, 404].includes(error.status)) throw error;
         show({ state: "processing", delayed: "Connection interrupted. Your saved recording is still queued." });
         await sleep(5000); continue;
       }
@@ -152,6 +171,7 @@
       xhr.open("POST", saved.url);
       xhr.timeout = 300000;
       xhr.setRequestHeader("X-Submission-Id", saved.id);
+      xhr.setRequestHeader("X-Expected-Owner", saved.owner);
       xhr.setRequestHeader("X-Upload-Grant", grant);
       if (saved.questionId) xhr.setRequestHeader("X-Question-Id", saved.questionId);
       const abort = () => xhr.abort();
@@ -163,7 +183,8 @@
       xhr.onload = () => {
         let data;
         try { data = JSON.parse(xhr.responseText); } catch { return reject(new Error("Upload response unavailable. Your recording is retained on this device.")); }
-        if (xhr.status < 200 || xhr.status >= 300) reject(Object.assign(new Error(data.error || "Upload failed."), { status: xhr.status })); else resolve(data);
+        if (data.code === "IDENTITY_CHANGED") void window.VisitorSession.refresh();
+        if (xhr.status < 200 || xhr.status >= 300) reject(Object.assign(new Error(data.error || "Upload failed."), { code: data.code, status: xhr.status })); else resolve(data);
       };
       const form = new FormData();
       form.append("video", saved.blob, saved.filename);
@@ -175,6 +196,8 @@
     });
   }
   async function send(saved, { signal, onAccepted } = {}) {
+    await identity();
+    if (saved.owner !== owner) throw identityChanged();
     currentController = new AbortController();
     const combined = signal ? AbortSignal.any([signal, currentController.signal]) : currentController.signal;
     mount().querySelector("[data-queue-resume]").hidden = true;
@@ -190,7 +213,7 @@
             existing = await transfer(saved, grant, combined);
             break;
           } catch (error) {
-            if (![409, 429].includes(error.status)) throw error;
+            if (error.code === "IDENTITY_CHANGED" || ![409, 429].includes(error.status)) throw error;
             if (error.status === 409) {
               const existing = await request(`/api/jobs/${saved.id}`, { signal: combined }).catch(() => null);
               if (existing?.state === "canceled") throw new Error("This recording was discarded.");
@@ -201,11 +224,12 @@
           }
         }
       }
-      await draft("delete").catch(() => {});
+      combined.throwIfAborted();
+      await draft("delete", undefined, saved.owner).catch(() => {});
       onAccepted?.(existing);
       return await follow(existing.id, combined);
     } catch (error) {
-      if (error.name !== "AbortError") {
+      if (error.name !== "AbortError" && error.code !== "IDENTITY_CHANGED" && saved.owner === owner) {
         show({ state: "draft", delayed: error.message });
         const resume = mount().querySelector("[data-queue-resume]");
         resume.hidden = false;
@@ -214,24 +238,36 @@
       throw error;
     }
   }
-  async function submit(form, options = {}) {
-    await identity();
-    await consent();
+  async function retain(form, submittingOwner) {
+    if (!submittingOwner) throw new Error("Your session is unavailable.");
     const blob = form.get("video");
-    const saved = { id: form.get("submissionId") || crypto.randomUUID(), url: options.url || "/api/save-answer", questionId: form.get("questionId"), startedAt: form.get("startedAt"), blob, filename: blob.name || "answer.webm" };
-    try { await draft("put", saved); }
+    const saved = { id: form.get("submissionId") || crypto.randomUUID(), url: form.get("questionId") ? "/api/save-answer" : "/api/evaluate-video", questionId: form.get("questionId"), startedAt: form.get("startedAt"), blob, filename: blob.name || "answer.webm" };
+    saved.owner = submittingOwner;
+    try { await draft("put", saved, submittingOwner); }
     catch {
       // The in-memory draft remains retryable even when browser storage is full.
       window.addEventListener("beforeunload", event => {
         if (volatileDraft) { event.preventDefault(); event.returnValue = ""; }
       });
     }
+    return saved;
+  }
+  async function submit(form, options = {}) {
+    const submittingOwner = options.owner || window.VisitorSession.user?.openId;
+    const saved = await retain(form, submittingOwner);
+    await identity();
+    if (submittingOwner !== owner) throw identityChanged();
+    await consent();
+    if (submittingOwner !== owner) throw identityChanged();
     return send(saved, options);
   }
   async function restore() {
     await identity();
+    const restoringOwner = owner;
     const saved = await draft("get");
+    if (restoringOwner !== owner) throw identityChanged();
     if (saved) {
+      saved.owner = restoringOwner;
       show({ state: "draft" });
       const resume = mount().querySelector("[data-queue-resume]");
       resume.hidden = false;
@@ -245,5 +281,16 @@
     await identity();
     if (volatileDraft || await draft("get")) throw new Error("Resume or discard the pending upload before starting another answer.");
     currentController = new AbortController(); return admit(signal);
-  }, submit, release, restore, show, follow, discardDraft: () => draft("delete") };
+  }, submit, retain, release, restore, show, follow, discardDraft: () => draft("delete") };
+  window.addEventListener("visitoridentitychange", () => {
+    generation += 1;
+    currentController?.abort(new DOMException("Identity changed", "AbortError"));
+    clearInterval(heartbeat);
+    heartbeat = null;
+    acceptedId = null;
+    owner = null;
+    volatileDraft = null;
+    if (panel) panel.hidden = true;
+    document.querySelectorAll(".queue-consent").forEach(dialog => dialog.close("cancel"));
+  });
 })();

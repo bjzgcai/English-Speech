@@ -2999,6 +2999,7 @@ video {
   #authUserName {
     display: none;
   }
+  .auth-chip.is-guest::before { content: "Guest"; }
 
   .view-heading {
     display: grid;
