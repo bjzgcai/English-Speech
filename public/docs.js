@@ -309,13 +309,8 @@ evaluatorForm.addEventListener("submit", async (event) => {
     body.append("video", file);
 
     evaluatorStatus.textContent = "Extracting speech and preparing the evaluation…";
-    const response = await fetch("/api/evaluate-video", { method: "POST", body });
-    const data = await response.json();
-    if (response.status === 401) {
-      window.location.href = `/auth/dingtalk?redirect=${encodeURIComponent("/methodology")}`;
-      return;
-    }
-    if (!response.ok) throw new Error(data.error || "The video could not be evaluated.");
+    const data = await window.EvaluationQueue.submit(body, { url: "/api/evaluate-video" });
+    if (data.evaluation?.status !== "completed") throw new Error(data.evaluation?.reason || "Evaluation did not complete.");
 
     evaluatorStatus.textContent = "Evaluation complete.";
     evaluatorStatus.className = "is-success";
@@ -331,6 +326,15 @@ evaluatorForm.addEventListener("submit", async (event) => {
 });
 
 loadPublicEvaluations();
+fetch("/api/me").then(response => response.json()).then(data => {
+  if (data.user) window.EvaluationQueue.restore().catch(() => {});
+}).catch(() => {});
+window.addEventListener("evaluation-job-completed", event => {
+  if (event.detail.evaluation?.status === "completed") {
+    renderVideoEvaluation(event.detail.evaluation);
+    loadPublicEvaluations();
+  }
+});
 
 const detail = {
   weight: document.querySelector("#detailWeight"),

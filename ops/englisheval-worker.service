@@ -1,5 +1,5 @@
 [Unit]
-Description=OScanner-Eng web service
+Description=OScanner-Eng evaluation worker
 After=network-online.target
 Wants=network-online.target
 
@@ -11,13 +11,17 @@ WorkingDirectory=/opt/englisheval/current
 EnvironmentFile=/opt/englisheval/shared/.env
 EnvironmentFile=/opt/englisheval/shared/.env.prod
 Environment=NODE_ENV=production
+Environment=QUEUE_WORKER=true
 Environment=QUEUE_START_PAUSED=true
-ExecStart=/usr/bin/node /opt/englisheval/current/server.js
-Restart=on-failure
+ExecStart=/usr/bin/node /opt/englisheval/current/worker.js
+Restart=always
 RestartSec=3
-TimeoutStopSec=5min
-MemoryHigh=384M
-MemoryMax=512M
+TimeoutStopSec=30
+KillMode=control-group
+MemoryHigh=900M
+MemoryMax=1200M
+CPUQuota=100%
+Nice=10
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

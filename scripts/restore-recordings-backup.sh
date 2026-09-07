@@ -39,6 +39,13 @@ age --decrypt --identity "$identity_file" "$backup_file" \
     '
 age --decrypt --identity "$identity_file" "$backup_file" \
   | tar --no-same-owner --no-same-permissions -xzf - -C "$destination"
+if [[ -f "$destination/recordings/monitor-backup.sqlite" ]]; then
+  install -d -m 0700 "$destination/recordings/monitor"
+  mv "$destination/recordings/monitor-backup.sqlite" "$destination/recordings/monitor/alerts.sqlite"
+fi
+if [[ -f "$destination/recordings/queue-backup.sqlite" ]]; then
+  mv "$destination/recordings/queue-backup.sqlite" "$destination/recordings/queue.sqlite"
+fi
 find "$destination" -type d -exec chmod 0700 {} +
 find "$destination" -type f -exec chmod 0600 {} +
 echo "Backup restored into: $destination"

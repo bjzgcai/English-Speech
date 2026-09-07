@@ -1,12 +1,13 @@
 openapi: 3.0.3
 info:
   title: OScanner-Eng Partner API
-  version: 1.0.0
+  version: 1.0.1
   description: |
     Read-only access to OScanner-Eng user identity data and speaking-assessment
-    results. Responses intentionally exclude recorded videos, video URLs,
-    filenames, MIME metadata, extracted audio paths, sampled-frame artifacts,
-    transcripts, raw audio metrics, and internal model metadata.
+    results assembled from persisted question and recording identity snapshots.
+    Responses intentionally exclude recorded videos, video URLs, filenames, MIME
+    metadata, extracted audio paths, sampled-frame artifacts, transcripts, raw
+    audio metrics, improved-answer text, and internal model metadata.
 servers:
   - url: /
     description: Current OScanner-Eng server
@@ -18,6 +19,162 @@ tags:
 security:
   - bearerAuth: []
 paths:
+  /api/admission:
+    post:
+      summary: Enter or resume the FIFO waiting room
+      description: Requires current privacy consent. One outstanding session per signed-in owner. Heartbeat every 20 seconds; unsubmitted reservations expire after three minutes.
+      security: [{sessionCookie: []}]
+      responses:
+        '200':
+          description: Admission with waiting, admitted, or submitted state and current wait estimate
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  admission: {$ref: '#/components/schemas/Admission'}
+        '429': {$ref: '#/components/responses/QueueBusy'}
+    get:
+      summary: Read the current owner's admission without creating one
+      security: [{sessionCookie: []}]
+      responses:
+        '200':
+          description: admission object or null
+    delete:
+      summary: Release an unsubmitted admission or waiting-room position
+      security: [{sessionCookie: []}]
+      responses:
+        '200':
+          description: Released; accepted jobs continue processing
+  /api/admission/heartbeat:
+    post:
+      summary: Renew an existing admission lease
+      security: [{sessionCookie: []}]
+      responses:
+        '200':
+          description: Current admission, or null when expired
+  /api/admission/upload-grant:
+    post:
+      summary: Reserve one of four upload transfer slots
+      description: Grants expire after 30 seconds unless the upload starts. Requires admission and privacy consent.
+      security: [{sessionCookie: []}]
+      responses:
+        '200':
+          description: Single-use grant and expiresAt in Unix milliseconds
+        '409':
+          description: Admission expired or transfer already in progress
+        '429': {$ref: '#/components/responses/QueueBusy'}
+  /api/save-answer:
+    post:
+      summary: Durably accept an owned recorded answer for background evaluation
+      description: The question must already belong to the owner. Inspection and MP4 normalization happen after HTTP 202. Retry the same submission ID to recover its existing job without duplicate scoring.
+      security: [{sessionCookie: []}]
+      parameters:
+        - {$ref: '#/components/parameters/SubmissionId'}
+        - {$ref: '#/components/parameters/UploadGrant'}
+        - name: X-Question-Id
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody: {$ref: '#/components/requestBodies/QueuedVideo'}
+      responses: &QueuedUploadResponses
+        '202':
+          description: Original upload and job persisted; poll statusUrl for evaluation
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/QueuedJob'}
+        '200':
+          description: Existing terminal job returned for an idempotent retry
+        '400':
+          description: Unsupported upload, oversized media, or invalid question/submission identifier
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403':
+          description: Current privacy consent required
+        '409':
+          description: Grant expired, ID unavailable, or submission discarded
+        '429': {$ref: '#/components/responses/QueueBusy'}
+        '503': {$ref: '#/components/responses/QueueBusy'}
+  /api/evaluate-video:
+    post:
+      summary: Durably accept a standalone speech upload
+      description: Uses the same admission, grant, and asynchronous status flow as recorded answers. Existing completed standalone-gallery visibility rules apply.
+      security: [{sessionCookie: []}]
+      parameters:
+        - {$ref: '#/components/parameters/SubmissionId'}
+        - {$ref: '#/components/parameters/UploadGrant'}
+      requestBody: {$ref: '#/components/requestBodies/QueuedVideo'}
+      responses: *QueuedUploadResponses
+  /api/jobs/{id}:
+    get:
+      summary: Read owner-only job progress or the final evaluation
+      security: [{sessionCookie: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Poll every five seconds with jitter, or every twenty seconds in background tabs
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/QueuedJob'}
+        '404':
+          description: Unknown job or another owner's job
+  /api/save-answer/{id}/cancel:
+    post:
+      summary: Discard an owned submission and prevent late results
+      security: [{sessionCookie: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Cancellation persisted; active media processing stops before cleanup
+  /api/admin/queue:
+    get:
+      summary: Read aggregate capacity, processing times, and recent usage
+      security: [{sessionCookie: [], adminToken: []}]
+      responses:
+        '200':
+          description: Aggregate queue metrics without recording content or identity fields
+    post:
+      summary: Pause or resume new admissions while accepted jobs continue
+      security: [{sessionCookie: [], adminToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paused]
+              properties:
+                paused: {type: boolean}
+      responses:
+        '200':
+          description: Updated queue metrics
+  /api/admin/monitor:
+    get:
+      summary: Read resource alerts, monitor heartbeat, and recent DING delivery results
+      security: [{sessionCookie: [], adminToken: []}]
+      responses:
+        '200':
+          description: Monitor availability, maintenance expiry, resource sample, active alerts and latest 30 delivery states; excludes credentials and learner data
+        '401':
+          description: Authentication required
+        '403':
+          description: Administrator access required
+  /api/health:
+    get:
+      summary: Check web and worker readiness
+      security: []
+      responses:
+        '200':
+          description: Worker heartbeat is current
+        '503':
+          description: Worker unavailable
   /api/v1/users:
     get:
       tags: [Users]
@@ -26,7 +183,10 @@ paths:
         Returns users found in persisted question or recording metadata, plus 28
         deterministic roster-backed users with mock evaluations for integration
         testing. Each user includes all assessment results, but no video or
-        artifact metadata. Filters use exact, case-insensitive matching.
+        artifact metadata. Filters use exact, case-insensitive matching. A user's
+        evaluations are ordered by `finishedAt` descending; users are ordered by
+        `latestEvaluationAt` descending. `pagination.total` is calculated after
+        filtering and before `limit` and `offset` are applied.
       operationId: listUsers
       parameters:
         - $ref: '#/components/parameters/OpenId'
@@ -40,6 +200,9 @@ paths:
       responses:
         '200':
           description: Matching users and their assessment results
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
           content:
             application/json:
               schema:
@@ -52,7 +215,7 @@ paths:
     get:
       tags: [Users]
       summary: Get one user and assessment results
-      description: Returns one exact DingTalk organization user ID match.
+      description: Returns one exact, case-sensitive DingTalk organization user ID match.
       operationId: getUser
       parameters:
         - name: userId
@@ -64,6 +227,9 @@ paths:
       responses:
         '200':
           description: User identity data and assessment results
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
           content:
             application/json:
               schema:
@@ -72,6 +238,9 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: No user has the requested organization user ID
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
           content:
             application/json:
               schema:
@@ -92,6 +261,9 @@ paths:
       responses:
         '200':
           description: Active evaluation rubric standard
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
           content:
             application/json:
               schema:
@@ -102,54 +274,78 @@ paths:
           $ref: '#/components/responses/NotConfigured'
 components:
   securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: englisheval_session
+    adminToken:
+      type: apiKey
+      in: header
+      name: x-admin-access-token
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: API key
       description: The server-side `PARTNER_API_KEY` value.
+  headers:
+    NoStore:
+      description: Partner responses must not be stored by clients or intermediary caches.
+      schema:
+        type: string
+        enum: [no-store]
   parameters:
+    SubmissionId:
+      name: X-Submission-Id
+      in: header
+      required: true
+      schema: {type: string, format: uuid}
+    UploadGrant:
+      name: X-Upload-Grant
+      in: header
+      required: true
+      schema: {type: string, format: uuid}
     OpenId:
       name: openId
       in: query
-      description: Exact DingTalk application-scoped open ID
+      description: Exact, case-insensitive application-scoped ownership ID
       schema:
         type: string
     UserIdFilter:
       name: userId
       in: query
-      description: Exact DingTalk organization user ID
+      description: Exact, case-insensitive DingTalk organization user ID
       schema:
         type: string
     JobNumber:
       name: jobNumber
       in: query
-      description: Exact employee job number
+      description: Exact, case-insensitive employee job number
       schema:
         type: string
     JobNumberSnakeCase:
       name: job_number
       in: query
-      description: Exact employee job number; alias for `jobNumber`
+      description: Exact, case-insensitive employee job number; alias for `jobNumber`
       schema:
         type: string
     Email:
       name: email
       in: query
-      description: Exact personal/work email returned in DingTalk's `email` field
+      description: Exact, case-insensitive email returned in DingTalk's `email` field
       schema:
         type: string
         format: email
     OrgEmail:
       name: orgEmail
       in: query
-      description: Exact organization email returned in DingTalk's `org_email` field
+      description: Exact, case-insensitive organization email returned in DingTalk's `org_email` field
       schema:
         type: string
         format: email
     Limit:
       name: limit
       in: query
-      description: Maximum users to return
+      description: Maximum users to return; values above 200 are capped at 200
       schema:
         type: integer
         minimum: 1
@@ -158,12 +354,37 @@ components:
     Offset:
       name: offset
       in: query
-      description: Number of matching users to skip
+      description: Number of matching users to skip before building the response page
       schema:
         type: integer
         minimum: 0
         default: 0
+  requestBodies:
+    QueuedVideo:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required: [video]
+            properties:
+              video: {type: string, format: binary, description: Supported video up to 250 MiB}
+              questionId: {type: string}
+              submissionId: {type: string, format: uuid}
+              startedAt: {type: string}
   responses:
+    QueueBusy:
+      description: Capacity temporarily unavailable; retain the recording and retry later
+      headers:
+        Retry-After:
+          schema: {type: integer, example: 5}
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: {type: string}
+              code: {type: string}
     Unauthorized:
       description: Missing or invalid bearer API key
       headers:
@@ -181,19 +402,58 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    WaitEstimate:
+      type: object
+      nullable: true
+      description: Measured remaining-time range in seconds; null during cold start or unavailable processing
+      properties:
+        low: {type: integer}
+        high: {type: integer}
+    Admission:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        state: {type: string, enum: [waiting, admitted, submitted]}
+        jobId: {type: string, nullable: true}
+        queuePosition: {type: integer}
+        elapsedSeconds: {type: integer}
+        estimatedRemainingSeconds: {$ref: '#/components/schemas/WaitEstimate'}
+        delayed: {type: string, nullable: true}
+        pollAfterSeconds: {type: integer}
+    QueuedJob:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        jobId: {type: string, format: uuid}
+        state: {type: string, enum: [queued, processing, completed, failed, canceled]}
+        stage: {type: string, enum: [normalized, media, transcription, scoring]}
+        statusUrl: {type: string}
+        queuePosition: {type: integer}
+        elapsedSeconds: {type: integer}
+        estimatedRemainingSeconds: {$ref: '#/components/schemas/WaitEstimate'}
+        delayed: {type: string, nullable: true}
+        pollAfterSeconds: {type: integer}
+        path: {type: string, nullable: true}
+        filename: {type: string, nullable: true}
+        evaluation:
+          type: object
+          description: Existing normalized evaluation object, available on completion or failure
     Error:
       type: object
+      additionalProperties: false
       required: [error]
       properties:
         error:
           type: string
     Pagination:
       type: object
+      additionalProperties: false
       required: [total, limit, offset]
       properties:
         total:
           type: integer
           minimum: 0
+          description: Matching user count before pagination is applied
         limit:
           type: integer
           minimum: 1
@@ -203,6 +463,7 @@ components:
           minimum: 0
     UserListResponse:
       type: object
+      additionalProperties: false
       required: [users, pagination]
       properties:
         users:
@@ -213,12 +474,14 @@ components:
           $ref: '#/components/schemas/Pagination'
     UserResponse:
       type: object
+      additionalProperties: false
       required: [user]
       properties:
         user:
           $ref: '#/components/schemas/User'
     User:
       type: object
+      additionalProperties: false
       required:
         - openId
         - unionId
@@ -233,21 +496,22 @@ components:
       properties:
         openId:
           type: string
-          description: DingTalk application-scoped user identifier
+          description: Application-scoped ownership identifier; empty when unavailable
         unionId:
           type: string
-          description: DingTalk developer-scoped user identifier
+          description: DingTalk developer-scoped user identifier; empty when unavailable
         userId:
           type: string
-          description: DingTalk organization user identifier
+          description: DingTalk organization user identifier; empty when unavailable
         jobNumber:
           type: string
-          description: Employee job number
+          description: Employee job number; empty when unavailable
         job_number:
           type: string
-          description: Snake-case alias of `jobNumber`
+          description: Snake-case alias of `jobNumber`; always the same value
         name:
           type: string
+          description: Display name from the latest available identity snapshot; empty when unavailable
         email:
           type: string
           description: DingTalk `email`; empty when unavailable
@@ -259,11 +523,15 @@ components:
           description: ISO-8601 finish time of the latest result; empty when none exists
         evaluations:
           type: array
+          description: Assessment attempts ordered by `finishedAt` descending
           items:
             $ref: '#/components/schemas/EvaluationAttempt'
     EvaluationAttempt:
       type: object
-      description: An assessment attempt with all recording and artifact fields removed.
+      additionalProperties: false
+      description: |
+        A privacy-filtered assessment attempt. Recording, artifact, transcript,
+        audio-metric, improved-answer, and internal model fields are removed.
       required:
         - id
         - questionId
@@ -276,13 +544,16 @@ components:
         id:
           type: string
           format: uuid
+          description: Assessment attempt identifier
         questionId:
           type: string
-          format: uuid
+          description: Owned question UUID; empty for standalone speech uploads
         startedAt:
           type: string
+          description: ISO-8601 attempt start time; empty when unavailable
         finishedAt:
           type: string
+          description: ISO-8601 attempt finish time; empty when unavailable
         profile:
           $ref: '#/components/schemas/CandidateProfile'
         question:
@@ -291,27 +562,36 @@ components:
           $ref: '#/components/schemas/Evaluation'
     CandidateProfile:
       type: object
+      additionalProperties: false
       required: [name, role]
       properties:
         name:
           type: string
+          description: Candidate name captured for this attempt; empty when unavailable
         role:
           type: string
+          description: Candidate role or assessment context; empty when unavailable
     Question:
       type: object
+      additionalProperties: false
       required: [question, focus, expectedDurationSeconds, followUp]
       properties:
         question:
           type: string
+          description: Prompt text, or `Standalone speech` for direct uploads
         focus:
           type: string
+          description: Evaluation focus captured for the attempt
         expectedDurationSeconds:
           type: integer
           nullable: true
+          description: Suggested answer duration; null when the attempt has no configured duration
         followUp:
           type: string
+          description: Follow-up prompt; empty when unavailable
     Evaluation:
       type: object
+      additionalProperties: false
       required:
         - status
         - rubricId
@@ -326,6 +606,7 @@ components:
         status:
           type: string
           enum: [completed, skipped, failed, unknown]
+          description: Normalized persisted evaluation status
         rubricId:
           type: string
           description: Identifier of the scoring standard used for this result
@@ -334,11 +615,13 @@ components:
           description: Semantic version of the scoring standard used for this result
         reason:
           type: string
+          description: Skip or failure reason; empty for a normal completed evaluation
         overallScore:
           type: number
           minimum: 0
           maximum: 100
           nullable: true
+          description: Weighted score; null when the attempt has no usable score
         summary:
           type: string
         rubric:
@@ -353,6 +636,8 @@ components:
             type: string
     Rubric:
       type: object
+      additionalProperties: false
+      description: Present dimension results; may be empty for skipped, failed, or legacy attempts
       properties:
         pronunciation:
           $ref: '#/components/schemas/RubricItem'
@@ -368,6 +653,7 @@ components:
           $ref: '#/components/schemas/RubricItem'
     RubricItem:
       type: object
+      additionalProperties: false
       required: [label, weight, score, feedback]
       properties:
         label:
@@ -384,12 +670,14 @@ components:
           type: string
     RubricStandardResponse:
       type: object
+      additionalProperties: false
       required: [rubric]
       properties:
         rubric:
           $ref: '#/components/schemas/RubricStandard'
     RubricStandard:
       type: object
+      additionalProperties: false
       required: [id, version, name, scoreScale, overallScore, scoreBands, dimensions]
       properties:
         id:
@@ -415,6 +703,7 @@ components:
             $ref: '#/components/schemas/RubricDimension'
     ScoreScale:
       type: object
+      additionalProperties: false
       required: [minimum, maximum, higherIsBetter]
       properties:
         minimum:
@@ -428,6 +717,7 @@ components:
           example: true
     OverallScoreRule:
       type: object
+      additionalProperties: false
       required: [method, formula, rounding]
       properties:
         method:
@@ -441,6 +731,7 @@ components:
           enum: [nearest_integer]
     ScoreBand:
       type: object
+      additionalProperties: false
       required: [minimum, maximum, level, meaning]
       properties:
         minimum:
@@ -454,6 +745,7 @@ components:
           type: string
     RubricDimension:
       type: object
+      additionalProperties: false
       required: [key, label, weight, description, evidence, guidance]
       properties:
         key:

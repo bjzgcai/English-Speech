@@ -86,6 +86,19 @@
         </section>
 
         <div id="statisticsContent" hidden>
+          <section aria-labelledby="queueHeading" style="padding:16px 0;border-bottom:1px solid #ccd5d8;margin-bottom:20px">
+            <h2 id="queueHeading">Evaluation capacity</h2>
+            <p id="queueSummary" role="status">Loading queue status...</p>
+            <label><input type="checkbox" id="queuePaused"> Pause new admissions</label>
+            <p id="queueTimings"></p>
+          </section>
+          <section aria-labelledby="monitorHeading" style="padding:16px 0;border-bottom:1px solid #ccd5d8;margin-bottom:20px">
+            <h2 id="monitorHeading">Resource alerts</h2>
+            <p id="monitorSummary" role="status">Loading monitor status...</p>
+            <p id="monitorResources"></p>
+            <ul id="monitorAlerts"></ul>
+            <p id="monitorDelivery" role="status"></p>
+          </section>
           <section class="metric-grid" aria-label="Key participation metrics">
             <article class="metric metric-featured">
               <span>Current week submitters</span>

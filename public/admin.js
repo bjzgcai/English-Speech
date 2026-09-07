@@ -378,6 +378,8 @@ async function requestStatistics() {
     }
     renderStatistics(body.statistics);
     renderExperienceRatings(body.ratings || []);
+    await loadQueueMetrics();
+    await loadMonitorMetrics();
     statisticsContent.hidden = false;
     clearDashboardStatus("Statistics are up to date.");
     return true;
@@ -392,6 +394,44 @@ async function requestStatistics() {
     setLoading(false);
   }
 }
+
+async function loadQueueMetrics() {
+  const response = await fetch("/api/admin/queue", { headers: { "x-admin-access-token": adminAccessToken } });
+  if (!response.ok) return;
+  const data = await response.json();
+  setText("queueSummary", `${data.admissions.map(item => `${item.count} ${item.state}`).join(", ") || "No active sessions"}. Capacity: ${data.capacity}. ${data.pressure || "Worker available."}`);
+  document.querySelector("#queuePaused").checked = data.paused;
+  setText("queueTimings", data.stages.filter(item => item.stage !== "release").map(item => `${item.stage}: ${(item.averageMs / 1000).toFixed(1)} seconds average`).join(". "));
+}
+document.querySelector("#queuePaused").addEventListener("change", async event => {
+  try {
+    const response = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json", "x-admin-access-token": adminAccessToken }, body: JSON.stringify({ paused: event.target.checked }) });
+    if (!response.ok) throw new Error("Unable to change admissions.");
+    await loadQueueMetrics();
+  } catch (error) { showDashboardError(error.message); }
+});
+async function loadMonitorMetrics() {
+  try {
+    const response = await fetch("/api/admin/monitor", { headers: { "x-admin-access-token": adminAccessToken }, cache: "no-store" });
+    if (!response.ok) throw new Error("Monitor unavailable");
+    const data = await response.json();
+    const maintenance = data.maintenanceUntil > Date.now();
+    setText("monitorSummary", `${data.stale ? "Monitor unavailable or heartbeat overdue" : "Monitor running"}. DING ${data.notificationsEnabled ? "enabled" : "disabled"}${data.heartbeat ? `. Last sample: ${new Date(data.heartbeat).toLocaleString()}` : ""}${maintenance ? `. Maintenance until ${new Date(data.maintenanceUntil).toLocaleString()}` : ""}`);
+    const sample = data.sample;
+    setText("monitorResources", sample ? `Available memory: ${sample.memoryAvailable == null ? "Unknown" : `${Math.round(sample.memoryAvailable / 1024 ** 2)} MiB`}. CPU: ${sample.cpuPercent == null ? "Calculating" : `${sample.cpuPercent.toFixed(1)}%`}. ${sample.disks.map(disk => `Disk: ${disk.usedPercent.toFixed(1)}% used, ${(disk.available / 1024 ** 3).toFixed(1)} GiB available`).join(". ")}` : "");
+    const list = document.querySelector("#monitorAlerts");
+    list.replaceChildren();
+    for (const alert of data.alerts) {
+      const item = document.createElement("li");
+      item.textContent = `${alert.level === 2 ? "Critical" : "Warning"}: ${alert.label}. ${alert.detail}`;
+      item.style.overflowWrap = "anywhere";
+      list.append(item);
+    }
+    const problems = data.deliveries.filter(event => event.status !== "sent");
+    setText("monitorDelivery", problems.length ? problems.map(event => `${new Date(event.created).toLocaleString()}: DING ${event.status} (${event.key})`).join(". ") : data.deliveries.length ? "Recent DING notifications accepted." : "No notifications.");
+  } catch { setText("monitorSummary", "Unable to read resource monitor status."); }
+}
+setInterval(() => { if (adminAccessToken && !document.hidden) { loadQueueMetrics().catch(() => {}); loadMonitorMetrics(); } }, 10000);
 
 async function loadSignedInUser() {
   try {

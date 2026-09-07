@@ -5,13 +5,15 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js",
+    "dev": "node scripts/dev.js",
+    "worker": "node worker.js",
     "test": "node --test"
   },
   "keywords": [],
   "author": "",
   "license": "UNLICENSED",
   "type": "commonjs",
+  "engines": { "node": ">=22.16.0" },
   "dependencies": {
     "dotenv": "^17.4.2",
     "express": "^5.2.1",

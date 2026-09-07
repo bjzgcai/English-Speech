@@ -1,13 +1,12 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { spawn } = require("child_process");
 const express = require("express");
 const multer = require("multer");
 const QRCode = require("qrcode");
-const ffmpegPath = require("ffmpeg-static");
 const swaggerUiDistPath = require("swagger-ui-dist").getAbsoluteFSPath();
 const config = require("./config");
+const processing = require("./processing");
 const { appendJsonLine, readJsonLines, writeJsonLines } = require("./storage");
 const { createQuestionService } = require("./questions");
 const { registerPageRoutes } = require("./routes/pages");
@@ -56,7 +55,7 @@ const internalLlmTranscribeModel = process.env.INTERNAL_LLM_TRANSCRIBE_MODEL || 
 const openRouterChatCompletionsUrl =
   process.env.OPENROUTER_CHAT_COMPLETIONS_URL ||
   "https://openrouter.ihainan.me/api/v1/chat/completions";
-const openRouterEvalModel = process.env.OPENROUTER_EVAL_MODEL || "google/gemini-3.5-flash";
+const openRouterEvalModel = process.env.OPENROUTER_EVAL_MODEL || "z-ai/glm-5.3-flash";
 const maximumVideoBytes = 250 * 1024 * 1024;
 const standaloneEvaluationMaxSeconds = 2 * 60;
 const answerCancellationTtlMs = 60 * 60 * 1000;
@@ -150,6 +149,10 @@ const upload = multer({
   dest: recordingTmpDir,
   limits: {
     fileSize: maximumVideoBytes,
+    files: 1,
+    fields: 6,
+    parts: 7,
+    fieldSize: 16384,
   },
   fileFilter: (_req, file, callback) => {
     const allowedMimeTypes = new Set([
@@ -788,7 +791,6 @@ function discardPersistedAnswer({
 }
 
 function convertToMp4(inputPath, outputPath, { maximumDurationSeconds = null } = {}) {
-  return new Promise((resolve, reject) => {
     const args = [
       "-y",
       "-i",
@@ -802,6 +804,14 @@ function convertToMp4(inputPath, outputPath, { maximumDurationSeconds = null } =
       "libx264",
       "-preset",
       "veryfast",
+      "-threads",
+      "1",
+      "-vf",
+      "scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
+      "-maxrate",
+      "2M",
+      "-bufsize",
+      "4M",
       "-pix_fmt",
       "yuv420p",
       "-c:a",
@@ -810,59 +820,21 @@ function convertToMp4(inputPath, outputPath, { maximumDurationSeconds = null } =
       "+faststart",
       outputPath,
     );
-    const ffmpeg = spawn(ffmpegPath, args);
-
-    let errorOutput = "";
-    ffmpeg.stderr.on("data", (chunk) => {
-      errorOutput += chunk.toString();
-    });
-    ffmpeg.on("error", reject);
-    ffmpeg.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(errorOutput || `ffmpeg exited with code ${code}`));
-      }
-    });
-  });
+    return processing.runMedia(args);
 }
 
 function runFfmpeg(args) {
-  return new Promise((resolve, reject) => {
-    const ffmpeg = spawn(ffmpegPath, args);
-
-    let errorOutput = "";
-    ffmpeg.stderr.on("data", (chunk) => {
-      errorOutput += chunk.toString();
-    });
-    ffmpeg.on("error", reject);
-    ffmpeg.on("close", (code) => {
-      if (code === 0) {
-        resolve(errorOutput);
-      } else {
-        reject(new Error(errorOutput || `ffmpeg exited with code ${code}`));
-      }
-    });
-  });
+  return processing.runMedia(args);
 }
 
-function inspectMedia(inputPath) {
-  return new Promise((resolve, reject) => {
-    const ffmpeg = spawn(ffmpegPath, ["-hide_banner", "-i", inputPath]);
-    let output = "";
-    ffmpeg.stderr.on("data", (chunk) => {
-      output += chunk.toString();
-    });
-    ffmpeg.on("error", reject);
-    ffmpeg.on("close", () => {
+async function inspectMedia(inputPath) {
+    const output = await processing.runMedia(["-hide_banner", "-i", inputPath], { probe: true });
       const hasAudio = /Stream #\S+.*Audio:/i.test(output);
       const hasVideo = /Stream #\S+.*Video:/i.test(output);
       if (!hasAudio && !hasVideo) {
-        return reject(new Error("The file does not contain a usable audio or video stream."));
+        throw new Error("The file does not contain a usable audio or video stream.");
       }
-      resolve({ hasAudio, hasVideo, durationSeconds: parseDurationSeconds(output) });
-    });
-  });
+      return { hasAudio, hasVideo, durationSeconds: parseDurationSeconds(output) };
 }
 
 function limitStandaloneMediaInfo(mediaInfo) {
@@ -1417,7 +1389,7 @@ function transcriptionRetryDelay(attempt) {
 
 async function transcribeAudioFile(audioPath) {
   const apiKey = process.env.INTERNAL_LLM_API_KEY;
-  const maximumAttempts = Math.min(
+  const maximumAttempts = processing.context.getStore() ? 1 : Math.min(
     positiveInteger(Number(process.env.TRANSCRIPTION_MAX_ATTEMPTS), 3),
     5,
   );
@@ -1433,13 +1405,13 @@ async function transcribeAudioFile(audioPath) {
     formData.append("language", "en");
 
     try {
-      const response = await fetch(internalLlmTranscriptionsUrl, {
+      const response = await processing.modelFetch(internalLlmTranscriptionsUrl, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
         },
         body: formData,
-      });
+      }, "transcription", `transcription:${path.basename(audioPath)}:${crypto.createHash("sha256").update(fs.readFileSync(audioPath)).digest("hex")}`);
 
       if (!response.ok) {
         const detail = await response.text();
@@ -1688,7 +1660,7 @@ async function evaluateAnswer({
       headers["HTTP-Referer"] = safeText(process.env.APP_BASE_URL);
     }
 
-    const response = await fetch(openRouterChatCompletionsUrl, {
+    const response = await processing.modelFetch(openRouterChatCompletionsUrl, {
       method: "POST",
       signal: AbortSignal.timeout(requestTimeoutMs),
       headers,
@@ -1708,7 +1680,7 @@ async function evaluateAnswer({
           },
         ],
       }),
-    });
+    }, "scoring");
 
     if (!response.ok) {
       const detail = await response.text();
@@ -1757,24 +1729,26 @@ async function evaluateSavedVideo({
   if (!inspectedMedia.hasAudio) {
     throw new Error("The video has a picture but no usable audio track, so speech cannot be evaluated.");
   }
-  await extractAudio(videoPath, audioPath);
-  const audibleAudio = await hasAudibleAudio(audioPath);
   const maxFrames = positiveInteger(Number(process.env.EVAL_MAX_FRAMES), 18);
-  const [transcript, framePaths] = await Promise.all([
-    audibleAudio
-      ? transcribeAudio(audioPath, { durationSeconds: inspectedMedia.durationSeconds })
-      : Promise.resolve(""),
-    inspectedMedia.hasVideo ? sampleFrames(videoPath, frameDir, maxFrames) : Promise.resolve([]),
-  ]);
-  const audioMetrics = await inspectAudio(audioPath, transcript);
-  const result = await evaluateAnswer({
+  const { audibleAudio, framePaths } = await processing.stage("media", async () => {
+    await extractAudio(videoPath, audioPath);
+    return {
+      audibleAudio: await hasAudibleAudio(audioPath),
+      framePaths: inspectedMedia.hasVideo ? await sampleFrames(videoPath, frameDir, maxFrames) : [],
+    };
+  });
+  const { transcript, audioMetrics } = await processing.stage("transcription", async () => {
+    const transcript = audibleAudio ? await transcribeAudio(audioPath, { durationSeconds: inspectedMedia.durationSeconds }) : "";
+    return { transcript, audioMetrics: await inspectAudio(audioPath, transcript) };
+  });
+  const result = await processing.stage("scoring", () => evaluateAnswer({
     profile,
     question,
     transcript,
     audioMetrics,
     framePaths,
     evaluationMode,
-  });
+  }));
 
   return {
     status: "completed",
@@ -2182,12 +2156,14 @@ app.get("/api/game/leaderboard", requireAuth, (req, res) => {
   res.json({ challenge: gameChallengeForClient(challenge), ...leaderboard });
 });
 
+let statisticsCache = null;
 app.get("/api/admin/statistics", requireAuth, requireAdminAccess, (_req, res) => {
-  const statistics = buildAdminStatistics({
+  if (!statisticsCache || Date.now() - statisticsCache.at > 5000) statisticsCache = { at: Date.now(), data: buildAdminStatistics({
     questions: readJsonLines(questionsMetadataFile),
     recordings: readJsonLines(metadataFile),
     currentChallenge: currentChallenge(),
-  });
+  }) };
+  const statistics = statisticsCache.data;
   res.set({
     "Cache-Control": "no-store",
     "Referrer-Policy": "no-referrer",
@@ -2198,7 +2174,13 @@ app.get("/api/admin/statistics", requireAuth, requireAdminAccess, (_req, res) =>
   });
 });
 
-app.post("/api/game/question", requireAuth, requirePrivacyConsent, (req, res) => {
+const queueApi = config.queueEnabled && process.env.QUEUE_WORKER !== "true" ? require("./queue-routes").registerQueueRoutes(app, {
+  config, requireAuth, requirePrivacyConsent, requireAdminAccess, upload, findOwnedQuestion,
+  validAnswerSaveId, decodeUtf8UploadFilename, standaloneEvaluationTitle,
+}) : null;
+const requireAdmission = queueApi?.required || ((_req, _res, next) => next());
+
+app.post("/api/game/question", requireAuth, requirePrivacyConsent, requireAdmission, (req, res) => {
   const challenge = currentChallenge();
   const profile = {
     name: safeText(req.user.name, "DingTalk user"),
@@ -2218,7 +2200,7 @@ app.post("/api/game/question", requireAuth, requirePrivacyConsent, (req, res) =>
   });
 });
 
-app.post("/api/generate-question", requireAuth, requirePrivacyConsent, async (req, res) => {
+app.post("/api/generate-question", requireAuth, requirePrivacyConsent, requireAdmission, async (req, res) => {
   const profile = {
     ...(req.body?.profile || {}),
     name: safeText(req.user.name, "DingTalk user"),
@@ -2234,7 +2216,7 @@ app.post("/api/generate-question", requireAuth, requirePrivacyConsent, async (re
   }
 
   try {
-    const response = await fetch(internalLlmChatCompletionsUrl, {
+    const response = await processing.modelFetch(internalLlmChatCompletionsUrl, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -2256,7 +2238,7 @@ app.post("/api/generate-question", requireAuth, requirePrivacyConsent, async (re
           },
         ],
       }),
-    });
+    }, "question");
 
     if (!response.ok) {
       const detail = await response.text();
@@ -2608,6 +2590,7 @@ app.get("/api/public-evaluations/:id/video", (req, res) => {
 });
 
 app.get("/api/recordings", requireAuth, (req, res) => {
+  queueApi?.project();
   const recordings = readJsonLines(metadataFile)
     .filter((record) => recordOpenId(record) === req.user.openId)
     .map((record) => ({
@@ -2617,7 +2600,9 @@ app.get("/api/recordings", requireAuth, (req, res) => {
     }))
     .reverse();
 
-  res.json({ recordings });
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+  const offset = Math.max(0, Number(req.query.offset) || 0);
+  res.json({ recordings: recordings.slice(offset, offset + limit), pagination: { total: recordings.length, limit, offset } });
 });
 
 app.get("/api/recordings/:id/video", requireAuth, (req, res) => {
@@ -2650,15 +2635,27 @@ app.use((error, _req, res, next) => {
 });
 
 function startServer() {
-  return app.listen(port, () => {
+  const timer = queueApi ? setInterval(() => {
+    try { queueApi.project(); queueApi.queue.transaction(() => queueApi.queue.sweep()); }
+    catch { console.error("Queue projection temporarily unavailable; retrying."); }
+  }, 1000) : null;
+  timer?.unref();
+  const server = app.listen(port, () => {
     console.log(`OScanner-Eng is running at http://localhost:${port}`);
   });
+  server.on("close", () => { clearInterval(timer); });
+  server.requestTimeout = 300000;
+  server.headersTimeout = 15000;
+  return server;
 }
 
 module.exports = {
   app,
   startServer,
   testHelpers: {
+    inspectMedia,
+    convertToMp4,
+    evaluateSavedVideo,
     buildEvaluationPrompt,
     adminTokensMatch,
     buildAdminStatistics,

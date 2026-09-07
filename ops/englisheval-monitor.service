@@ -1,5 +1,5 @@
 [Unit]
-Description=OScanner-Eng web service
+Description=EnglishEval resource monitoring and DingTalk alerts
 After=network-online.target
 Wants=network-online.target
 
@@ -10,14 +10,16 @@ Group=ubuntu
 WorkingDirectory=/opt/englisheval/current
 EnvironmentFile=/opt/englisheval/shared/.env
 EnvironmentFile=/opt/englisheval/shared/.env.prod
+EnvironmentFile=-/opt/englisheval/shared/monitor.env
 Environment=NODE_ENV=production
-Environment=QUEUE_START_PAUSED=true
-ExecStart=/usr/bin/node /opt/englisheval/current/server.js
-Restart=on-failure
-RestartSec=3
-TimeoutStopSec=5min
-MemoryHigh=384M
-MemoryMax=512M
+Environment=BACKUP_DIR=/opt/englisheval/backups
+ExecStartPre=/usr/bin/mkdir -p /opt/englisheval/shared/recordings/monitor
+ExecStart=/usr/bin/flock -n /opt/englisheval/shared/recordings/monitor/process.lock /usr/bin/node /opt/englisheval/current/monitor.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=90
+MemoryMax=160M
+CPUQuota=10%
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

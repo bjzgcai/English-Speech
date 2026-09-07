@@ -579,7 +579,10 @@ async function checkAuth() {
 
     setStatus(state.authUser ? "Signed in" : "Sign in");
     updateAuthView();
-    if (state.authUser) setRoute(window.location.pathname);
+    if (state.authUser) {
+      setRoute(window.location.pathname);
+      window.EvaluationQueue.restore().catch(() => {});
+    }
   } catch {
     setStatus("Auth error");
     loginPanel.hidden = false;
@@ -738,6 +741,7 @@ async function acquireRequiredMedia() {
         facingMode: { ideal: "user" },
         width: { ideal: 1280 },
         height: { ideal: 720 },
+        frameRate: { ideal: 24, max: 30 },
         aspectRatio: { ideal: 16 / 9 },
       },
       audio: {
@@ -874,8 +878,9 @@ async function releaseWakeLock() {
   await lock.release().catch(() => {});
 }
 
-async function loadHistory() {
-  const response = await fetch("/api/recordings");
+let historyOffset = 0;
+async function loadHistory(offset = 0) {
+  const response = await fetch(`/api/recordings?limit=20&offset=${offset}`);
   if (response.status === 401) {
     state.authUser = null;
     updateAuthView();
@@ -883,6 +888,7 @@ async function loadHistory() {
   }
   const data = await response.json();
   const recordings = data.recordings || [];
+  historyOffset = offset;
 
   if (recordings.length === 0) {
     historyList.innerHTML = '<p class="empty-history">No saved answers yet.</p>';
@@ -892,6 +898,17 @@ async function loadHistory() {
   historyList.innerHTML = recordings
     .map((item, index) => renderHistoryItem(item, index))
     .join("");
+  const pager = document.createElement("nav");
+  pager.className = "queue-actions";
+  pager.setAttribute("aria-label", "History pages");
+  for (const [label, next, disabled] of [["Previous", offset - 20, offset === 0], ["Next", offset + 20, offset + recordings.length >= (data.pagination?.total || recordings.length)]]) {
+    const button = document.createElement("button");
+    button.textContent = label;
+    button.disabled = disabled;
+    button.onclick = () => loadHistory(next);
+    pager.append(button);
+  }
+  historyList.append(pager);
 }
 
 function formatChallengeRange(challenge) {
@@ -1268,6 +1285,9 @@ function renderAnswerParagraphs(value) {
 }
 
 function renderEvaluationContent(evaluation, shareId = "") {
+  if (["queued", "processing"].includes(evaluation.status)) {
+    return '<section class="evaluation-card"><h3>Evaluation pending</h3><p>Your recording is saved. Feedback will appear when processing finishes.</p></section>';
+  }
   if (evaluation.status === "skipped") {
     return `
       <section class="evaluation-card">
@@ -1392,7 +1412,9 @@ function renderHistoryItem(item, index) {
   const score =
     item.evaluation?.status === "completed"
       ? `${Math.round(item.evaluation.overallScore || 0)} / 100`
-      : item.hasVideo === false
+      : item.pendingJobId
+        ? "Queued for evaluation"
+        : item.hasVideo === false
         ? "No video"
         : "Pending";
   const videoPath = item.path || "";
@@ -1558,6 +1580,12 @@ profileForm.addEventListener("submit", async (event) => {
 
   finishButton.disabled = true;
   saveResult.textContent = "";
+  try { await window.EvaluationQueue.admit(); }
+  catch (error) {
+    generateButton.disabled = false;
+    saveResult.textContent = error.name === "AbortError" ? "Waiting canceled." : error.message;
+    return;
+  }
   const mediaReady = await requireMediaBeforeQuestion();
   if (!mediaReady) return;
 
@@ -1641,7 +1669,7 @@ async function startRecording() {
     preview.srcObject = state.stream;
     videoPlaceholder.classList.add("hidden");
 
-    const options = state.mimeType ? { mimeType: state.mimeType } : undefined;
+    const options = { ...(state.mimeType ? { mimeType: state.mimeType } : {}), videoBitsPerSecond: 1500000, audioBitsPerSecond: 64000 };
     state.recorder = new MediaRecorder(state.stream, options);
     state.startedAt = new Date().toISOString();
 
@@ -1761,22 +1789,23 @@ async function finishRecording() {
   formData.append("submissionId", submissionId);
 
   try {
-    const response = await fetch("/api/save-answer", {
-      method: "POST",
-      body: formData,
+    const data = await window.EvaluationQueue.submit(formData, {
       signal: state.saveAbortController.signal,
+      onAccepted: () => {
+        state.activeSaveId = null;
+        state.chunks = [];
+        setDiscardAvailable(false);
+        setStatus("Queued");
+        saveResult.textContent = "Recording saved. You can return to History for your feedback.";
+      },
     });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "Save failed.");
-    }
     if (state.discardRequested) return;
     if (state.activeSaveId === submissionId) {
       state.activeSaveId = null;
       state.saveAbortController = null;
     }
 
-    saveResult.innerHTML = `Saved as <a href="${escapeHtml(data.path)}" target="_blank" rel="noreferrer">${escapeHtml(data.filename)}</a>. Generate the next question when ready.`;
+    saveResult.innerHTML = data.path ? `Saved as <a href="${escapeHtml(data.path)}" target="_blank" rel="noreferrer">${escapeHtml(data.filename)}</a>. Generate the next question when ready.` : escapeHtml(data.evaluation?.reason || "Recording discarded.");
     if (state.activeMode === "/game" && data.evaluation?.status === "completed") {
       await loadLeaderboardIdentity().catch(() => {});
     }
@@ -1792,8 +1821,8 @@ async function finishRecording() {
     await loadHistory();
   } catch (error) {
     if (state.discardRequested) return;
-    setStatus("Save failed");
-    saveResult.textContent = error.message;
+    setStatus(error.name === "AbortError" ? "Discarded" : "Upload needs attention");
+    saveResult.textContent = error.name === "AbortError" ? "Recording discarded." : error.message;
     generateButton.disabled = false;
     setDiscardAvailable(false);
   } finally {
@@ -1828,7 +1857,7 @@ async function discardCurrentAnswer() {
   }
 
   const submissionId = state.discardTargetSaveId || state.activeSaveId;
-  state.discardRequested = true;
+    state.discardRequested = true;
 
   try {
     if (state.recorder && state.recorder.state !== "inactive") {
@@ -1866,6 +1895,8 @@ async function discardCurrentAnswer() {
       questionMeta.textContent = "Recording starts automatically after the question is ready.";
     }
     saveResult.textContent = "Answer discarded. No recording, evaluation, or score was saved.";
+    await window.EvaluationQueue.discardDraft();
+    await window.EvaluationQueue.release();
     finishButton.textContent = "Finish and save";
     generateButton.disabled = false;
     logoutButton.disabled = false;
@@ -1897,6 +1928,7 @@ keepAnswerButton.addEventListener("click", closeDiscardModal);
 confirmDiscardButton.addEventListener("click", discardCurrentAnswer);
 
 logoutButton.addEventListener("click", async () => {
+  await window.EvaluationQueue.release();
   await fetch("/auth/logout", { method: "POST" });
   state.authUser = null;
   state.privacyConsent = null;
@@ -2080,3 +2112,7 @@ document.addEventListener("visibilitychange", () => {
 
 setRoute(window.location.pathname);
 checkAuth();
+window.addEventListener("evaluation-job-completed", event => {
+  renderEvaluation(event.detail.evaluation);
+  if (state.authUser) loadHistory(historyOffset).catch(() => {});
+});

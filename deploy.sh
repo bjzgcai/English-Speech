@@ -55,6 +55,10 @@ release_dir="$REMOTE_ROOT/releases/$release_id"
 remote_user="$(ssh "$TARGET" 'id -un')"
 remote_group="$(ssh "$TARGET" 'id -gn')"
 previous_release="$(ssh "$TARGET" "readlink -f '$REMOTE_ROOT/current' 2>/dev/null || true")"
+if [[ -n "${EXPECTED_PREVIOUS_RELEASE:-}" && "$previous_release" != "$EXPECTED_PREVIOUS_RELEASE" ]]; then
+  echo "Production release changed since this package was prepared; refusing to overwrite it." >&2
+  exit 1
+fi
 echo "Deploying release $release_id to $TARGET:$REMOTE_ROOT"
 ssh "$TARGET" "sudo install -d -m 0750 -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT' '$REMOTE_ROOT/releases' '$REMOTE_ROOT/shared' && sudo install -d -m 0700 -o '$remote_user' -g '$remote_group' '$REMOTE_ROOT/shared/recordings' '$REMOTE_ROOT/shared/questions' '$REMOTE_ROOT/shared/comments' '$REMOTE_ROOT/shared/consents' '$REMOTE_ROOT/shared/ratings' '$REMOTE_ROOT/backups' && mkdir -p '$release_dir'"
 ssh "$TARGET" "test -f '$REMOTE_ROOT/shared/.env' && test -f '$REMOTE_ROOT/shared/.env.prod'" || {
@@ -88,6 +92,7 @@ rsync -az --delete \
   --exclude '.env' \
   --exclude '.env.local' \
   --exclude '.env.prod' \
+  --exclude 'monitor.env' \
   --exclude 'node_modules/' \
   --exclude 'recordings/' \
   --exclude 'questions/' \
@@ -137,7 +142,17 @@ ssh "$TARGET" "chmod 0600 '$REMOTE_ROOT/shared/.env' '$REMOTE_ROOT/shared/.env.p
 rollback() {
   echo "Deployment failed after release activation; restoring the previous release." >&2
   if [[ -n "$previous_release" ]]; then
-    ssh "$TARGET" "ln -sfn '$previous_release' '$REMOTE_ROOT/current' && sudo systemctl restart '$SERVICE_NAME.service'"
+    ssh "$TARGET" "sudo systemctl stop '$SERVICE_NAME-monitor.service' 2>/dev/null || true
+sudo systemctl stop '$SERVICE_NAME-worker.service' '$SERVICE_NAME.service'
+for unit in '$SERVICE_NAME.service' '$SERVICE_NAME-worker.service' '$SERVICE_NAME-monitor.service' '$SERVICE_NAME-recording-maintenance.service' '$SERVICE_NAME-recording-maintenance.timer'; do
+  if test -f '$release_dir/.systemd-backup/'\"\$unit\"; then sudo cp '$release_dir/.systemd-backup/'\"\$unit\" '/etc/systemd/system/'\"\$unit\"; fi
+done
+if ! test -f '$previous_release/monitor.js'; then sudo systemctl disable '$SERVICE_NAME-monitor.service' 2>/dev/null || true; sudo rm -f '/etc/systemd/system/$SERVICE_NAME-monitor.service'; fi
+ln -sfn '$previous_release' '$REMOTE_ROOT/current'
+sudo systemctl daemon-reload
+sudo systemctl start '$SERVICE_NAME.service'
+if test -f '$previous_release/worker.js'; then sudo systemctl start '$SERVICE_NAME-worker.service'; fi
+if test -f '$previous_release/monitor.js'; then sudo systemctl start '$SERVICE_NAME-monitor.service'; fi"
   else
     ssh "$TARGET" "sudo systemctl stop '$SERVICE_NAME.service'"
   fi
@@ -145,6 +160,10 @@ rollback() {
 }
 
 if ! ssh "$TARGET" "set -eu
+install -d -m 0700 '$release_dir/.systemd-backup'
+for unit in '$SERVICE_NAME.service' '$SERVICE_NAME-worker.service' '$SERVICE_NAME-monitor.service' '$SERVICE_NAME-recording-maintenance.service' '$SERVICE_NAME-recording-maintenance.timer'; do
+  if test -f '/etc/systemd/system/'\"\$unit\"; then cp '/etc/systemd/system/'\"\$unit\" '$release_dir/.systemd-backup/'; fi
+done
 sudo tee '/etc/systemd/system/$SERVICE_NAME.service' >/dev/null <<'UNIT'
 [Unit]
 Description=OScanner-Eng web service
@@ -159,10 +178,13 @@ WorkingDirectory=$REMOTE_ROOT/current
 EnvironmentFile=$REMOTE_ROOT/shared/.env
 EnvironmentFile=$REMOTE_ROOT/shared/.env.prod
 Environment=NODE_ENV=production
+Environment=QUEUE_START_PAUSED=true
 ExecStart=/usr/bin/node $REMOTE_ROOT/current/server.js
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=5min
+MemoryHigh=384M
+MemoryMax=512M
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
@@ -186,9 +208,14 @@ EnvironmentFile=$REMOTE_ROOT/shared/.env.prod
 Environment=APP_ROOT=$REMOTE_ROOT/current
 Environment=RECORDINGS_DIR=$REMOTE_ROOT/shared/recordings
 Environment=BACKUP_DIR=$REMOTE_ROOT/backups
+ExecStartPre=/usr/bin/node $REMOTE_ROOT/current/scripts/monitor-control.js maintenance 120
 ExecStartPre=+/usr/bin/systemctl stop $SERVICE_NAME.service
+ExecStartPre=+/usr/bin/systemctl stop $SERVICE_NAME-worker.service
 ExecStart=$REMOTE_ROOT/current/scripts/maintain-recordings.sh
 ExecStopPost=+/usr/bin/systemctl start $SERVICE_NAME.service
+ExecStopPost=+/usr/bin/systemctl start $SERVICE_NAME-worker.service
+ExecStopPost=/usr/bin/node $REMOTE_ROOT/current/scripts/monitor-control.js resume
+TimeoutStartSec=110min
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
@@ -196,6 +223,11 @@ ProtectHome=true
 ReadWritePaths=$REMOTE_ROOT/shared/recordings $REMOTE_ROOT/shared/questions $REMOTE_ROOT/shared/comments $REMOTE_ROOT/shared/consents $REMOTE_ROOT/shared/ratings $REMOTE_ROOT/backups
 UMask=0077
 UNIT
+sed -e 's|/opt/englisheval|$REMOTE_ROOT|g' -e 's|User=ubuntu|User=$remote_user|' -e 's|Group=ubuntu|Group=$remote_group|' '$release_dir/ops/englisheval-worker.service' | sudo tee '/etc/systemd/system/$SERVICE_NAME-worker.service' >/dev/null
+sed -e 's|/opt/englisheval|$REMOTE_ROOT|g' -e 's|User=ubuntu|User=$remote_user|' -e 's|Group=ubuntu|Group=$remote_group|' -e '/Environment=NODE_ENV=production/a Environment=MONITOR_SERVICE_NAME=$SERVICE_NAME' '$release_dir/ops/englisheval-monitor.service' | sudo tee '/etc/systemd/system/$SERVICE_NAME-monitor.service' >/dev/null
+if ! test -f '$REMOTE_ROOT/shared/monitor.env'; then
+  install -m 0600 '$release_dir/ops/monitor.env.example' '$REMOTE_ROOT/shared/monitor.env'
+fi
 sudo tee '/etc/systemd/system/$SERVICE_NAME-recording-maintenance.timer' >/dev/null <<'UNIT'
 [Unit]
 Description=Daily OScanner-Eng encrypted recording backup and optional recording retention
@@ -210,11 +242,19 @@ WantedBy=timers.target
 UNIT
 sudo rm -f '/etc/systemd/system/$SERVICE_NAME.service.d/recording-mount.conf'
 sudo rm -f '/etc/systemd/system/$SERVICE_NAME-recording-maintenance.service.d/recording-mount.conf'
+APP_ROOT='$release_dir' node '$release_dir/scripts/monitor-control.js' maintenance 30
+sudo systemctl stop '$SERVICE_NAME-monitor.service' 2>/dev/null || true
+sudo systemctl stop '$SERVICE_NAME-worker.service' 2>/dev/null || true
+sudo systemctl stop '$SERVICE_NAME.service'
 ln -sfn '$release_dir' '$REMOTE_ROOT/current'
 sudo systemctl daemon-reload
 sudo systemctl enable '$SERVICE_NAME.service'
+sudo systemctl enable '$SERVICE_NAME-worker.service'
+sudo systemctl enable '$SERVICE_NAME-monitor.service'
 sudo systemctl enable --now '$SERVICE_NAME-recording-maintenance.timer'
 sudo systemctl restart '$SERVICE_NAME.service'
+sudo systemctl restart '$SERVICE_NAME-worker.service'
+sudo systemctl restart '$SERVICE_NAME-monitor.service'
 if command -v ufw >/dev/null && sudo ufw status | grep -q '^Status: active'; then
   sudo ufw allow '$APP_PORT/tcp' >/dev/null
 fi"; then
@@ -224,7 +264,7 @@ fi
 
 health_ok=false
 for attempt in {1..10}; do
-  if ssh "$TARGET" "curl --fail --silent --show-error --max-time 10 'http://127.0.0.1:$APP_PORT/' >/dev/null"; then
+  if ssh "$TARGET" "curl --fail --silent --show-error --max-time 10 'http://127.0.0.1:$APP_PORT/api/health' >/dev/null"; then
     health_ok=true
     break
   fi
@@ -243,6 +283,11 @@ if ! auth_status="$(ssh "$TARGET" "curl --silent --show-error --max-time 10 --ou
 fi
 if [[ "$auth_status" != "302" ]]; then
   echo "DingTalk authentication check failed with HTTP $auth_status." >&2
+  rollback
+  exit 1
+fi
+
+if ! ssh "$TARGET" "APP_ROOT='$release_dir' node '$release_dir/scripts/monitor-control.js' resume && sudo systemctl is-active --quiet '$SERVICE_NAME-monitor.service'"; then
   rollback
   exit 1
 fi

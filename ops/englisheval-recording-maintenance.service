@@ -6,12 +6,18 @@ Type=oneshot
 User=ubuntu
 Group=ubuntu
 EnvironmentFile=/opt/englisheval/shared/.env
-Environment=APP_ROOT=/opt/englisheval/security-tools
+EnvironmentFile=/opt/englisheval/shared/.env.prod
+Environment=APP_ROOT=/opt/englisheval/current
 Environment=RECORDINGS_DIR=/opt/englisheval/shared/recordings
 Environment=BACKUP_DIR=/opt/englisheval/backups
+ExecStartPre=/usr/bin/node /opt/englisheval/current/scripts/monitor-control.js maintenance 120
 ExecStartPre=+/usr/bin/systemctl stop englisheval.service
-ExecStart=/opt/englisheval/security-tools/scripts/maintain-recordings.sh
+ExecStartPre=+/usr/bin/systemctl stop englisheval-worker.service
+ExecStart=/opt/englisheval/current/scripts/maintain-recordings.sh
 ExecStopPost=+/usr/bin/systemctl start englisheval.service
+ExecStopPost=+/usr/bin/systemctl start englisheval-worker.service
+ExecStopPost=/usr/bin/node /opt/englisheval/current/scripts/monitor-control.js resume
+TimeoutStartSec=110min
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
