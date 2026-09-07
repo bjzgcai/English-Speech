@@ -1671,10 +1671,12 @@ async function evaluateAnswer({
 
     const response = await processing.modelFetch(openRouterChatCompletionsUrl, {
       method: "POST",
-      signal: AbortSignal.timeout(requestTimeoutMs),
+      // Queue waits do not spend the upstream deadline; modelFetch times each attempt.
+      signal: config.queueEnabled ? undefined : AbortSignal.timeout(requestTimeoutMs),
       headers,
       body: JSON.stringify({
         model: openRouterEvalModel,
+        max_tokens: 16384,
         temperature: 0.1,
         response_format: { type: "json_object" },
         messages: [
@@ -2235,6 +2237,7 @@ app.post("/api/generate-question", requireVisitor, requirePrivacyConsent, requir
       },
       body: JSON.stringify({
         model: internalLlmQuestionModel,
+        max_tokens: 4096,
         temperature: 0.8,
         response_format: { type: "json_object" },
         messages: [
@@ -2275,6 +2278,10 @@ app.post("/api/generate-question", requireVisitor, requirePrivacyConsent, requir
     res.json({ question: questionForClient(record), model: internalLlmQuestionModel, user: req.user });
   } catch (error) {
     const record = persistQuestion(req.user, profile, fallbackQuestion(profile), "fallback");
+    if (error.code === "MODEL_BUSY" || error.code === "MODEL_BUDGET_EXCEEDED") {
+      res.set("Retry-After", String(error.retryAfter || 60));
+      return res.json({ question: questionForClient(record), model: "fallback", user: req.user });
+    }
     res.status(500).json({
       error: error.message,
       question: questionForClient(record),
@@ -2655,7 +2662,7 @@ function startServer() {
     catch { console.error("Queue projection temporarily unavailable; retrying."); }
   }, 1000) : null;
   timer?.unref();
-  const server = app.listen(port, () => {
+  const server = app.listen(port, process.env.HOST || undefined, () => {
     console.log(`OScanner-Eng is running at http://localhost:${port}`);
   });
   server.on("close", () => { clearInterval(timer); });

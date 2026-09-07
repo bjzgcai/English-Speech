@@ -8,6 +8,7 @@ const { readMonitorStatus, monitorFile } = require("./monitoring");
 function registerQueueRoutes(app, deps) {
   const { config, requireAuth, requireVisitor, requirePrivacyConsent, requireAdminAccess, upload, findOwnedQuestion, validAnswerSaveId, decodeUtf8UploadFilename, standaloneEvaluationTitle } = deps;
   const queue = new Queue(config.queueFile);
+  require("./processing").setModelQueue(queue);
   require("./processing").setQuestionObserver(data => queue.run("INSERT INTO telemetry(job,stage,created,data) VALUES(NULL,'question',?,?)", Date.now(), JSON.stringify(data)));
   // An interrupted web process cannot leave upload-transfer permits held forever.
   if (process.env.QUEUE_WORKER !== "true") queue.run("UPDATE admissions SET uploading=0,grant=NULL,grant_until=NULL WHERE uploading=1");
@@ -97,7 +98,7 @@ function registerQueueRoutes(app, deps) {
     project();
     res.json({ ok: true, discarded: true });
   }));
-  app.get("/api/admin/queue", requireAuth, requireAdminAccess, wrap((_req, res) => res.json(queue.metrics())));
+  app.get("/api/admin/queue", requireAuth, requireAdminAccess, wrap((_req, res) => res.json({ ...queue.metrics(), models: require("./processing").modelGuard(queue).metrics() })));
   app.get("/api/admin/monitor", requireAuth, requireAdminAccess, (_req, res) => res.json(readMonitorStatus(monitorFile(config.recordingsDir))));
   app.post("/api/admin/queue", requireAuth, requireAdminAccess, wrap((req, res) => {
     if (typeof req.body.paused !== "boolean") return res.status(400).json({ error: "paused must be a boolean." });

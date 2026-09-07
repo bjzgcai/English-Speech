@@ -2,6 +2,19 @@ const { AsyncLocalStorage } = require("node:async_hooks");
 const { spawn } = require("node:child_process");
 const ffmpeg = require("ffmpeg-static");
 const context = new AsyncLocalStorage();
+const { ModelGuard, tokenReservation } = require("./model-guard");
+const guards = new WeakMap();
+let modelQueue = null;
+function modelGuard(queue = modelQueue) {
+  if (!queue) return null;
+  if (!guards.has(queue)) guards.set(queue, new ModelGuard(queue));
+  return guards.get(queue);
+}
+function retryAfter(response) {
+  const header = response?.headers.get("retry-after");
+  const ms = header ? (/^\d+(\.\d+)?$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now()) : 0;
+  return Number.isFinite(ms) ? Math.max(0, ms) : 0;
+}
 
 class Semaphore {
   constructor(limit) { this.limit = limit; this.active = 0; this.peak = 0; this.waiters = []; }
@@ -71,41 +84,67 @@ async function measureResource(fn) {
 async function modelFetch(url, options, kind, key = kind) {
   const task = context.getStore();
   // Existing helper tests exercise the direct request contract without a worker.
-  if (!task && process.env.NODE_ENV === "test") return fetch(url, options);
+  if (!task && !modelQueue && process.env.NODE_ENV === "test") return fetch(url, options);
   const cached = task?.checkpoint.network?.[key];
   if (cached) return new Response(cached, { status: 200, headers: { "Content-Type": "application/json" } });
   const timeout = kind === "scoring" ? Number(process.env.EVAL_REQUEST_TIMEOUT_MS) || 600000 : kind === "question" ? 45000 : 120000;
+  const guard = modelGuard(task?.queue);
+  const signal = AbortSignal.any([options.signal, task?.signal, kind === "question" ? AbortSignal.timeout(timeout) : null].filter(Boolean));
+  const reservedTokens = guard ? tokenReservation(options, kind) : 0;
   const prior = task ? task.queue.get("SELECT count,retry_at FROM attempts WHERE job=? AND key=?", task.id, key) : null;
   if (prior?.retry_at > Date.now()) await delay(prior.retry_at - Date.now(), task.signal);
   let count = prior?.count || 0;
   let last;
   while (count < 3) {
     count++;
-    task?.signal.throwIfAborted();
-    const cooldown = task ? Number(task.queue.setting("circuitUntil") || 0) - Date.now() : 0;
-    if (cooldown > 0) await delay(cooldown, task.signal);
-    if (task) {
-      if (!task.queue.alive(task.id, task.token)) throw new Error("Worker lease expired.");
-      task.queue.run("INSERT INTO attempts(job,key,count) VALUES(?,?,?) ON CONFLICT(job,key) DO UPDATE SET count=excluded.count", task.id, key, count);
-    }
+    signal.throwIfAborted();
     const started = Date.now();
     let response;
     try {
-      response = await gates[kind].run(() => measureResource(async () => {
-        const signals = [AbortSignal.timeout(timeout), options.signal, task?.signal].filter(Boolean);
-        const raw = await fetch(url, { ...options, signal: AbortSignal.any(signals) });
-        const reader = raw.body?.getReader();
-        const chunks = [];
-        let size = 0;
-        if (reader) while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          size += value.length;
-          if (size > 10 * 1024 * 1024) { await reader.cancel(); throw new Error("Model response is too large."); }
-          chunks.push(Buffer.from(value));
+      response = await gates[kind].run(async () => {
+        let permit;
+        while (guard) {
+          signal.throwIfAborted();
+          permit = guard.acquire(kind, reservedTokens, timeout);
+          if (permit.id) break;
+          if (kind === "question") throw Object.assign(new Error("Question service is busy; a saved fallback is available."), { code: "MODEL_BUSY", retryAfter: Math.ceil(permit.waitMs / 1000) });
+          task?.queue.run("UPDATE jobs SET retry_at=? WHERE id=? AND token=?", Date.now() + permit.waitMs, task.id, task.token);
+          await delay(Math.min(permit.waitMs, 5000) + Math.random() * 100, signal);
         }
-        return new Response(Buffer.concat(chunks), { status: raw.status, headers: raw.headers });
-      }), task?.signal);
+        let outcome = {};
+        try {
+          signal.throwIfAborted();
+          if (task) {
+            if (!task.queue.alive(task.id, task.token)) throw new Error("Worker lease expired.");
+            task.queue.run("INSERT INTO attempts(job,key,count) VALUES(?,?,?) ON CONFLICT(job,key) DO UPDATE SET count=excluded.count", task.id, key, count);
+            task.queue.run("UPDATE jobs SET retry_at=NULL WHERE id=? AND token=?", task.id, task.token);
+          }
+          return await measureResource(async () => {
+            const raw = await fetch(url, { ...options, signal: AbortSignal.any([AbortSignal.timeout(timeout), signal]) });
+            outcome = { status: raw.status, retryMs: retryAfter(raw) };
+            const reader = raw.body?.getReader();
+            const chunks = [];
+            let size = 0;
+            if (reader) while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              size += value.length;
+              if (size > 10 * 1024 * 1024) { await reader.cancel(); throw new Error("Model response is too large."); }
+              chunks.push(Buffer.from(value));
+            }
+            const body = Buffer.concat(chunks);
+            if (raw.ok) try {
+              const usage = JSON.parse(body.toString()).usage;
+              const tokens = usage?.total_tokens ?? (Number.isSafeInteger(usage?.prompt_tokens) && Number.isSafeInteger(usage?.completion_tokens) ? usage.prompt_tokens + usage.completion_tokens : null);
+              if (Number.isSafeInteger(tokens) && tokens >= 0) outcome.tokens = tokens;
+            } catch {}
+            return new Response(body, { status: raw.status, headers: raw.headers });
+          });
+        } catch (error) {
+          outcome = { status: 0, canceled: Boolean(task?.signal.aborted || options.signal?.aborted) };
+          throw error;
+        } finally { if (permit?.id) guard.finish(permit.id, outcome); }
+      }, signal);
       if (task) task.queue.run("INSERT INTO telemetry(job,stage,created,data) VALUES(?,?,?,?)", task.id, kind, Date.now(), JSON.stringify({ durationMs: Date.now() - started, attempt: count, status: response.status }));
       if (kind === "question" && questionObserver) {
         let payload;
@@ -127,23 +166,23 @@ async function modelFetch(url, options, kind, key = kind) {
       if (response.status !== 429 && response.status < 500) return response;
       last = new Error(`Evaluation service returned HTTP ${response.status}.`);
     } catch (error) {
-      if (task?.signal.aborted) throw task.signal.reason;
+      if (signal.aborted) throw signal.reason;
       last = error;
       if (!/fetch|network|socket|timeout|aborted|ECONN|ENOTFOUND/i.test(String(error.message))) throw error;
     }
     if (count === 3) {
-      if (task) task.queue.setting("circuitUntil", Math.max(Number(task.queue.setting("circuitUntil") || 0), Date.now() + 60000));
+      if (task && !guard) task.queue.setting("circuitUntil", Math.max(Number(task.queue.setting("circuitUntil") || 0), Date.now() + 60000));
       break;
     }
-    const header = response?.headers.get("retry-after");
-    const retryMs = header ? (/^\d+(\.\d+)?$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now()) : 0;
+    const retryMs = retryAfter(response);
     const waitMs = Math.max(Number.isFinite(retryMs) ? retryMs : 0, 1000 * 2 ** (count - 1) + Math.random() * 500);
     if (task) {
       task.queue.run("UPDATE jobs SET retry_at=? WHERE id=? AND token=?", Date.now() + waitMs, task.id, task.token);
       task.queue.run("UPDATE attempts SET status=?,retry_at=? WHERE job=? AND key=?", response?.status || 0, Date.now() + waitMs, task.id, key);
-      if (response?.status === 429) task.queue.setting("circuitUntil", Math.max(Number(task.queue.setting("circuitUntil") || 0), Date.now() + waitMs));
+      if (response?.status === 429 && !guard) task.queue.setting("circuitUntil", Math.max(Number(task.queue.setting("circuitUntil") || 0), Date.now() + waitMs));
     }
-    await delay(waitMs, task?.signal);
+    if (kind === "question" && response?.status === 429) throw Object.assign(new Error("Question service is cooling down."), { code: "MODEL_BUSY", retryAfter: Math.ceil(waitMs / 1000) });
+    await delay(waitMs, signal);
   }
   throw last || new Error("Evaluation service retry limit reached.");
 }
@@ -162,4 +201,4 @@ async function stage(name, fn) {
   task.queue.sample(name, task.checkpoint.progress.workedMs || Date.now() - start, task.checkpoint.category || "long");
   return value;
 }
-module.exports = { context, Semaphore, runMedia, modelFetch, delay, stage, resources: () => Object.fromEntries(Object.entries(gates).map(([key, gate]) => [key, { active: gate.active, peak: gate.peak, waiting: gate.waiters.length }])), setQuestionObserver: observer => { questionObserver = observer; } };
+module.exports = { context, Semaphore, runMedia, modelFetch, delay, stage, modelGuard, setModelQueue: queue => { modelQueue = queue; modelGuard(queue); }, resources: () => Object.fromEntries(Object.entries(gates).map(([key, gate]) => [key, { active: gate.active, peak: gate.peak, waiting: gate.waiters.length }])), setQuestionObserver: observer => { questionObserver = observer; } };

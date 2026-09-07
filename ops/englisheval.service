@@ -11,6 +11,7 @@ WorkingDirectory=/opt/englisheval/current
 EnvironmentFile=/opt/englisheval/shared/.env
 EnvironmentFile=/opt/englisheval/shared/.env.prod
 Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
 Environment=QUEUE_START_PAUSED=true
 ExecStart=/usr/bin/node /opt/englisheval/current/server.js
 Restart=on-failure
