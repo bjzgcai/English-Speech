@@ -31,21 +31,54 @@ timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 archive_name="recordings-$timestamp.tar.gz.age"
 temporary_file="$backup_dir/.$archive_name.tmp"
 archive_file="$backup_dir/$archive_name"
+snapshot_dir="$(mktemp -d "$backup_dir/.monitor-snapshot.XXXXXX")"
 
 cleanup() {
   rm -f "$temporary_file"
+  rm -rf "$snapshot_dir"
 }
 trap cleanup EXIT
 
+# SQLite readers can create/remove queue WAL files even with the evaluator stopped.
+install -d -m 0700 "$snapshot_dir/$(basename "$recordings_dir")"
+node "$root_dir/scripts/snapshot-monitor.js" "$recordings_dir/monitor/alerts.sqlite" "$snapshot_dir/$(basename "$recordings_dir")/monitor-backup.sqlite"
+node "$root_dir/scripts/snapshot-monitor.js" "$recordings_dir/queue.sqlite" "$snapshot_dir/$(basename "$recordings_dir")/queue-backup.sqlite"
+snapshot_files=()
+if [[ -f "$snapshot_dir/$(basename "$recordings_dir")/monitor-backup.sqlite" ]]; then
+  snapshot_files+=("$(basename "$recordings_dir")/monitor-backup.sqlite")
+fi
+if [[ -f "$snapshot_dir/$(basename "$recordings_dir")/queue-backup.sqlite" ]]; then
+  snapshot_files+=("$(basename "$recordings_dir")/queue-backup.sqlite")
+fi
+# Omit the changing root directory header while preserving checks on its contents.
+shopt -s nullglob dotglob
+touch "$snapshot_dir/files"
+for entry in "$recordings_dir"/*; do
+  case "$(basename "$entry")" in
+    monitor|tmp|lost+found|queue.sqlite|queue.sqlite-wal|queue.sqlite-shm) continue ;;
+  esac
+  printf '%s\0' "$(basename "$recordings_dir")/$(basename "$entry")" >> "$snapshot_dir/files"
+done
+shopt -u nullglob dotglob
+archive_entries=(--null -T "$snapshot_dir/files")
+# BSD tar applies later -C operands to -T entries; keep its entries positional.
+if [[ "$(tar --version)" == *bsdtar* ]]; then
+  archive_entries=()
+  while IFS= read -r -d '' entry; do archive_entries+=("$entry"); done < "$snapshot_dir/files"
+fi
+
+(
+cd "$(dirname "$recordings_dir")"
 tar \
   --exclude="$(basename "$recordings_dir")/tmp" \
   --exclude="$(basename "$recordings_dir")/lost+found" \
-  -C "$(dirname "$recordings_dir")" \
-  -czf - "$(basename "$recordings_dir")" \
-  | age --encrypt --recipient "$recipient" --output "$temporary_file"
+  --exclude="$(basename "$recordings_dir")/monitor" \
+  -czf - "${archive_entries[@]}" -C "$snapshot_dir" "${snapshot_files[@]}"
+) | age --encrypt --recipient "$recipient" --output "$temporary_file"
 
 chmod 0600 "$temporary_file"
 mv "$temporary_file" "$archive_file"
+rm -rf "$snapshot_dir"
 trap - EXIT
 
 if command -v sha256sum >/dev/null; then

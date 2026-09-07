@@ -20,18 +20,19 @@ loadEnvironment();
 
 const rootDir = path.resolve(__dirname, "..");
 const publicDir = path.join(rootDir, "public");
-const recordingsDir = path.join(rootDir, "recordings");
+const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : rootDir;
+const recordingsDir = path.join(dataDir, "recordings");
 const artifactsDir = path.join(recordingsDir, "artifacts");
 const recordingTmpDir = path.join(recordingsDir, "tmp");
 const metadataFile = path.join(recordingsDir, "metadata.jsonl");
 const leaderboardIdentitiesFile = path.join(recordingsDir, "leaderboard-identities.jsonl");
-const questionsDir = path.join(rootDir, "questions");
+const questionsDir = path.join(dataDir, "questions");
 const questionsMetadataFile = path.join(questionsDir, "metadata.jsonl");
-const commentsDir = path.join(rootDir, "comments");
+const commentsDir = path.join(dataDir, "comments");
 const commentsMetadataFile = path.join(commentsDir, "metadata.jsonl");
-const consentsDir = path.join(rootDir, "consents");
+const consentsDir = path.join(dataDir, "consents");
 const consentsMetadataFile = path.join(consentsDir, "metadata.jsonl");
-const ratingsDir = path.join(rootDir, "ratings");
+const ratingsDir = path.join(dataDir, "ratings");
 const ratingsMetadataFile = path.join(ratingsDir, "metadata.jsonl");
 
 for (const directory of [
@@ -50,6 +51,8 @@ for (const directory of [
 module.exports = {
   port: Number(process.env.PORT || 3000),
   rootDir,
+  queueEnabled: process.env.QUEUE_ENABLED !== "false" && (process.env.NODE_ENV !== "test" || process.env.QUEUE_ENABLED === "true"),
+  queueFile: path.join(recordingsDir, "queue.sqlite"),
   publicDir,
   recordingsDir,
   artifactsDir,

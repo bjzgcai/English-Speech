@@ -28,7 +28,7 @@ INTERNAL_LLM_QUESTION_MODEL=glm
 INTERNAL_LLM_TRANSCRIBE_MODEL=qwen-asr
 OPENROUTER_API_KEY=your-openrouter-key
 OPENROUTER_CHAT_COMPLETIONS_URL=https://openrouter.ai/api/v1/chat/completions
-OPENROUTER_EVAL_MODEL=google/gemini-3.5-flash
+OPENROUTER_EVAL_MODEL=z-ai/glm-5.3-flash
 EVAL_MAX_FRAMES=18
 EVAL_REQUEST_TIMEOUT_MS=600000
 ```
@@ -133,7 +133,7 @@ Recorded video
        (long audio is processed in ordered chunks)
     -> FFmpeg derives duration, silence, pause, word-count, and speaking-rate metrics
     -> FFmpeg samples a video frame about every five seconds, up to EVAL_MAX_FRAMES
-    -> Gemini receives the transcript, audio metrics, question/profile, rubric, and frames
+    -> GLM-5.3-Flash receives the transcript, audio metrics, question/profile, rubric, and frames
     -> normalize and persist JSON scores, feedback, strengths, and improvements
 ```
 
@@ -153,9 +153,73 @@ English and retry transient failures. Audio longer than the configured chunk
 size (30 seconds by default, capped at 40) is split and transcribed in order;
 known Qwen input-format failures trigger WAV/MP3 format fallback.
 
+## Capacity and Background Evaluation
+
+Node.js 22.16 or newer is required. `npm run dev` starts the web process and
+evaluation worker; production uses separate `englisheval` and
+`englisheval-worker` systemd services. `npm start` starts only the web process;
+`npm run worker` starts only the worker.
+
+The default capacity is 50 admitted sessions and 200 waiting-room positions,
+with one outstanding session per DingTalk `openId`. Recording happens in the
+browser. Upload transfers are limited to four and processing to four pipelines,
+one single-threaded FFmpeg process, two ASR calls, and two scoring calls.
+Question generation is limited to two calls and is reused within an admission.
+These are single-server limits; do not start additional worker instances.
+
+Clients accept privacy terms, POST `/api/admission`, heartbeat every 20 seconds,
+and wait for `state: admitted` before generating a question. Idle pre-upload
+reservations expire after three minutes. Obtain a grant from
+`POST /api/admission/upload-grant` before uploading. Both upload endpoints now
+require `X-Submission-Id` (UUID v4), `X-Upload-Grant`, and, for recorded answers,
+`X-Question-Id`. They return HTTP 202 with a job ID and `statusUrl`; poll that URL
+until `completed`, `failed`, or `canceled`. Reusing a submission ID returns its
+existing job. Acknowledgement means the original upload and job are durable;
+media validation and MP4 conversion occur asynchronously.
+
+SQLite lives at `recordings/queue.sqlite`, with pending originals under
+`recordings/pending/`. These files, WAL files, and artifacts are private persistent
+data and are included in encrypted recording backups. Existing JSONL records
+are preserved; only the web process projects worker results into them. The worker
+checkpoints stages and request results, renews leases, and recovers after restart.
+Discard creates a durable tombstone and removes media after the worker has stopped.
+Never delete the queue database to clear a backlog. `DATA_DIR` selects isolated
+storage for tests and staging; do not change it on the production service.
+
+The browser retains unfinished uploads in owner-scoped IndexedDB. Successful
+acknowledgement or explicit discard removes that local copy. Queued evaluations
+survive closing the browser. History is paginated using `limit` (maximum 100)
+and `offset`. Wait estimates use recent measured stage durations and current
+pipeline occupancy; they are ranges, not completion guarantees. Cold starts show
+"Calculating estimate" and service outages show a delay.
+
+Admission pauses under worker outages, model cooldowns, sustained available RAM
+below 512 MiB, or insufficient space for 512 MiB per reservation plus 5 GiB spare.
+Already admitted users retain their upload allocation. Monitor `/api/health` and
+the administrator's Evaluation capacity section. Administrators can pause new
+admissions there; accepted jobs continue processing. Operational telemetry records
+durations, retries, upstream status, and returned usage/cost fields without
+transcripts, credentials, or identity fields.
+
+Deployment initially holds admissions when creating a new queue. Verify health,
+perform the isolated benchmark, and retain a tested queue-compatible release for
+rollback before running `node scripts/queue-control.js resume` from the production
+release with its original environment. `pause`, `status`, and `checkpoint` are
+also available. Roll back web and worker together; never roll back to a release
+without queue support once submissions have been accepted. Maintenance stops
+both services before copying SQLite and resumes both afterward.
+
+Run `node scripts/load-benchmark.js --users=50 --arrivals=100 --duration=120 --restart`
+for isolated synthetic identities, real FFmpeg media processing, deterministic
+model responses, and forced worker recovery. `--users=10` and `--users=30` cover
+smaller bursts. `--fixture=/absolute/video.mp4 --real-upstreams --users=1` measures
+actual configured model services using the explicit fixture; it uses temporary
+storage and never reads production recordings. `--keep-data` retains the isolated
+test results. Do not load-test the live production application or user database.
+
 ## Partner API
 
-The read-only partner API exposes DingTalk user identity fields and speaking-assessment scores without exposing recorded videos, video paths, filenames, extracted audio, sampled frames, transcripts, raw audio metrics, or internal model metadata. Configure a separate integration secret as `PARTNER_API_KEY`; do not reuse the DingTalk app secret or session secret. Generate a strong key with `openssl rand -hex 32`, and expose the API only over HTTPS or a trusted private network.
+The read-only partner API exposes DingTalk user identity fields and speaking-assessment scores without exposing recorded videos, video paths, filenames, extracted audio, sampled frames, transcripts, raw audio metrics, improved-answer text, or internal model metadata. Configure a separate integration secret as `PARTNER_API_KEY`; do not reuse the DingTalk app secret or session secret. Generate a strong key with `openssl rand -hex 32`, and expose the API only over HTTPS or a trusted private network.
 
 Swagger UI is available at `/api-docs`, and the OpenAPI 3.0 specification is available at `/openapi.yaml`.
 
@@ -173,7 +237,7 @@ curl \
   "http://localhost:3199/api/v1/rubrics"
 ```
 
-`GET /api/v1/users` supports exact, case-insensitive filters for `openId`, `userId`, `jobNumber` (or its `job_number` alias), `email`, and `orgEmail`, plus `limit` (maximum 200) and `offset`. User responses include both `jobNumber` and `job_number` with the same value. `GET /api/v1/users/{userId}` returns one exact DingTalk organization user ID match. `GET /api/v1/rubrics` returns the active versioned scoring standard, formula, score bands, weights, evidence, and interpretation guidance. Each evaluation response includes `rubricId` and `rubricVersion` so consumers can join scores to the correct standard. Existing records created before organization enrichment may have empty organization fields.
+`GET /api/v1/users` supports exact, case-insensitive filters for `openId`, `userId`, `jobNumber` (or its `job_number` alias), `email`, and `orgEmail`, plus `limit` (maximum 200) and `offset`. User responses include both `jobNumber` and `job_number` with the same value. Evaluations are sorted newest-first, users are sorted by their latest evaluation, and `pagination.total` is calculated before pagination. `GET /api/v1/users/{userId}` returns one exact, case-sensitive DingTalk organization user ID match. `GET /api/v1/rubrics` returns the active versioned scoring standard, formula, score bands, weights, evidence, and interpretation guidance. Each evaluation response includes `rubricId` and `rubricVersion` so consumers can join scores to the correct standard. Existing records created before organization enrichment may have empty identity fields, and standalone speech uploads return an empty `questionId` because they are not backed by a generated question.
 
 The partner endpoints also expose 28 deterministic roster-backed users, each with one completed mock evaluation, for integration testing. Their `jobNumber` values come from the roster's `工号` field, their `name` values come from `姓名`, and generated API identifiers start with `mock_`. Only those two roster fields are retained. The mocks are generated in memory and do not modify recording or question metadata.
 
@@ -282,3 +346,14 @@ Plain HTTP deployments must set `COOKIE_SECURE=false`; HTTPS deployments should
 set it to `true`. Override `TARGET`, `REMOTE_ROOT`, `APP_PORT`, or
 `SERVICE_NAME` in the command environment. The migration option deliberately
 refuses to overwrite non-empty remote data.
+
+## Resource alerts
+
+Production also runs `englisheval-monitor.service`, independently sampling disk,
+memory, CPU, queue and service health every 30 seconds. The EnglishEval robot
+sends in-app DING to the configured administrator on incidents, severity
+escalations and recovery, without periodic reminders. Configure notifications
+in shared `monitor.env`; retain application credentials in the original shared
+environment. The admin dashboard includes monitor health and delivery status.
+See [resource alert operations](docs/resource-alerts.md) and
+[deployment validation](docs/resource-alert-validation.md).

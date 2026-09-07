@@ -1,0 +1,7 @@
+I would like to describe a project that taught me how to communicate more effectively with my team. We were building a small application to help colleagues organize their daily work. At first, everyone had a different idea about which features were most important. Some people wanted detailed reports, while others preferred a simple list of tasks.
+
+My first step was to listen carefully. I asked each colleague to describe one real situation in which the application would help them. Those conversations made the problem much clearer. We discovered that most people needed a reliable way to see their next task and understand its deadline. The complicated reports could wait until a later version.
+
+We agreed on a short list of requirements and divided the work into small steps. I wrote down our decisions so that everyone could refer to the same information. We also tested an early version with a few colleagues and asked them to explain what they found confusing.
+
+The feedback helped us improve the application before releasing it more widely. I learned that good communication is not only about explaining my own ideas. It also means asking useful questions, checking my understanding, and making decisions visible to the whole team. In a future project, I would start those conversations earlier and leave more time for practical testing.

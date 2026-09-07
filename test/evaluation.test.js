@@ -445,7 +445,7 @@ test("long audio is transcribed in ordered chunks", async (context) => {
   assert.equal(transcript, "segment 1 segment 2 segment 3");
 });
 
-test("sends evaluations through the OpenRouter proxy with Gemini 3.5 Flash and JSON mode", async (context) => {
+test("sends evaluations through the OpenRouter proxy with GLM-5.3-Flash and JSON mode", async (context) => {
   const originalFetch = global.fetch;
   const originalApiKey = process.env.OPENROUTER_API_KEY;
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-openrouter-"));
@@ -505,10 +505,10 @@ test("sends evaluations through the OpenRouter proxy with Gemini 3.5 Flash and J
   assert.equal(capturedUrl, "https://openrouter.ihainan.me/api/v1/chat/completions");
   assert.equal(capturedOptions.headers.Authorization, "Bearer test-openrouter-key");
   assert.equal(capturedOptions.headers["X-OpenRouter-Title"], "OScanner-Eng");
-  assert.equal(body.model, "google/gemini-3.5-flash");
+  assert.equal(body.model, "z-ai/glm-5.3-flash");
   assert.deepEqual(body.response_format, { type: "json_object" });
   assert.equal(body.messages[1].content[1].type, "image_url");
-  assert.equal(evaluation.model.evaluate, "google/gemini-3.5-flash");
+  assert.equal(evaluation.model.evaluate, "z-ai/glm-5.3-flash");
   assert.equal(evaluation.overallScore, 80);
   assert.match(evaluation.improvedAnswer, /collaborate more effectively/);
 });

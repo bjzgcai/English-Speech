@@ -3266,7 +3266,7 @@ video {
     justify-content: space-between;
   }
 
-  .control-row {
+  .recorder-panel.is-recording .control-row {
     position: sticky;
     bottom: max(10px, env(safe-area-inset-bottom));
     z-index: 5;

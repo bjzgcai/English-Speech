@@ -1,0 +1,12 @@
+.queue-progress { border-top: 1px solid #bfc8cc; border-bottom: 1px solid #bfc8cc; padding: 16px 0; margin: 16px 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 20px; text-align: left; }
+.queue-progress[hidden], .queue-progress [hidden] { display: none !important; }
+.queue-progress strong { font-size: 16px; line-height: 1.5; overflow-wrap: anywhere; }
+.queue-progress p { margin: 4px 0 0; font-size: 14px; line-height: 1.5; color: #46545a; overflow-wrap: anywhere; }
+.queue-progress progress { grid-column: 1 / -1; width: 100%; height: 6px; accent-color: #087568; }
+.queue-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.queue-actions button { min-height: 40px; padding: 8px 12px; background: #fff; color: #25373c; border: 1px solid #aab9bc; border-radius: 4px; font: inherit; font-size: 14px; cursor: pointer; }
+@media (max-width: 600px) { .queue-progress { grid-template-columns: minmax(0, 1fr); } }
+.queue-consent { width: min(500px, calc(100% - 32px)); padding: 24px; border: 1px solid #aab9bc; border-radius: 8px; color: #25373c; }
+.queue-consent::backdrop { background: rgb(0 0 0 / 45%); }
+.queue-consent h2 { font-size: 22px; }
+.queue-consent label { display: block; margin: 16px 0; line-height: 1.5; }
