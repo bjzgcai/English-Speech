@@ -6,6 +6,7 @@ const os = require("node:os");
 const crypto = require("node:crypto");
 const { spawnSync } = require("node:child_process");
 const { Queue } = require("../src/queue");
+const { ModelGuard } = require("../src/model-guard");
 const { AlertStore, monitorFile } = require("../src/monitoring");
 test("encrypted recording backup restores accepted queue jobs and their input files", t => {
   if (spawnSync("age-keygen", ["--version"]).status !== 0) return t.skip("age tools are required for encrypted backup verification");
@@ -16,7 +17,11 @@ test("encrypted recording backup restores accepted queue jobs and their input fi
   const file = path.join(recordings, "pending", "fixture"); fs.writeFileSync(file, "synthetic input");
   const queue = new Queue(path.join(recordings, "queue.sqlite"), { health: () => null });
   const admission = queue.enter("synthetic-owner"); const { grant } = queue.grant("synthetic-owner"); queue.beginUpload("synthetic-owner", grant);
-  const id = crypto.randomUUID(); queue.accept(id, "synthetic-owner", admission.id, { inputPath: file, record: { id } }); queue.close();
+  const id = crypto.randomUUID(); queue.accept(id, "synthetic-owner", admission.id, { inputPath: file, record: { id } });
+  const models = new ModelGuard(queue);
+  const request = models.acquire("question", 4000, 45000);
+  models.finish(request.id, { status: 429, retryMs: 90000 });
+  queue.close();
   const identity = path.join(root, "test-identity");
   assert.equal(spawnSync("age-keygen", ["-o", identity]).status, 0);
   const recipient = spawnSync("age-keygen", ["-y", identity], { encoding: "utf8" }).stdout.trim();
@@ -38,6 +43,9 @@ test("encrypted recording backup restores accepted queue jobs and their input fi
   const restored = new Queue(path.join(restore, "recordings", "queue.sqlite"), { health: () => null });
   assert.equal(restored.status(id, "synthetic-owner").state, "queued");
   assert.equal(restored.claim().id, id);
+  const restoredModels = new ModelGuard(restored);
+  assert.equal(restoredModels.acquire("question", 4000, 45000).reason, "circuit");
+  assert.equal(restoredModels.metrics().find(item => item.scope === "question").tokens, 4000);
   restored.close();
   assert.equal(fs.readFileSync(path.join(restore, "recordings", "pending", "fixture"), "utf8"), "synthetic input");
 });

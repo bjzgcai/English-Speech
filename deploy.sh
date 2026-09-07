@@ -6,6 +6,7 @@ TARGET="${TARGET:-ubuntu@10.1.130.9}"
 REMOTE_ROOT="${REMOTE_ROOT:-/opt/englisheval}"
 APP_PORT="${APP_PORT:-3199}"
 SERVICE_NAME="${SERVICE_NAME:-englisheval}"
+INSTALL_EDGE_LIMITS="${INSTALL_EDGE_LIMITS:-true}"
 MIGRATE_DATA=false
 
 usage() {
@@ -22,7 +23,7 @@ Options:
   -h, --help      Show this help.
 
 Environment overrides:
-  TARGET, REMOTE_ROOT, APP_PORT, SERVICE_NAME
+  TARGET, REMOTE_ROOT, APP_PORT, SERVICE_NAME, INSTALL_EDGE_LIMITS
 EOF
 }
 
@@ -50,6 +51,12 @@ done
   echo "APP_PORT must be an integer from 1 to 65535." >&2
   exit 1
 }
+if [[ "$INSTALL_EDGE_LIMITS" == true ]]; then
+  [[ "$SERVICE_NAME" == englisheval && "$APP_PORT" == 3199 ]] || {
+    echo "The managed nginx policy requires SERVICE_NAME=englisheval and APP_PORT=3199." >&2; exit 1;
+  }
+  ssh "$TARGET" 'sudo nginx -t && test -f /etc/nginx/conf.d/englisheval.conf' || exit 1
+fi
 release_id="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD 2>/dev/null || echo local)"
 release_dir="$REMOTE_ROOT/releases/$release_id"
 remote_user="$(ssh "$TARGET" 'id -un')"
@@ -153,6 +160,9 @@ sudo systemctl daemon-reload
 sudo systemctl start '$SERVICE_NAME.service'
 if test -f '$previous_release/worker.js'; then sudo systemctl start '$SERVICE_NAME-worker.service'; fi
 if test -f '$previous_release/monitor.js'; then sudo systemctl start '$SERVICE_NAME-monitor.service'; fi"
+    if [[ "$INSTALL_EDGE_LIMITS" == true ]]; then
+      ssh "$TARGET" "if test -f '$release_dir/.systemd-backup/nginx-englisheval.conf'; then sudo cp '$release_dir/.systemd-backup/nginx-englisheval.conf' /etc/nginx/conf.d/englisheval.conf; sudo nginx -t && sudo systemctl reload nginx; fi" || true
+    fi
   else
     ssh "$TARGET" "sudo systemctl stop '$SERVICE_NAME.service'"
   fi
@@ -161,6 +171,11 @@ if test -f '$previous_release/monitor.js'; then sudo systemctl start '$SERVICE_N
 
 if ! ssh "$TARGET" "set -eu
 install -d -m 0700 '$release_dir/.systemd-backup'
+if test '$INSTALL_EDGE_LIMITS' = true; then
+  sudo cp /etc/nginx/conf.d/englisheval.conf '$release_dir/.systemd-backup/nginx-englisheval.conf'
+  sudo cp '$release_dir/ops/nginx-englisheval.conf' /etc/nginx/conf.d/englisheval.conf
+  sudo nginx -t
+fi
 for unit in '$SERVICE_NAME.service' '$SERVICE_NAME-worker.service' '$SERVICE_NAME-monitor.service' '$SERVICE_NAME-recording-maintenance.service' '$SERVICE_NAME-recording-maintenance.timer'; do
   if test -f '/etc/systemd/system/'\"\$unit\"; then cp '/etc/systemd/system/'\"\$unit\" '$release_dir/.systemd-backup/'; fi
 done
@@ -178,6 +193,7 @@ WorkingDirectory=$REMOTE_ROOT/current
 EnvironmentFile=$REMOTE_ROOT/shared/.env
 EnvironmentFile=$REMOTE_ROOT/shared/.env.prod
 Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
 Environment=QUEUE_START_PAUSED=true
 ExecStart=/usr/bin/node $REMOTE_ROOT/current/server.js
 Restart=on-failure
@@ -255,8 +271,8 @@ sudo systemctl enable --now '$SERVICE_NAME-recording-maintenance.timer'
 sudo systemctl restart '$SERVICE_NAME.service'
 sudo systemctl restart '$SERVICE_NAME-worker.service'
 sudo systemctl restart '$SERVICE_NAME-monitor.service'
-if command -v ufw >/dev/null && sudo ufw status | grep -q '^Status: active'; then
-  sudo ufw allow '$APP_PORT/tcp' >/dev/null
+if test '$INSTALL_EDGE_LIMITS' = true; then
+  sudo systemctl reload nginx
 fi"; then
   rollback
   exit 1
@@ -272,6 +288,12 @@ for attempt in {1..10}; do
 done
 if [[ "$health_ok" != true ]]; then
   echo "Application health check did not succeed within 20 seconds." >&2
+  rollback
+  exit 1
+fi
+
+if [[ "$INSTALL_EDGE_LIMITS" == true ]] && ! ssh "$TARGET" "curl --fail --silent --show-error --max-time 10 --resolve eng.lab.bza.edu.cn:443:127.0.0.1 https://eng.lab.bza.edu.cn/api/health >/dev/null"; then
+  echo "HTTPS proxy health check failed." >&2
   rollback
   exit 1
 fi

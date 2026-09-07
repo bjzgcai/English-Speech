@@ -402,6 +402,12 @@ async function loadQueueMetrics() {
   setText("queueSummary", `${data.admissions.map(item => `${item.count} ${item.state}`).join(", ") || "No active sessions"}. Capacity: ${data.capacity}. ${data.pressure || "Worker available."}`);
   document.querySelector("#queuePaused").checked = data.paused;
   setText("queueTimings", data.stages.filter(item => item.stage !== "release").map(item => `${item.stage}: ${(item.averageMs / 1000).toFixed(1)} seconds average`).join(". "));
+  document.querySelector("#modelBudgets").replaceChildren(...(data.models || []).map(item => {
+    const row = document.createElement("li");
+    const label = { internal: "Internal gateway", question: "Questions", transcription: "ASR", scoring: "Scoring" }[item.scope] || item.scope;
+    row.textContent = `${label}: ${item.active}/${item.limits.concurrent} active, ${item.requests}/${item.limits.rpm} requests/min${item.limits.tpm ? `, ${item.tokens.toLocaleString()}/${item.limits.tpm.toLocaleString()} tokens reserved or used` : ""}${item.circuitUntil > Date.now() ? ", cooling down" : ""}`;
+    return row;
+  }));
 }
 document.querySelector("#queuePaused").addEventListener("change", async event => {
   try {

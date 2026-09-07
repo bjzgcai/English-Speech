@@ -31,6 +31,9 @@ async function main() {
       await page.locator("#monitorAlerts li").waitFor();
       assert.match(await page.locator("#monitorAlerts").innerText(), /Critical/);
       assert.match(await page.locator("#monitorDelivery").innerText(), /unknown/);
+      assert.equal(await page.locator("#modelBudgets li").count(), 4);
+      await page.locator("#queueSummary").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: path.join(data, `budgets-${viewport.width}.png`) });
       await page.locator("#monitorHeading").scrollIntoViewIfNeeded();
       await page.screenshot({ path: path.join(data, `monitor-${viewport.width}.png`) });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
