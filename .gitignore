@@ -11,6 +11,7 @@ comments/
 questions/
 consents/
 ratings/
+invitations/
 not-empty-user.json
 npm-debug.log*
 .DS_Store
