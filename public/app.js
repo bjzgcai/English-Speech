@@ -108,6 +108,7 @@ const loginButton = document.querySelector("#loginButton");
 const loginPanelButton = document.querySelector(".login-panel .login-button");
 const authChip = document.querySelector("#authChip");
 const authUserName = document.querySelector("#authUserName");
+const invitationLink = document.querySelector("[data-invitation-link]");
 const logoutButton = document.querySelector("#logoutButton");
 const navLinks = document.querySelectorAll(".main-nav [data-route]");
 const videoModal = document.querySelector("#videoModal");
@@ -476,6 +477,7 @@ function updateAuthView() {
   leaderboardView.hidden = route !== "/leaderboard";
   historyView.hidden = route !== "/history";
   authUserName.textContent = state.authUser?.name || "DingTalk user";
+  if (invitationLink) invitationLink.hidden = !(state.authUser?.identityType === "dingtalk");
   nameInput.value = state.authUser?.name || "";
   const loginHref = `/auth/dingtalk?redirect=${encodeURIComponent(window.location.pathname)}`;
   loginButton.href = loginHref;
