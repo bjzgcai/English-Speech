@@ -221,6 +221,7 @@ function isPublicEvaluation(record) {
   const id = safeText(record?.id);
   return (
     !isGuest(record) && !isGuest(record?.user) &&
+    record?.publiclyShared === true &&
     record?.sourceType === "upload" &&
     record?.evaluation?.status === "completed" &&
     /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(id)
@@ -484,7 +485,7 @@ function requireAuth(req, res, next) {
     });
   }
 
-  req.user = user;
+  req.user = { ...user, identityType: "dingtalk" };
   next();
 }
 
@@ -1767,7 +1768,14 @@ function requireZgcMember(req, res, next) {
   next();
 }
 function ownerQuota(openId) {
-  const records = readJsonLines(metadataFile).filter(r => recordOpenId(r) === openId);
+  const byId = new Map(readJsonLines(metadataFile).filter(r => recordOpenId(r) === openId).map(record => [record.id, record]));
+  // The worker can finish before its result reaches JSONL history.
+  if (queueApi) for (const job of queueApi.queue.all("SELECT id,state,payload,result,projected FROM jobs WHERE owner=?", openId)) {
+    if (job.state === "canceled") { byId.delete(job.id); continue; }
+    if (job.projected && byId.has(job.id)) continue;
+    byId.set(job.id, job.result ? JSON.parse(job.result) : JSON.parse(job.payload).record);
+  }
+  const records = [...byId.values()];
   return { attempts: records.filter(r => r.questionId || r.challengeId).length, videos: records.filter(r => r.hasVideo === true).length };
 }
 function requireAttemptQuota(req, res, next) {
@@ -1944,6 +1952,12 @@ app.post("/api/experience-ratings", requireVisitor, (req, res) => {
 
 const commentPages = new Set(["prepare", "methodology"]);
 
+function currentComments() {
+  const latest = new Map();
+  for (const comment of readJsonLines(commentsMetadataFile)) latest.set(comment.id, comment);
+  return [...latest.values()];
+}
+
 function commentForClient(comment) {
   return {
     id: comment.id,
@@ -1961,7 +1975,7 @@ app.get("/api/comments", (req, res) => {
     return res.status(400).json({ error: "A valid comment page is required." });
   }
 
-  const comments = readJsonLines(commentsMetadataFile)
+  const comments = currentComments()
     .filter((comment) => comment.page === page && comment.moderationStatus !== "blocked")
     .map(commentForClient);
   res.set("Cache-Control", "no-store");
@@ -1983,8 +1997,8 @@ app.post("/api/comments", requireVisitor, (req, res) => {
 
   let parentId = null;
   if (requestedParentId) {
-    const requestedParent = readJsonLines(commentsMetadataFile).find(
-      (comment) => comment.id === requestedParentId && comment.page === page,
+    const requestedParent = currentComments().find(
+      (comment) => comment.id === requestedParentId && comment.page === page && comment.moderationStatus !== "blocked",
     );
     if (!requestedParent) {
       return res.status(404).json({ error: "The comment you are replying to was not found." });
@@ -2009,7 +2023,7 @@ app.post("/api/comments", requireVisitor, (req, res) => {
 
 async function moderateComment(comment) {
   try {
-    const response = await processing.modelFetch(internalLlmChatCompletionsUrl, { method: "POST", headers: { Authorization: `Bearer ${process.env.INTERNAL_LLM_API_KEY || ""}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: process.env.INTERNAL_LLM_MODERATION_MODEL || "glm", messages: [{ role: "system", content: 'Return JSON only: {"blocked":true|false}. Block violence, threats, hate, self-harm encouragement, sexual abuse, or harmful instructions.' }, { role: "user", content: comment.content }] }) });
+    const response = await processing.modelFetch(internalLlmChatCompletionsUrl, { method: "POST", headers: { Authorization: `Bearer ${process.env.INTERNAL_LLM_API_KEY || ""}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: process.env.INTERNAL_LLM_MODERATION_MODEL || "glm", max_tokens: 1024, response_format: { type: "json_object" }, messages: [{ role: "system", content: 'Return JSON only: {"blocked":true|false}. Block violence, threats, hate, self-harm encouragement, sexual abuse, or harmful instructions.' }, { role: "user", content: comment.content }] }) }, "question");
     const body = await response.json(); const text = body?.choices?.[0]?.message?.content || ""; const verdict = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || "{}");
     if (verdict.blocked !== true) return;
     appendJsonLine(commentsMetadataFile, { ...comment, moderationStatus: "blocked", blockedAt: new Date().toISOString() });
@@ -2135,7 +2149,7 @@ app.get("/api/admin/statistics", requireAuth, requireAdminAccess, (_req, res) =>
 
 const queueApi = config.queueEnabled && process.env.QUEUE_WORKER !== "true" ? require("./queue-routes").registerQueueRoutes(app, {
   config, requireAuth, requireVisitor, requirePrivacyConsent, requireAdminAccess, upload, findOwnedQuestion,
-  validAnswerSaveId, decodeUtf8UploadFilename, standaloneEvaluationTitle,
+  validAnswerSaveId, decodeUtf8UploadFilename, standaloneEvaluationTitle, requireAttemptQuota, requireVideoQuota,
 }) : null;
 const requireAdmission = queueApi?.required || ((_req, _res, next) => next());
 
@@ -2489,6 +2503,7 @@ app.post(
         questionId: null,
         question,
         sourceType: "upload",
+        publiclyShared: !isGuest(req.user) && req.body.publiclyShared === "true",
         evaluationMode: "standalone-speech",
         evaluation,
       };

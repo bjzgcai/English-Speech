@@ -45,6 +45,11 @@ const dimensions = {
 
 const evaluatorForm = document.querySelector("#videoEvaluatorForm");
 const videoInput = document.querySelector("#evaluationVideo");
+const publiclyShareVideo = document.querySelector("#publiclyShareVideo");
+function resetSharingConsent() {
+  publiclyShareVideo.checked = false;
+  document.querySelector("#publicShareChoice").hidden = window.VisitorSession.user?.identityType !== "dingtalk";
+}
 const selectedVideoName = document.querySelector("#selectedVideoName");
 const evaluatorStatus = document.querySelector("#videoEvaluatorStatus");
 const evaluatorResult = document.querySelector("#videoEvaluationResult");
@@ -284,6 +289,7 @@ evaluatorResult.addEventListener("click", (event) => {
 });
 
 videoInput.addEventListener("change", () => {
+  publiclyShareVideo.checked = false;
   const file = videoInput.files?.[0];
   selectedVideoName.textContent = file ? `${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB` : "No file selected";
 });
@@ -316,6 +322,7 @@ evaluatorForm.addEventListener("submit", async (event) => {
   try {
     const body = new FormData();
     body.append("video", file);
+    body.append("publiclyShared", String(publiclyShareVideo.checked));
 
     evaluatorStatus.textContent = "Extracting speech and preparing the evaluation…";
     const data = await window.EvaluationQueue.submit(body, { url: "/api/evaluate-video" });
@@ -336,9 +343,11 @@ evaluatorForm.addEventListener("submit", async (event) => {
 
 loadPublicEvaluations();
 window.VisitorSession.fetch("/api/me").then(response => response.json()).then(data => {
+  resetSharingConsent();
   if (data.hasAccess) window.EvaluationQueue.restore().catch(() => {});
 }).catch(() => {});
 window.addEventListener("visitoridentitychange", event => {
+  resetSharingConsent();
   evaluatorResult.innerHTML = "";
   evaluatorStatus.textContent = "";
   if (!event.detail.accessGranted) videoInput.value = "";

@@ -191,6 +191,7 @@
       form.append("submissionId", saved.id);
       if (saved.questionId) form.append("questionId", saved.questionId);
       form.append("startedAt", saved.startedAt || "");
+      form.append("publiclyShared", String(saved.publiclyShared === true));
       signal.throwIfAborted();
       xhr.send(form);
     });
@@ -214,6 +215,7 @@
             break;
           } catch (error) {
             if (error.code === "IDENTITY_CHANGED" || ![409, 429].includes(error.status)) throw error;
+            if (["ATTEMPT_QUOTA_EXCEEDED", "VIDEO_QUOTA_EXCEEDED"].includes(error.code)) throw error;
             if (error.status === 409) {
               const existing = await request(`/api/jobs/${saved.id}`, { signal: combined }).catch(() => null);
               if (existing?.state === "canceled") throw new Error("This recording was discarded.");
@@ -243,6 +245,7 @@
     const blob = form.get("video");
     const saved = { id: form.get("submissionId") || crypto.randomUUID(), url: form.get("questionId") ? "/api/save-answer" : "/api/evaluate-video", questionId: form.get("questionId"), startedAt: form.get("startedAt"), blob, filename: blob.name || "answer.webm" };
     saved.owner = submittingOwner;
+    saved.publiclyShared = form.get("publiclyShared") === "true";
     try { await draft("put", saved, submittingOwner); }
     catch {
       // The in-memory draft remains retryable even when browser storage is full.

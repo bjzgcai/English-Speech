@@ -4,9 +4,10 @@ const crypto = require("node:crypto");
 const { Queue, terminal } = require("./queue");
 const { readJsonLines, writeJsonLines } = require("./storage");
 const { readMonitorStatus, monitorFile } = require("./monitoring");
+const { isGuest } = require("./visitor");
 
 function registerQueueRoutes(app, deps) {
-  const { config, requireAuth, requireVisitor, requirePrivacyConsent, requireAdminAccess, upload, findOwnedQuestion, validAnswerSaveId, decodeUtf8UploadFilename, standaloneEvaluationTitle } = deps;
+  const { config, requireAuth, requireVisitor, requirePrivacyConsent, requireAdminAccess, upload, findOwnedQuestion, validAnswerSaveId, decodeUtf8UploadFilename, standaloneEvaluationTitle, requireAttemptQuota, requireVideoQuota } = deps;
   const queue = new Queue(config.queueFile);
   require("./processing").setModelQueue(queue);
   require("./processing").setQuestionObserver(data => queue.run("INSERT INTO telemetry(job,stage,created,data) VALUES(NULL,'question',?,?)", Date.now(), JSON.stringify(data)));
@@ -112,12 +113,15 @@ function registerQueueRoutes(app, deps) {
     if (existing) return res.status(existing.state === "canceled" ? 409 : terminal.has(existing.state) ? 200 : 202).json(existing);
     if (queue.get("SELECT id FROM jobs WHERE id=?", id)) return res.status(409).json({ error: "Submission ID unavailable." });
     if (readJsonLines(config.metadataFile).some(record => record.id === id) || queue.get("SELECT id FROM cancellations WHERE id=? AND owner=?", id, req.user.openId)) return res.status(409).json({ error: "Submission ID unavailable." });
+    req.queueSubmission = id;
+    next();
+  });
+  const startUpload = wrap((req, res, next) => {
     if (req.path === "/api/save-answer") {
       req.ownedQuestion = findOwnedQuestion(req.get("X-Question-Id"), req.user.openId);
       if (!req.ownedQuestion) return res.status(400).json({ error: "The question is missing or does not belong to this user." });
     }
     req.queueAdmission = queue.beginUpload(req.user.openId, req.get("X-Upload-Grant") || "");
-    req.queueSubmission = id;
     req.setTimeout(300000, () => req.destroy());
     res.once("close", () => {
       queue.endUpload(req.user.openId);
@@ -147,6 +151,7 @@ function registerQueueRoutes(app, deps) {
       openId: req.user.openId, userId: req.user.userId, jobNumber: req.user.jobNumber, email: req.user.email, orgEmail: req.user.orgEmail, user: req.user,
       profile: standalone ? { name: req.user.name } : req.ownedQuestion.profile,
       questionId: req.ownedQuestion?.id || null,
+      publiclyShared: standalone && !isGuest(req.user) && req.body.publiclyShared === "true",
       question: standalone ? { question: "Standalone speech", focus: "Speech consistency and English communication" } : req.ownedQuestion.question,
       ...(standalone ? { title: standaloneEvaluationTitle(originalFilename), originalFilename: path.basename(originalFilename), sourceType: "upload", evaluationMode: "standalone-speech" } : {}),
     };
@@ -158,7 +163,10 @@ function registerQueueRoutes(app, deps) {
     queue.run("INSERT INTO telemetry(job,stage,created,data) VALUES(?,'upload',?,?)", id, Date.now(), JSON.stringify({ durationMs: Math.round(acknowledgementMs), bytes: req.file.size }));
     res.status(202).json(status);
   });
-  for (const route of ["/api/save-answer", "/api/evaluate-video"]) app.post(route, requireVisitor, requirePrivacyConsent, gate, upload.single("video"), accept);
+  for (const route of ["/api/save-answer", "/api/evaluate-video"]) {
+    const quotas = route === "/api/evaluate-video" ? [requireAttemptQuota, requireVideoQuota] : [requireAttemptQuota];
+    app.post(route, requireVisitor, requirePrivacyConsent, gate, ...quotas, startUpload, upload.single("video"), accept);
+  }
   return { queue, project, required };
 }
 module.exports = { registerQueueRoutes };

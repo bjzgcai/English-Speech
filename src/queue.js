@@ -14,6 +14,7 @@ class Queue {
   constructor(file, { capacity = number("QUEUE_CAPACITY", 50), waiting = number("QUEUE_WAITING_CAPACITY", 200), health = null, now = Date.now } = {}) {
     this.capacity = capacity;
     this.waiting = waiting;
+    this.pipelineLimit = pipelineConcurrency();
     this.now = now;
     this.health = health;
     this.db = new DatabaseSync(file);
@@ -157,7 +158,7 @@ class Queue {
   claim() {
     return this.transaction(() => {
       this.run("UPDATE jobs SET state='queued',token=NULL,lease=NULL,recovery_count=recovery_count+1 WHERE state='processing' AND lease<?", this.now());
-      if (this.get("SELECT count(*) AS n FROM jobs WHERE state='processing'").n >= 4) return null;
+      if (this.get("SELECT count(*) AS n FROM jobs WHERE state='processing'").n >= this.pipelineLimit) return null;
       const row = this.get("SELECT * FROM jobs WHERE state='queued' ORDER BY created,rowid LIMIT 1");
       if (!row) return null;
       const token = crypto.randomUUID();

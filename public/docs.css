@@ -94,10 +94,11 @@ footer {
 }
 
 .header-menu { min-width: 0; gap: 14px; }
-.docs-nav nav { gap: 4px; }
+.docs-nav nav { min-width: 0; overflow-x: auto; gap: 4px; }
 
 .docs-nav nav a {
   position: relative;
+  flex: none;
   border-radius: 10px;
   padding: 10px 11px;
   color: var(--muted);
@@ -224,6 +225,8 @@ main { overflow: hidden; }
 .validation-notes span { color: var(--accent); font-weight: 850; font-variant-numeric: tabular-nums; }
 
 .evaluator-submit-row { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; margin-top: 28px; }
+.public-share-choice:not([hidden]) { display: flex; align-items: flex-start; gap: 10px; margin-top: 24px; font-size: 13px; line-height: 1.5; }
+.public-share-choice input { flex: none; width: 16px; height: 16px; margin-top: 2px; }
 .evaluator-submit-row button {
   border: 2px solid var(--accent-dark);
   border-radius: 13px;
@@ -807,10 +810,8 @@ footer p { color: var(--muted); font-size: 13px; }
   .docs-nav nav { min-width: 0; flex: 1; gap: 2px; overflow-x: auto; scrollbar-width: none; }
   .docs-nav nav::-webkit-scrollbar { display: none; }
   .header-menu { min-width: 0; flex: 1; gap: 4px; overflow: hidden; }
-  .docs-nav nav a { flex: none; padding: 8px 4px; font-size: 10px; }
-  .docs-nav nav a[href="/intro"]:not([aria-current="page"]),
-  .docs-nav nav a[href="/methodology"]:not([aria-current="page"]),
-  .docs-nav nav a[href="/prepare"]:not([aria-current="page"]) { display: none; }
+  .docs-nav nav a { min-width: 44px; padding: 8px; font-size: 12px; }
+  .docs-nav nav a, .header-login, .auth-chip button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; }
   .auth-chip,
   .header-login { padding: 7px; }
   .auth-chip [data-auth-user-name] { display: none; }

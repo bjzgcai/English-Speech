@@ -600,6 +600,12 @@ function closePrepareModal() {
   );
 }
 
+function resetPrepareScroll() {
+  prepareDialog.scrollTop = 0;
+  prepareDialog.querySelector(".prepare-content").scrollTop = 0;
+  recorderPanel.querySelector(".question-block").scrollTop = 0;
+}
+
 function showGeneratingModal() {
   stopPrepareCountdown();
   restoreRecorderPanel();
@@ -614,7 +620,7 @@ function showGeneratingModal() {
   prepareActions.hidden = true;
   prepareModal.hidden = false;
   document.body.classList.add("modal-open");
-  prepareDialog.scrollTop = 0;
+  resetPrepareScroll();
 }
 
 function showCountdownModal(question) {
@@ -643,7 +649,7 @@ function showCountdownModal(question) {
   countdownSeconds.textContent = String(PREPARE_COUNTDOWN_SECONDS);
   prepareModal.hidden = false;
   document.body.classList.add("modal-open");
-  prepareDialog.scrollTop = 0;
+  resetPrepareScroll();
 }
 
 function showRecorderInPrepareModal() {
@@ -655,7 +661,7 @@ function showRecorderInPrepareModal() {
   prepareModal.setAttribute("aria-labelledby", "questionText");
   prepareModal.hidden = false;
   document.body.classList.add("modal-open");
-  prepareDialog.scrollTop = 0;
+  resetPrepareScroll();
   window.setTimeout(() => finishButton.focus({ preventScroll: true }), 0);
 }
 
@@ -678,7 +684,7 @@ function showMediaRequiredModal(error, retryAction = "record") {
   speakDirectlyButton.textContent = "Try camera and microphone again";
   prepareModal.hidden = false;
   document.body.classList.add("modal-open");
-  prepareDialog.scrollTop = 0;
+  resetPrepareScroll();
 }
 
 function resetPrepareGuidance() {

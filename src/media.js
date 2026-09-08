@@ -2,10 +2,12 @@ const fs = require("node:fs");
 const path = require("node:path");
 const processing = require("./processing");
 const { mediaPipelineVersion } = require("./media-config");
+// Uploaded containers must not act as playlists that open other files or URLs.
+const localMediaInputOptions = ["-protocol_whitelist", "file,pipe", "-format_whitelist", "mov,matroska,webm,ogg,mp3,wav"];
 
 async function inspectMedia(inputPath) {
   const probe = JSON.parse(await processing.runMedia([
-    "-v", "error", "-show_streams", "-show_format", "-of", "json", inputPath,
+    "-v", "error", ...localMediaInputOptions, "-show_streams", "-show_format", "-of", "json", inputPath,
   ], { probe: true }));
   const streams = probe.streams || [];
   const select = type => {
@@ -69,7 +71,7 @@ async function processMedia(inputPath, { outputPath = null, artifactBaseDir = nu
   const media = mediaInfo || await inspectMedia(inputPath);
   const copyVideo = canCopyVideo(media, maximumDurationSeconds);
   const filters = [];
-  const args = ["-y", "-i", inputPath];
+  const args = ["-y", ...localMediaInputOptions, "-i", inputPath];
   const frames = artifactBaseDir && media.hasVideo;
   const videoSource = media.hasVideo ? `0:${media.video.index}` : null;
   const audioSource = media.hasAudio ? `0:${media.audio.index}` : null;

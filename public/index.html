@@ -292,34 +292,38 @@
         hidden
       >
         <div class="prepare-dialog">
-          <div class="prepare-spinner" id="prepareSpinner" aria-hidden="true"></div>
-          <p class="muted-label" id="prepareModalKicker">Generating</p>
-          <h2 id="prepareModalTitle">Preparing your question...</h2>
-          <p id="prepareModalMessage">Please wait while the assessment question is generated.</p>
-          <div class="prepare-preview" id="preparePreviewWrap" hidden>
-            <video id="preparePreview" autoplay muted playsinline></video>
-            <div class="framing-guide framing-guide-compact" aria-hidden="true">
-              <svg viewBox="100 20 200 200" focusable="false">
-                <ellipse cx="200" cy="62" rx="29" ry="35"></ellipse>
-                <path d="M187 105v17c-39 9-61 37-64 88"></path>
-                <path d="M213 105v17c39 9 61 37 64 88"></path>
-                <path d="M123 210c24-18 50-27 77-27s53 9 77 27"></path>
-              </svg>
-              <span>Align head and shoulders</span>
+          <div class="prepare-content">
+            <div class="prepare-spinner" id="prepareSpinner" aria-hidden="true"></div>
+            <p class="muted-label" id="prepareModalKicker">Generating</p>
+            <h2 id="prepareModalTitle">Preparing your question...</h2>
+            <p id="prepareModalMessage">Please wait while the assessment question is generated.</p>
+            <div class="prepare-preview" id="preparePreviewWrap" hidden>
+              <video id="preparePreview" autoplay muted playsinline></video>
+              <div class="framing-guide framing-guide-compact" aria-hidden="true">
+                <svg viewBox="100 20 200 200" focusable="false">
+                  <ellipse cx="200" cy="62" rx="29" ry="35"></ellipse>
+                  <path d="M187 105v17c-39 9-61 37-64 88"></path>
+                  <path d="M213 105v17c39 9 61 37 64 88"></path>
+                  <path d="M123 210c24-18 50-27 77-27s53 9 77 27"></path>
+                </svg>
+                <span>Align head and shoulders</span>
+              </div>
+              <span class="preview-status">Live preview · not recording yet</span>
             </div>
-            <span class="preview-status">Live preview · not recording yet</span>
+            <div class="prepare-camera-guidance" id="prepareCameraGuidance" hidden>
+              <strong id="prepareGuidanceTitle">Set up your camera and microphone</strong>
+              <span id="prepareGuidanceMessage">Both must stay on for the entire answer. Stand about one metre away and make sure your full upper body and posture are visible.</span>
+            </div>
           </div>
-          <div class="prepare-camera-guidance" id="prepareCameraGuidance" hidden>
-            <strong id="prepareGuidanceTitle">Set up your camera and microphone</strong>
-            <span id="prepareGuidanceMessage">Both must stay on for the entire answer. Stand about one metre away and make sure your full upper body and posture are visible.</span>
-          </div>
-          <div class="countdown-display" id="countdownDisplay" hidden>
-            <span id="countdownSeconds">120</span>s
-          </div>
-          <div class="prepare-actions" id="prepareActions" hidden>
-            <button type="button" class="primary-button" id="speakDirectlyButton">
-              Start now
-            </button>
+          <div class="prepare-footer">
+            <div class="countdown-display" id="countdownDisplay" hidden>
+              <span id="countdownSeconds">120</span>s
+            </div>
+            <div class="prepare-actions" id="prepareActions" hidden>
+              <button type="button" class="primary-button" id="speakDirectlyButton">
+                Start now
+              </button>
+            </div>
           </div>
           <div class="recorder-modal-slot" id="recorderModalSlot" hidden></div>
         </div>

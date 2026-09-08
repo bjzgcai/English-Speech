@@ -348,6 +348,20 @@ The JSONL files and the video/artifact directories live on the server filesystem
 
 History and private video endpoints always filter by the effective DingTalk or guest ownership key. Guest videos are excluded from the public standalone gallery and its video/poster endpoints. The recordings directory is not publicly served. Application startup never deletes or migrates persistent records; any future migration must be run explicitly with a verified backup.
 
+Standalone uploads are private by default, including existing records without explicit
+sharing consent. A DingTalk user can separately opt in to public video, title, score,
+and feedback sharing for an individual upload. Only records with `publiclyShared: true`
+can appear in the gallery or its media endpoints; guest uploads remain private.
+
+Run `npm test` for API, media, queue, recovery, and security regression checks.
+For browser integration checks, install Chromium with `npx playwright install chromium`
+and run `npm run test:browser`. The browser checks start `npm run dev` on an isolated
+port with temporary data, synthetic identities and local model responses. Use
+`node scripts/full-browser-check.js --full-duration` to also wait for the real
+two-minute browser recording cutoff. Additional access and draft-restoration checks
+are available through `node scripts/access-browser-check.js` and
+`node scripts/guest-browser-check.js`.
+
 The production service applies a `0077` umask. Persistent directories are mode
 `0700`, and data files are mode `0600`, limiting access to the service account.
 The daily recording-maintenance unit briefly stops the application, creates an
