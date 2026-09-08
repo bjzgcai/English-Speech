@@ -1,3 +1,4 @@
+const { listenForTest } = require("../scripts/test-http");
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const QRCode = require("qrcode");
@@ -9,9 +10,8 @@ process.env.SESSION_SECRET = "share-test-session-secret";
 const { app, testHelpers } = require("../src/app");
 
 test("share QR points to the configured public service origin", async (context) => {
-  const server = app.listen(0);
+  const server = await listenForTest(app);
   context.after(() => server.close());
-  await new Promise((resolve) => server.once("listening", resolve));
 
   const { port } = server.address();
   const response = await fetch(`http://127.0.0.1:${port}/api/share-qr`);
@@ -33,9 +33,8 @@ test("share QR points to the configured public service origin", async (context) 
 });
 
 test("methodology and history load the shared evaluation image controls", async (context) => {
-  const server = app.listen(0);
+  const server = await listenForTest(app);
   context.after(() => server.close());
-  await new Promise((resolve) => server.once("listening", resolve));
 
   const { port } = server.address();
   const origin = `http://127.0.0.1:${port}`;

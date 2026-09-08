@@ -1,3 +1,4 @@
+const { listenForTest } = require("../scripts/test-http");
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const fs = require("node:fs");
@@ -18,8 +19,7 @@ const { guestTtlMs } = require("../src/visitor");
 let server;
 let base;
 test.before(async () => {
-  server = app.listen(0);
-  await new Promise(resolve => server.once("listening", resolve));
+  server = await listenForTest(app);
   base = `http://127.0.0.1:${server.address().port}`;
 });
 test.after(async () => {
@@ -30,7 +30,12 @@ async function guest(cookie = "") {
   const response = await fetch(base + "/api/me", { headers: { Cookie: cookie } });
   assert.equal(response.status, 200);
   const data = await response.json();
-  return { ...data, cookie: response.headers.get("set-cookie")?.split(";")[0] || cookie, setCookie: response.headers.get("set-cookie") };
+  const cookies = new Map(cookie.split("; ").filter(Boolean).map(value => [value.slice(0, value.indexOf("=")), value]));
+  for (const value of response.headers.getSetCookie()) {
+    const pair = value.split(";")[0];
+    cookies.set(pair.slice(0, pair.indexOf("=")), pair);
+  }
+  return { ...data, cookie: [...cookies.values()].join("; "), setCookie: response.headers.get("set-cookie") };
 }
 function headers(person) {
   return { Cookie: person.cookie, "X-Expected-Owner": person.user.openId, "Content-Type": "application/json" };
@@ -40,6 +45,19 @@ function call(person, route, body) {
 }
 async function consent(person) {
   assert.equal((await call(person, "/api/privacy-consent", { privacyAgreed: true, sensitiveInfoAgreed: true })).status, 201);
+}
+async function invitedGuest() {
+  const code = crypto.randomUUID().toUpperCase();
+  appendJsonLine(config.invitationsMetadataFile, { id: crypto.randomUUID(), hash: crypto.createHash("sha256").update(code).digest("hex") });
+  const response = await fetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
+  assert.equal(response.status, 200);
+  const cookie = response.headers.getSetCookie().map(value => value.split(";")[0]).join("; ");
+  const repeated = await fetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
+  assert.equal(repeated.status, 400);
+  const person = await guest(cookie);
+  person.cookie = cookie;
+  assert.equal(person.hasAccess, true);
+  return person;
 }
 
 test("guest sessions need no DingTalk, persist, renew, and do not merge browsers sharing an IP", async () => {
@@ -54,7 +72,8 @@ test("guest sessions need no DingTalk, persist, renew, and do not merge browsers
   assert.match(first.setCookie, /HttpOnly/);
   assert.match(first.setCookie, /SameSite=Lax/);
   assert.match(first.setCookie, new RegExp(`Max-Age=${guestTtlMs / 1000}`));
-  assert.equal((await call(first, "/api/game/identity")).status, 200);
+  assert.equal(first.hasAccess, false);
+  assert.equal((await call(first, "/api/game/identity")).status, 401);
 });
 
 test("tampered, expired, malformed, and cross-purpose cookies cannot claim a guest identity", async () => {
@@ -83,7 +102,7 @@ test("missing or stale expected-owner headers are rejected before mutation or up
 });
 
 test("DingTalk takes precedence and logout restores guest history and consent independently", async () => {
-  const first = await guest();
+  const first = await invitedGuest();
   await consent(first);
   const dingUser = { openId: "real-dingtalk-owner", name: "DingTalk Member" };
   const dingCookie = `englisheval_session=${testHelpers.createSessionToken(dingUser)}`;
@@ -102,8 +121,8 @@ test("DingTalk takes precedence and logout restores guest history and consent in
 });
 
 test("guest questions and private recordings remain owned, consent-gated and outside public exports", async () => {
-  const first = await guest();
-  const other = await guest();
+  const first = await invitedGuest();
+  const other = await invitedGuest();
   assert.equal((await call(first, "/api/game/question", {})).status, 403);
   await consent(first);
   const generated = await call(first, "/api/game/question", { profile: { name: "Spoofed employee" } });
@@ -130,4 +149,22 @@ test("guest questions and private recordings remain owned, consent-gated and out
   const admin = await call(first, "/api/admin/statistics");
   assert.ok([401, 503].includes(admin.status));
   assert.equal((await fetch(base + "/admin", { headers: headers(first), redirect: "manual" })).status, 302);
+});
+
+test("public browsing needs no access, while private actions require login or invitation", async () => {
+  const visitor = await guest();
+  for (const route of ["/leaderboard", "/game", "/examine", "/methodology", "/api/game/challenge", "/api/game/leaderboard"]) {
+    assert.equal((await fetch(base + route)).status, 200, route);
+  }
+  const board = await (await fetch(base + "/api/game/leaderboard")).json();
+  assert.equal(board.viewerRank, null);
+  assert.ok(board.entries.every(entry => !entry.isViewer && !entry.openId));
+  for (const route of ["/api/game/question", "/api/generate-question", "/api/save-answer", "/api/evaluate-video"]) {
+    const response = await call(visitor, route, {});
+    assert.equal(response.status, 401, route);
+    assert.equal((await response.json()).code, "AUTH_REQUIRED");
+  }
+  assert.equal((await call(visitor, "/api/recordings")).status, 401);
+  const invalid = await fetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: "INVALID" }) });
+  assert.equal(invalid.status, 400);
 });

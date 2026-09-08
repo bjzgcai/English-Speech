@@ -1,3 +1,4 @@
+const { listenForTest } = require("../scripts/test-http");
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
@@ -65,9 +66,8 @@ test("DingTalk in-app login has a stable app-scoped ownership key", () => {
 });
 
 test("DingTalk in-app login rejects a missing one-time authorization code", async (context) => {
-  const server = app.listen(0);
+  const server = await listenForTest(app);
   context.after(() => new Promise((resolve) => server.close(resolve)));
-  await new Promise((resolve) => server.once("listening", resolve));
 
   const response = await fetch(
     `http://127.0.0.1:${server.address().port}/auth/dingtalk/in-app`,
@@ -82,9 +82,8 @@ test("DingTalk in-app login rejects a missing one-time authorization code", asyn
 });
 
 test("DingTalk login sets a nonce cookie and rejects tampered callback state", async (context) => {
-  const server = app.listen(0);
+  const server = await listenForTest(app);
   context.after(() => new Promise((resolve) => server.close(resolve)));
-  await new Promise((resolve) => server.once("listening", resolve));
 
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   const loginResponse = await fetch(`${baseUrl}/auth/dingtalk?redirect=%2F%2Fattacker.example`, {
@@ -108,9 +107,8 @@ test("DingTalk login sets a nonce cookie and rejects tampered callback state", a
 });
 
 test("question generation is blocked until the current privacy policy is accepted", async (context) => {
-  const server = app.listen(0);
+  const server = await listenForTest(app);
   context.after(() => new Promise((resolve) => server.close(resolve)));
-  await new Promise((resolve) => server.once("listening", resolve));
 
   const user = { openId: `privacy-test-${Date.now()}`, name: "Privacy test user" };
   const session = testHelpers.createSessionToken(user);
@@ -133,9 +131,8 @@ test("question generation is blocked until the current privacy policy is accepte
 });
 
 test("privacy consent endpoint rejects incomplete acknowledgement", async (context) => {
-  const server = app.listen(0);
+  const server = await listenForTest(app);
   context.after(() => new Promise((resolve) => server.close(resolve)));
-  await new Promise((resolve) => server.once("listening", resolve));
 
   const session = testHelpers.createSessionToken({
     openId: `privacy-partial-${Date.now()}`,
@@ -158,9 +155,8 @@ test("privacy consent endpoint rejects incomplete acknowledgement", async (conte
 });
 
 test("privacy policy is available at both public routes", async (context) => {
-  const server = app.listen(0);
+  const server = await listenForTest(app);
   context.after(() => new Promise((resolve) => server.close(resolve)));
-  await new Promise((resolve) => server.once("listening", resolve));
 
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   for (const route of ["/privacy", "/policy"]) {
@@ -173,9 +169,8 @@ test("privacy policy is available at both public routes", async (context) => {
 });
 
 test("learner pages are available without DingTalk login", async (context) => {
-  const server = app.listen(0);
+  const server = await listenForTest(app);
   context.after(() => new Promise((resolve) => server.close(resolve)));
-  await new Promise((resolve) => server.once("listening", resolve));
 
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   for (const route of ["/", "/leaderboard", "/game", "/examine", "/practice", "/history"]) {
@@ -191,9 +186,8 @@ test("learner pages are available without DingTalk login", async (context) => {
 });
 
 test("authenticated users can open protected app pages", async (context) => {
-  const server = app.listen(0);
+  const server = await listenForTest(app);
   context.after(() => new Promise((resolve) => server.close(resolve)));
-  await new Promise((resolve) => server.once("listening", resolve));
 
   const session = testHelpers.createSessionToken({
     openId: `page-reader-${Date.now()}`,
@@ -214,9 +208,8 @@ test("authenticated users can open protected app pages", async (context) => {
 });
 
 test("authenticated users can read the current weekly challenge and leaderboard", async (context) => {
-  const server = app.listen(0);
+  const server = await listenForTest(app);
   context.after(() => new Promise((resolve) => server.close(resolve)));
-  await new Promise((resolve) => server.once("listening", resolve));
 
   const session = testHelpers.createSessionToken({
     openId: `game-reader-${Date.now()}`,
@@ -241,9 +234,8 @@ test("authenticated users can read the current weekly challenge and leaderboard"
 });
 
 test("users can keep one leaderboard alias, rename it, and switch back to their actual name", async (context) => {
-  const server = app.listen(0);
+  const server = await listenForTest(app);
   context.after(() => new Promise((resolve) => server.close(resolve)));
-  await new Promise((resolve) => server.once("listening", resolve));
 
   const openId = `identity-user-${Date.now()}-${Math.random()}`;
   const aliasSuffix = openId.replace(/\D/g, "").slice(-8);

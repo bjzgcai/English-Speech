@@ -5,7 +5,9 @@ const { DatabaseSync } = require("node:sqlite");
 
 const terminal = new Set(["completed", "failed", "canceled"]);
 const stages = ["normalized", "media", "transcription", "scoring"];
-const limits = { normalized: 1, media: 1, transcription: 2, scoring: 2 };
+const { mediaConcurrency, mediaPipelineVersion, pipelineConcurrency } = require("./media-config");
+const { modelConcurrency } = require("./model-guard");
+const { stageMetrics, percentile } = require("./stage-metrics");
 const number = (name, fallback) => Math.max(1, Number(process.env[name]) || fallback);
 
 class Queue {
@@ -167,7 +169,8 @@ class Queue {
   renew(id, token) { return this.run("UPDATE jobs SET lease=? WHERE id=? AND token=? AND state='processing'", this.now() + 30000, id, token).changes; }
   checkpoint(id, token, checkpoint) { return this.run("UPDATE jobs SET checkpoint=?,updated=? WHERE id=? AND token=? AND state='processing'", JSON.stringify(checkpoint), this.now(), id, token).changes; }
   stage(id, token, stage) { this.run("UPDATE jobs SET stage=?,stage_started=?,retry_at=NULL WHERE id=? AND token=? AND state='processing'", stage, this.now(), id, token); }
-  sample(stage, duration, category = "long") {
+  sample(stage, duration, category = "long", pipeline = mediaPipelineVersion) {
+    if (stage !== "release" && pipeline !== "legacy") category = `${category}@${pipeline}`;
     this.run("INSERT INTO samples(stage,category,duration,created) VALUES(?,?,?,?)", stage, category, Math.round(duration), this.now());
     this.run("DELETE FROM samples WHERE stage=? AND category=? AND id NOT IN (SELECT id FROM samples WHERE stage=? AND category=? ORDER BY id DESC LIMIT 30)", stage, category, stage, category);
   }
@@ -203,17 +206,24 @@ class Queue {
     if (terminal.has(target.state)) return { low: 0, high: 0 };
     if (this.processingDelay()) return null;
     const durations = {};
-    const category = JSON.parse(target.checkpoint).category || "long";
+    const checkpoint = JSON.parse(target.checkpoint);
+    const pipeline = checkpoint.pipelineVersion || (checkpoint.normalized ? "legacy" : mediaPipelineVersion);
+    const category = `${checkpoint.category || "long"}${pipeline === "legacy" ? "" : `@${pipeline}`}`;
     for (const stage of stages) {
       const samples = this.all("SELECT duration FROM samples WHERE stage=? AND category=? ORDER BY id DESC LIMIT 30", stage, category).map(s => s.duration).sort((a, b) => a - b);
       if (samples.length < 3) return null;
-      durations[stage] = [samples[Math.floor(samples.length * 0.5)], samples[Math.min(samples.length - 1, Math.floor(samples.length * 0.9))]];
+      durations[stage] = [percentile(samples, 0.5), percentile(samples, 0.9)];
     }
     const jobs = this.all("SELECT * FROM jobs WHERE state IN ('queued','processing') ORDER BY CASE state WHEN 'processing' THEN 0 ELSE 1 END,created,rowid");
     const simulate = (index) => {
+      const reported = JSON.parse(this.setting("workerResources") || "{}");
+      const ffmpeg = [1, 2, 3, 4].includes(reported.ffmpeg?.limit) ? reported.ffmpeg.limit : mediaConcurrency();
+      const modelLimit = kind => Number.isSafeInteger(reported[kind]?.limit) && reported[kind].limit > 0 ? reported[kind].limit : modelConcurrency(kind);
+      const limits = { normalized: ffmpeg, media: ffmpeg, transcription: modelLimit("transcription"), scoring: modelLimit("scoring") };
       const slots = Object.fromEntries(stages.map(s => [s, Array(limits[s]).fill(0)]));
       slots.normalized = slots.media;
-      const pipelines = Array(4).fill(0);
+      const configuredPipelines = reported.pipelines?.limit;
+      const pipelines = Array(Number.isInteger(configuredPipelines) && configuredPipelines >= 1 && configuredPipelines <= 16 ? configuredPipelines : pipelineConcurrency()).fill(0);
       for (const job of jobs) {
         const lane = pipelines.indexOf(Math.min(...pipelines));
         let ready = Math.max(pipelines[lane], (job.retry_at || 0) - this.now(), 0);
@@ -246,7 +256,7 @@ class Queue {
     return { ...clientResult, ok: true, id, jobId: id, state: job.state, stage: job.stage, statusUrl: `/api/jobs/${id}`, queuePosition: job.state === "queued" ? this.get("SELECT count(*) AS n FROM jobs WHERE state='queued' AND rowid <= (SELECT rowid FROM jobs WHERE id=?)", id).n : 0, elapsedSeconds: Math.floor((this.now() - job.created) / 1000), estimatedRemainingSeconds: this.estimate(job), delayed: terminal.has(job.state) ? null : this.processingDelay() || (job.retry_at > this.now() ? "Waiting for the evaluation service to recover." : null), pollAfterSeconds: 5 };
   }
   metrics() {
-    return { capacity: this.capacity, waitingCapacity: this.waiting, admissions: this.all("SELECT state,count(*) AS count FROM admissions GROUP BY state"), jobs: this.all("SELECT state,stage,count(*) AS count FROM jobs GROUP BY state,stage"), pressure: this.pressure(), paused: this.setting("paused") === "true", workerLastSeen: Number(this.setting("workerHeartbeat") || 0), resources: JSON.parse(this.setting("workerResources") || "{}"), stages: this.all("SELECT stage,round(avg(duration)) AS averageMs,count(*) AS samples FROM samples WHERE created>? GROUP BY stage", this.now() - 86400000), recent: this.all("SELECT stage,created,data FROM telemetry ORDER BY id DESC LIMIT 50").map(r => ({ ...r, data: JSON.parse(r.data) })) };
+    return { capacity: this.capacity, waitingCapacity: this.waiting, admissions: this.all("SELECT state,count(*) AS count FROM admissions GROUP BY state"), jobs: this.all("SELECT state,stage,count(*) AS count FROM jobs GROUP BY state,stage"), pressure: this.pressure(), paused: this.setting("paused") === "true", workerLastSeen: Number(this.setting("workerHeartbeat") || 0), resources: JSON.parse(this.setting("workerResources") || "{}"), stages: stageMetrics(this.all("SELECT stage,category,duration,created FROM samples WHERE created>?", this.now() - 86400000)), recent: this.all("SELECT stage,created,data FROM telemetry ORDER BY id DESC LIMIT 50").map(r => ({ ...r, data: JSON.parse(r.data) })) };
   }
   close() { this.db.close(); }
 }

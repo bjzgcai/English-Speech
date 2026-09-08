@@ -5,14 +5,23 @@ const express = require("express");
 const multer = require("multer");
 const QRCode = require("qrcode");
 const swaggerUiDistPath = require("swagger-ui-dist").getAbsoluteFSPath();
+const { parseTree } = require("jsonc-parser");
 const config = require("./config");
 const processing = require("./processing");
+const { inspectMedia, convertToMp4, normalizeRecording, processMedia, audioMetrics: deriveAudioMetrics, preparedMediaExists } = require("./media");
 const { appendJsonLine, readJsonLines, writeJsonLines } = require("./storage");
 const { createQuestionService } = require("./questions");
 const { registerPageRoutes } = require("./routes/pages");
 const { createVisitorAccess, isGuest } = require("./visitor");
 const { buildMockPartnerUsers } = require("./mock-evaluations");
 const { buildAdminStatistics } = require("./admin-statistics");
+const { DingSender } = require("./ding-alerts");
+const commentDingSender = new DingSender({
+  clientId: process.env.DINGTALK_CLIENT_ID || process.env.DINGTALK_APP_KEY,
+  clientSecret: process.env.DINGTALK_CLIENT_SECRET || process.env.DINGTALK_APP_SECRET,
+  robotCode: process.env.DINGTALK_ALERT_ROBOT_CODE,
+  userId: process.env.DINGTALK_ALERT_USER_ID,
+});
 const {
   ExperienceRatingValidationError,
   experienceRatingStatus,
@@ -39,7 +48,11 @@ const {
   commentsMetadataFile,
   consentsMetadataFile,
   ratingsMetadataFile,
+  invitationsMetadataFile,
 } = config;
+const ZGC_CORP_ID = "ding216d3a4e9fdd44cef5bf40eda33b7ba0";
+const MAX_OWNER_ATTEMPTS = 100;
+const MAX_OWNER_VIDEOS = 10;
 const sessionCookieName = "englisheval_session";
 const sessionTtlMs = 7 * 24 * 60 * 60 * 1000;
 const oauthNonceCookieName = "englisheval_oauth_nonce";
@@ -489,9 +502,11 @@ function requirePageAuth(req, res, next) {
   );
 }
 
-const { requireVisitor } = createVisitorAccess({
+const visitorAccess = createVisitorAccess({
   readSession, parseCookies, useSecureSessionCookie,
 });
+// API services require DingTalk authentication or a redeemed invitation.
+const { requireAccess: requireVisitor } = visitorAccess;
 
 function adminTokensMatch(receivedToken, configuredToken = process.env.ADMIN_ACCESS_TOKEN) {
   const received = safeText(receivedToken);
@@ -799,51 +814,8 @@ function discardPersistedAnswer({
   return discardedRecords.length;
 }
 
-function convertToMp4(inputPath, outputPath, { maximumDurationSeconds = null } = {}) {
-    const args = [
-      "-y",
-      "-i",
-      inputPath,
-    ];
-    if (maximumDurationSeconds) {
-      args.push("-t", String(maximumDurationSeconds));
-    }
-    args.push(
-      "-c:v",
-      "libx264",
-      "-preset",
-      "veryfast",
-      "-threads",
-      "1",
-      "-vf",
-      "scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
-      "-maxrate",
-      "2M",
-      "-bufsize",
-      "4M",
-      "-pix_fmt",
-      "yuv420p",
-      "-c:a",
-      "aac",
-      "-movflags",
-      "+faststart",
-      outputPath,
-    );
-    return processing.runMedia(args);
-}
-
 function runFfmpeg(args) {
   return processing.runMedia(args);
-}
-
-async function inspectMedia(inputPath) {
-    const output = await processing.runMedia(["-hide_banner", "-i", inputPath], { probe: true });
-      const hasAudio = /Stream #\S+.*Audio:/i.test(output);
-      const hasVideo = /Stream #\S+.*Video:/i.test(output);
-      if (!hasAudio && !hasVideo) {
-        throw new Error("The file does not contain a usable audio or video stream.");
-      }
-      return { hasAudio, hasVideo, durationSeconds: parseDurationSeconds(output) };
 }
 
 function limitStandaloneMediaInfo(mediaInfo) {
@@ -856,98 +828,6 @@ function limitStandaloneMediaInfo(mediaInfo) {
     durationSeconds: hasKnownDuration
       ? Math.min(originalDurationSeconds, standaloneEvaluationMaxSeconds)
       : standaloneEvaluationMaxSeconds,
-  };
-}
-
-async function extractAudio(videoPath, outputPath) {
-  try {
-    await runFfmpeg([
-      "-y",
-      "-i",
-      videoPath,
-      "-vn",
-      "-ac",
-      "1",
-      "-ar",
-      "16000",
-      "-b:a",
-      "64k",
-      outputPath,
-    ]);
-  } catch (error) {
-    const detail = String(error?.message || error);
-    if (/does not contain any stream|matches no streams|audio stream/i.test(detail)) {
-      throw new Error(
-        "The saved recording has no usable microphone audio. Check microphone permission and record the answer again.",
-      );
-    }
-    throw error;
-  }
-}
-
-async function sampleFrames(videoPath, frameDir, maxFrames = 18) {
-  fs.mkdirSync(frameDir, { recursive: true });
-
-  await runFfmpeg([
-    "-y",
-    "-i",
-    videoPath,
-    "-vf",
-    `fps=1/5,scale=640:-1:force_original_aspect_ratio=decrease`,
-    "-frames:v",
-    String(maxFrames),
-    "-q:v",
-    "4",
-    path.join(frameDir, "frame-%03d.jpg"),
-  ]);
-
-  return fs
-    .readdirSync(frameDir)
-    .filter((filename) => filename.toLowerCase().endsWith(".jpg"))
-    .sort()
-    .map((filename) => path.join(frameDir, filename));
-}
-
-function parseDurationSeconds(ffmpegOutput) {
-  const match = ffmpegOutput.match(/Duration:\s*(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)/);
-  if (!match) return null;
-  const [, hours, minutes, seconds] = match;
-  return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds);
-}
-
-async function inspectAudio(audioPath, transcript) {
-  const output = await runFfmpeg([
-    "-i",
-    audioPath,
-    "-af",
-    "silencedetect=n=-35dB:d=0.7",
-    "-f",
-    "null",
-    "-",
-  ]);
-  const durationSeconds = parseDurationSeconds(output);
-  const silenceStarts = [...output.matchAll(/silence_start:\s*([0-9.]+)/g)].map((match) =>
-    Number(match[1]),
-  );
-  const silenceEnds = [...output.matchAll(/silence_end:\s*([0-9.]+)\s*\|\s*silence_duration:\s*([0-9.]+)/g)].map(
-    (match) => ({
-      end: Number(match[1]),
-      duration: Number(match[2]),
-    }),
-  );
-  const longPauses = silenceEnds.filter((item) => item.duration >= 1.2);
-  const silenceSeconds = silenceEnds.reduce((total, item) => total + item.duration, 0);
-  const wordCount = transcript ? transcript.split(/\s+/).filter(Boolean).length : 0;
-  const speakingRateWpm =
-    durationSeconds && durationSeconds > 0 ? Math.round(wordCount / (durationSeconds / 60)) : null;
-
-  return {
-    durationSeconds: durationSeconds ? Math.round(durationSeconds * 10) / 10 : null,
-    wordCount,
-    speakingRateWpm,
-    detectedPauses: silenceStarts.length,
-    longPauses: longPauses.length,
-    silenceSeconds: Math.round(silenceSeconds * 10) / 10,
   };
 }
 
@@ -964,11 +844,6 @@ async function audioMaximumVolume(audioPath) {
   return Number(output.match(/max_volume:\s*(-?[0-9.]+)\s*dB/i)?.[1]);
 }
 
-async function hasAudibleAudio(audioPath) {
-  const maximumVolume = await audioMaximumVolume(audioPath);
-  return Number.isFinite(maximumVolume) && maximumVolume >= -50;
-}
-
 function fileToDataUrl(filePath, mimeType) {
   return `data:${mimeType};base64,${fs.readFileSync(filePath).toString("base64")}`;
 }
@@ -976,11 +851,14 @@ function fileToDataUrl(filePath, mimeType) {
 function extractJsonObject(value) {
   const text = safeText(value);
   const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) {
+  if (start === -1) {
     throw new Error("Model did not return a JSON object.");
   }
-  return JSON.parse(text.slice(start, end + 1));
+  // Providers sometimes repeat a complete object or append Markdown after it.
+  const content = text.slice(start);
+  const tree = parseTree(content, [], { disallowComments: true, allowTrailingComma: false });
+  if (tree?.type !== "object") throw new Error("Model did not return a JSON object.");
+  return JSON.parse(content.slice(tree.offset, tree.offset + tree.length));
 }
 
 function modelMessageText(message) {
@@ -1252,6 +1130,8 @@ function normalizeDingTalkUser(rawUser, organizationUser = null) {
     name: safeText(rawUser?.nick || rawUser?.name, "DingTalk user"),
     avatarUrl: safeText(rawUser?.avatarUrl),
     mobile: safeText(rawUser?.mobile),
+    isZgcMember: safeText(process.env.DINGTALK_CORP_ID) === ZGC_CORP_ID,
+    identityType: "dingtalk",
   };
 }
 
@@ -1733,24 +1613,22 @@ async function evaluateSavedVideo({
   }
 
   const audioPath = path.join(artifactBaseDir, "audio.mp3");
-  const frameDir = path.join(artifactBaseDir, "frames");
 
   fs.mkdirSync(artifactBaseDir, { recursive: true });
   const inspectedMedia = mediaInfo || (await inspectMedia(videoPath));
   if (!inspectedMedia.hasAudio) {
     throw new Error("The video has a picture but no usable audio track, so speech cannot be evaluated.");
   }
-  const maxFrames = positiveInteger(Number(process.env.EVAL_MAX_FRAMES), 18);
-  const { audibleAudio, framePaths } = await processing.stage("media", async () => {
-    await extractAudio(videoPath, audioPath);
-    return {
-      audibleAudio: await hasAudibleAudio(audioPath),
-      framePaths: inspectedMedia.hasVideo ? await sampleFrames(videoPath, frameDir, maxFrames) : [],
-    };
+  const task = processing.context.getStore();
+  if (task?.checkpoint.media && !preparedMediaExists(artifactBaseDir, task.checkpoint.media)) delete task.checkpoint.media;
+  const { audibleAudio, framePaths, analysis } = await processing.stage("media", async () => {
+    if (preparedMediaExists(artifactBaseDir, inspectedMedia.prepared)) return inspectedMedia.prepared;
+    // Old checkpoints or lost artifacts can resume from the durable MP4.
+    return (await processMedia(videoPath, { artifactBaseDir })).prepared;
   });
   const { transcript, audioMetrics } = await processing.stage("transcription", async () => {
     const transcript = audibleAudio ? await transcribeAudio(audioPath, { durationSeconds: inspectedMedia.durationSeconds }) : "";
-    return { transcript, audioMetrics: await inspectAudio(audioPath, transcript) };
+    return { transcript, audioMetrics: deriveAudioMetrics(analysis, transcript) };
   });
   const result = await processing.stage("scoring", () => evaluateAnswer({
     profile,
@@ -1884,6 +1762,53 @@ app.post("/auth/logout", (_req, res) => {
   res.json({ ok: true });
 });
 
+function requireZgcMember(req, res, next) {
+  if (req.user?.identityType !== "dingtalk") return res.status(403).json({ error: "Only 中关村学院 DingTalk users may manage invitation codes." });
+  next();
+}
+function ownerQuota(openId) {
+  const records = readJsonLines(metadataFile).filter(r => recordOpenId(r) === openId);
+  return { attempts: records.filter(r => r.questionId || r.challengeId).length, videos: records.filter(r => r.hasVideo === true).length };
+}
+function requireAttemptQuota(req, res, next) {
+  const q = ownerQuota(req.user.openId); if (q.attempts >= MAX_OWNER_ATTEMPTS) return res.status(429).json({ code: "ATTEMPT_QUOTA_EXCEEDED", error: "This user has reached the 100-attempt limit.", quota: { ...q, attemptsLimit: MAX_OWNER_ATTEMPTS, videosLimit: MAX_OWNER_VIDEOS } }); next();
+}
+function requireVideoQuota(req, res, next) {
+  const q = ownerQuota(req.user.openId); if (q.videos >= MAX_OWNER_VIDEOS) return res.status(429).json({ code: "VIDEO_QUOTA_EXCEEDED", error: "This user has reached the 10-video limit.", quota: { ...q, attemptsLimit: MAX_OWNER_ATTEMPTS, videosLimit: MAX_OWNER_VIDEOS } }); next();
+}
+function invitationRecords() {
+  const latest = new Map();
+  for (const record of readJsonLines(invitationsMetadataFile)) latest.set(record.id, record);
+  return [...latest.values()];
+}
+app.get("/api/invitation-codes", requireAuth, requireZgcMember, (req, res) => {
+  res.json({ codes: invitationRecords().filter(x => x.inviterOpenId === req.user.openId && !x.deletedAt).map(({ hash, ...x }) => x) });
+});
+app.post("/api/invitation-codes", requireAuth, requireZgcMember, (req, res) => {
+  const code = crypto.randomBytes(6).toString("hex").toUpperCase();
+  const record = { id: crypto.randomUUID(), code, hash: crypto.createHash("sha256").update(code).digest("hex"), codePreview: code.slice(-4), inviterOpenId: req.user.openId, inviterName: req.user.name, createdAt: new Date().toISOString(), usedAt: null, usedBy: null, deletedAt: null };
+  appendJsonLine(invitationsMetadataFile, record);
+  res.status(201).json({ code, record: { ...record, hash: undefined } });
+});
+app.delete("/api/invitation-codes/:id", requireAuth, requireZgcMember, (req, res) => {
+  const record = invitationRecords().find(x => x.id === req.params.id && x.inviterOpenId === req.user.openId && !x.deletedAt);
+  if (!record) return res.status(404).json({ error: "Invitation code not found." });
+  if (record.usedAt) return res.status(409).json({ error: "Used invitation codes cannot be deleted." });
+  appendJsonLine(invitationsMetadataFile, { ...record, deletedAt: new Date().toISOString() });
+  res.json({ ok: true });
+});
+app.post("/api/invitation/redeem", (req, res) => {
+  const value = safeText(req.body?.code).toUpperCase();
+  const hash = crypto.createHash("sha256").update(value).digest("hex");
+  const records = invitationRecords();
+  const record = records.filter(x => x.hash === hash && !x.deletedAt && !x.usedAt).pop();
+  if (!record) return res.status(400).json({ error: "Invalid or already-used invitation code." });
+  const guestId = `guest:${crypto.randomUUID()}`;
+  appendJsonLine(invitationsMetadataFile, { ...record, usedAt: new Date().toISOString(), usedBy: guestId });
+  visitorAccess.setGuestSession(res, guestId);
+  res.json({ ok: true, user: { openId: guestId, identityType: "guest", name: `Guest ${guestId.slice(6, 14)}` } });
+});
+
 app.get("/api/v1/users", requirePartnerApiKey, (req, res) => {
   const filterKeys = ["openId", "userId", "jobNumber", "email", "orgEmail"];
   let users = partnerUsers().filter((user) =>
@@ -1918,16 +1843,19 @@ app.get("/api/v1/rubrics", requirePartnerApiKey, (_req, res) => {
   res.json({ rubric: evaluationRubricStandard });
 });
 
-app.get("/api/me", requireVisitor, (req, res) => {
+app.get("/api/me", visitorAccess.requireVisitor, (req, res) => {
   res.set("Cache-Control", "no-store");
   res.json({
     configured: isDingTalkConfigured(),
+    hasAccess: visitorAccess.hasAccess(req, req.user),
     inAppAuth: {
       configured: isDingTalkInAppConfigured(),
       corpId: isDingTalkInAppConfigured() ? safeText(process.env.DINGTALK_CORP_ID) : "",
     },
     user: req.user,
     identityType: req.user.identityType,
+    isZgcMember: req.user.isZgcMember === true,
+    accessMode: visitorAccess.hasAccess(req, req.user) ? req.user.identityType === "dingtalk" ? "dingtalk" : "invitation" : null,
   });
 });
 
@@ -2034,7 +1962,7 @@ app.get("/api/comments", (req, res) => {
   }
 
   const comments = readJsonLines(commentsMetadataFile)
-    .filter((comment) => comment.page === page)
+    .filter((comment) => comment.page === page && comment.moderationStatus !== "blocked")
     .map(commentForClient);
   res.set("Cache-Control", "no-store");
   res.json({ comments });
@@ -2051,6 +1979,7 @@ app.post("/api/comments", requireVisitor, (req, res) => {
   if (!content || content.length > 1000) {
     return res.status(400).json({ error: "Comments must contain 1 to 1000 characters." });
   }
+  if (/暴力|有害/.test(content)) return res.status(422).json({ code: "COMMENT_BLOCKED", error: "This comment cannot be published." });
 
   let parentId = null;
   if (requestedParentId) {
@@ -2071,10 +2000,22 @@ app.post("/api/comments", requireVisitor, (req, res) => {
     username: safeText(req.user.name, "DingTalk user"),
     content,
     createdAt: new Date().toISOString(),
+    moderationStatus: "pending",
   };
   appendJsonLine(commentsMetadataFile, comment);
+  void moderateComment(comment);
   res.status(201).json({ comment: commentForClient(comment) });
 });
+
+async function moderateComment(comment) {
+  try {
+    const response = await processing.modelFetch(internalLlmChatCompletionsUrl, { method: "POST", headers: { Authorization: `Bearer ${process.env.INTERNAL_LLM_API_KEY || ""}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: process.env.INTERNAL_LLM_MODERATION_MODEL || "glm", messages: [{ role: "system", content: 'Return JSON only: {"blocked":true|false}. Block violence, threats, hate, self-harm encouragement, sexual abuse, or harmful instructions.' }, { role: "user", content: comment.content }] }) });
+    const body = await response.json(); const text = body?.choices?.[0]?.message?.content || ""; const verdict = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || "{}");
+    if (verdict.blocked !== true) return;
+    appendJsonLine(commentsMetadataFile, { ...comment, moderationStatus: "blocked", blockedAt: new Date().toISOString() });
+    void commentDingSender.send(`评论审核拦截：用户 ${comment.username} 在 ${comment.page} 提交了疑似暴力或有害内容，请查看后台。`);
+  } catch (error) { console.warn(`Comment moderation failed: ${error.message}`); }
+}
 
 function gameChallengeForClient(challenge) {
   return {
@@ -2091,7 +2032,7 @@ function gameChallengeForClient(challenge) {
   };
 }
 
-app.get("/api/game/challenge", requireVisitor, (_req, res) => {
+app.get("/api/game/challenge", (_req, res) => {
   const challenge = currentChallenge();
   res.set("Cache-Control", "no-store");
   res.json({
@@ -2149,7 +2090,12 @@ app.post("/api/game/identity", requireVisitor, (req, res) => {
   res.json({ identity: leaderboardIdentityForClient(req.user, identity, identities) });
 });
 
-app.get("/api/game/leaderboard", requireVisitor, (req, res) => {
+app.get("/api/game/leaderboard", (req, res) => {
+  let viewerOpenId;
+  try {
+    const viewer = visitorAccess.resolveVisitor(req, res);
+    if (visitorAccess.hasAccess(req, viewer)) viewerOpenId = viewer.openId;
+  } catch { /* Public standings do not depend on session availability. */ }
   const challenges = availableChallenges();
   const requestedId = safeText(req.query.challengeId);
   const challenge = requestedId
@@ -2162,7 +2108,7 @@ app.get("/api/game/leaderboard", requireVisitor, (req, res) => {
   const leaderboard = leaderboardForChallenge(
     readJsonLines(metadataFile),
     challenge,
-    req.user.openId,
+    viewerOpenId,
     leaderboardIdentities(),
   );
   res.set("Cache-Control", "no-store");
@@ -2193,7 +2139,7 @@ const queueApi = config.queueEnabled && process.env.QUEUE_WORKER !== "true" ? re
 }) : null;
 const requireAdmission = queueApi?.required || ((_req, _res, next) => next());
 
-app.post("/api/game/question", requireVisitor, requirePrivacyConsent, requireAdmission, (req, res) => {
+app.post("/api/game/question", requireVisitor, requirePrivacyConsent, requireAttemptQuota, requireAdmission, (req, res) => {
   const challenge = currentChallenge();
   const profile = {
     name: safeText(req.user.name, "DingTalk user"),
@@ -2213,7 +2159,7 @@ app.post("/api/game/question", requireVisitor, requirePrivacyConsent, requireAdm
   });
 });
 
-app.post("/api/generate-question", requireVisitor, requirePrivacyConsent, requireAdmission, async (req, res) => {
+app.post("/api/generate-question", requireVisitor, requirePrivacyConsent, requireAttemptQuota, requireAdmission, async (req, res) => {
   const profile = {
     ...(req.body?.profile || {}),
     name: safeText(req.user.name, "DingTalk user"),
@@ -2309,7 +2255,7 @@ app.post("/api/save-answer/:id/cancel", requireVisitor, (req, res) => {
   });
 });
 
-app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, upload.single("video"), async (req, res) => {
+app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttemptQuota, upload.single("video"), async (req, res) => {
   const questionId = safeText(req.body.questionId);
   const questionRecord = findOwnedQuestion(questionId, req.user.openId);
   if (!questionRecord) {
@@ -2384,9 +2330,13 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, upload.singl
 
   try {
     evaluationMediaInfo = limitStandaloneMediaInfo(await inspectMedia(req.file.path));
-    await convertToMp4(req.file.path, convertedPath, {
+    if (!evaluationMediaInfo.hasAudio || !evaluationMediaInfo.hasVideo) throw new Error("The answer requires both camera and microphone tracks.");
+    const prepared = await normalizeRecording(req.file.path, convertedPath, {
       maximumDurationSeconds: standaloneEvaluationMaxSeconds,
+      mediaInfo: evaluationMediaInfo,
+      artifactBaseDir: path.join(artifactsDir, id),
     });
+    Object.assign(evaluationMediaInfo, prepared);
     fs.chmodSync(convertedPath, 0o600);
     fs.renameSync(convertedPath, finalPath);
   } catch (error) {
@@ -2462,6 +2412,8 @@ app.post(
   "/api/evaluate-video",
   requireVisitor,
   requirePrivacyConsent,
+  requireAttemptQuota,
+  requireVideoQuota,
   upload.single("video"),
   async (req, res) => {
     if (!req.file) {
@@ -2484,9 +2436,12 @@ app.post(
         );
       }
       const limitedMediaInfo = limitStandaloneMediaInfo(mediaInfo);
-      await convertToMp4(inputPath, convertedPath, {
+      const prepared = await normalizeRecording(inputPath, convertedPath, {
         maximumDurationSeconds: standaloneEvaluationMaxSeconds,
+        mediaInfo,
+        artifactBaseDir: path.join(artifactsDir, id),
       });
+      Object.assign(limitedMediaInfo, prepared);
       fs.chmodSync(convertedPath, 0o600);
       fs.renameSync(convertedPath, finalPath);
 
@@ -2495,14 +2450,19 @@ app.post(
         question: "Standalone speech",
         focus: "Speech consistency and English communication",
       };
-      const evaluation = await evaluateSavedVideo({
-        videoPath: finalPath,
-        artifactBaseDir: path.join(artifactsDir, id),
-        profile,
-        question,
-        evaluationMode: "standalone-speech",
-        mediaInfo: limitedMediaInfo,
-      });
+      let evaluation;
+      try {
+        evaluation = await evaluateSavedVideo({
+          videoPath: finalPath,
+          artifactBaseDir: path.join(artifactsDir, id),
+          profile,
+          question,
+          evaluationMode: "standalone-speech",
+          mediaInfo: limitedMediaInfo,
+        });
+      } catch {
+        evaluation = { status: "failed", reason: "Your recording was saved, but evaluation could not finish. Please retry later." };
+      }
       if (evaluation.rubric?.coherence) {
         evaluation.rubric.coherence.label = "Coherence / speech consistency";
       }
@@ -2676,7 +2636,9 @@ module.exports = {
   startServer,
   testHelpers: {
     inspectMedia,
+    processMedia,
     convertToMp4,
+    normalizeRecording,
     evaluateSavedVideo,
     buildEvaluationPrompt,
     adminTokensMatch,

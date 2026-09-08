@@ -78,3 +78,11 @@ worker together. Never revert to pre-queue code after accepting queued uploads.
 Nightly encrypted maintenance stops and restarts both services, and includes the
 queue, its WAL files, and pending originals. Existing recording retention remains
 disabled unless the production environment explicitly enables it.
+
+Production activation completed at `https://eng.lab.bza.edu.cn` using release
+`20260907T091851Z-cca2577`. Admissions are enabled and both services are healthy.
+The tested queue-compatible rollback release is `20260907T091618Z-cca2577`.
+Production encrypted maintenance succeeded both before deployment and with the
+new web/worker service pair. Final checks confirmed unchanged historical data,
+private queue permissions, matching deployed browser assets, and HTTP 401 for
+unauthenticated job access. The original production environment was preserved.

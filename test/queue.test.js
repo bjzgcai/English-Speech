@@ -113,3 +113,38 @@ test("resource semaphore enforces concurrency and removes canceled waiters", asy
   await assert.rejects(gate.run(async () => {}, controller.signal));
   assert.equal(gate.active, 0);
 });
+
+test("stage metrics separate pipeline versions and duration classes with nearest-rank percentiles", t => {
+  const { q } = fixture(t);
+  for (let i = 1; i <= 10; i++) q.sample("normalized", i * 100, "long");
+  q.sample("normalized", 5000, "short");
+  q.run("INSERT INTO samples(stage,category,duration,created) VALUES('normalized','long',90000,?)", q.now());
+  const rows = q.metrics().stages;
+  const current = rows.find(row => row.pipeline === "fused-v1" && row.category === "long");
+  assert.equal(current.samples, 10);
+  assert.equal(current.p50Ms, 500);
+  assert.equal(current.p90Ms, 900);
+  assert.equal(rows.find(row => row.pipeline === "legacy").p90Ms, 90000);
+});
+
+test("estimates follow the actual worker's FFmpeg capacity", t => {
+  const { q } = fixture(t);
+  const first = submit(q, "a");
+  const second = submit(q, "b");
+  for (const stage of ["normalized", "media", "transcription", "scoring"]) for (let i = 0; i < 3; i++) q.sample(stage, 10000);
+  q.setting("workerResources", JSON.stringify({ ffmpeg: { limit: 1 } }));
+  const serial = q.status(second, "b").estimatedRemainingSeconds.low;
+  q.setting("workerResources", JSON.stringify({ ffmpeg: { limit: 2 } }));
+  assert.ok(q.status(second, "b").estimatedRemainingSeconds.low < serial);
+  assert.equal(q.status(first, "a").estimatedRemainingSeconds.low, 40);
+});
+
+test("estimates use reported model and pipeline limits above the old hardcoded capacity", t => {
+  const { q } = fixture(t);
+  const jobs = Array.from({ length: 8 }, (_, i) => submit(q, `capacity-${i}`));
+  for (const stage of ["normalized", "media", "transcription", "scoring"]) for (let i = 0; i < 3; i++) q.sample(stage, stage === "scoring" ? 60000 : 1000);
+  q.setting("workerResources", JSON.stringify({ ffmpeg: { limit: 3 }, scoring: { limit: 2 }, transcription: { limit: 3 }, pipelines: { limit: 4 } }));
+  const old = q.status(jobs[7], "capacity-7").estimatedRemainingSeconds.low;
+  q.setting("workerResources", JSON.stringify({ ffmpeg: { limit: 3 }, scoring: { limit: 4 }, transcription: { limit: 3 }, pipelines: { limit: 8 } }));
+  assert.ok(q.status(jobs[7], "capacity-7").estimatedRemainingSeconds.low < old);
+});

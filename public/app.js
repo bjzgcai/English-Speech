@@ -467,14 +467,14 @@ function updateAuthView() {
   const isSignedIn = Boolean(state.authUser);
   const route = normalizeRoute(window.location.pathname);
 
-  loginPanel.hidden = isSignedIn;
-  loginButton.hidden = state.authUser?.identityType !== "guest" || state.dingTalkConfigured === false;
-  logoutButton.hidden = state.authUser?.identityType === "guest";
-  authChip.hidden = !isSignedIn;
+  loginPanel.hidden = true;
+  loginButton.hidden = window.VisitorSession.hasAccess && state.authUser?.identityType === "dingtalk";
+  logoutButton.hidden = !isSignedIn || state.authUser?.identityType === "guest";
+  authChip.hidden = !window.VisitorSession.hasAccess;
   authChip.classList.toggle("is-guest", state.authUser?.identityType === "guest");
-  playView.hidden = !isSignedIn || route === "/history" || route === "/leaderboard";
-  leaderboardView.hidden = !isSignedIn || route !== "/leaderboard";
-  historyView.hidden = !isSignedIn || route !== "/history";
+  playView.hidden = route === "/history" || route === "/leaderboard";
+  leaderboardView.hidden = route !== "/leaderboard";
+  historyView.hidden = route !== "/history";
   authUserName.textContent = state.authUser?.name || "DingTalk user";
   nameInput.value = state.authUser?.name || "";
   const loginHref = `/auth/dingtalk?redirect=${encodeURIComponent(window.location.pathname)}`;
@@ -560,18 +560,14 @@ async function checkAuth() {
     updateAuthView();
     if (state.authUser) {
       setRoute(window.location.pathname);
-      window.EvaluationQueue.restore().catch(() => {});
+      if (window.VisitorSession.hasAccess) window.EvaluationQueue.restore().catch(() => {});
     }
     if (state.authUser?.identityType === "guest") void tryDingTalkInAppAuth(data.inAppAuth);
   } catch {
     setStatus("Session unavailable");
-    loginPanel.hidden = false;
-    loginPanel.querySelector("h2").textContent = "Unable to open your session";
-    loginPanel.querySelector("p:last-child").textContent = "Please reload to try again.";
-    loginPanelButton.hidden = true;
-    playView.hidden = true;
-    leaderboardView.hidden = true;
-    historyView.hidden = true;
+    state.authReady = true;
+    updateAuthView();
+    setRoute(window.location.pathname);
   }
 }
 
@@ -863,6 +859,7 @@ async function releaseWakeLock() {
 
 let historyOffset = 0;
 async function loadHistory(offset = 0) {
+  if (!window.VisitorSession.hasAccess) return;
   const response = await window.VisitorSession.fetch(`/api/recordings?limit=20&offset=${offset}`);
   if (response.status === 401) {
     state.authUser = null;
@@ -1177,7 +1174,7 @@ async function loadLeaderboardPage() {
   try {
     const [data] = await Promise.all([
       fetchGameChallengeCatalog(),
-      loadLeaderboardIdentity(),
+      window.VisitorSession.hasAccess ? loadLeaderboardIdentity().catch(() => leaderboardIdentitySettings.replaceChildren()) : Promise.resolve(leaderboardIdentitySettings.replaceChildren()),
     ]);
     if (!data) {
       leaderboardList.setAttribute("aria-busy", "false");
@@ -1487,10 +1484,10 @@ function setRoute(pathname) {
   const isLeaderboard = route === "/leaderboard";
   const isGame = route === "/game";
 
-  playView.hidden = !state.authUser || isHistory || isLeaderboard;
-  leaderboardView.hidden = !state.authUser || !isLeaderboard;
-  historyView.hidden = !state.authUser || !isHistory;
-  loginPanel.hidden = Boolean(state.authUser);
+  playView.hidden = isHistory || isLeaderboard;
+  leaderboardView.hidden = !isLeaderboard;
+  historyView.hidden = !isHistory;
+  loginPanel.hidden = true;
   connectionStatus.hidden = isHistory || isLeaderboard;
   if (!isHistory && !isLeaderboard) setPlayMode(route);
   document.title = isLeaderboard
@@ -1507,11 +1504,10 @@ function setRoute(pathname) {
     else link.removeAttribute("aria-current");
   });
 
-  if (!state.authUser) {
-    setStatus(state.authReady ? "Sign in" : "Checking auth");
-  } else if (isHistory) {
+  if (isHistory) {
     setStatus("History");
-    loadHistory().catch(() => {
+    if (!state.authReady) return;
+    openProtectedHistory().catch(() => {
       historyList.innerHTML = '<p class="empty-history">Unable to load saved answers.</p>';
     });
   } else if (isLeaderboard) {
@@ -1523,6 +1519,15 @@ function setRoute(pathname) {
   } else {
     setStatus(state.authUser?.identityType === "guest" ? "Guest" : "Signed in");
   }
+}
+
+async function openProtectedHistory() {
+  historyList.replaceChildren();
+  if (!await window.VisitorSession.ensureAccess()) {
+    if (normalizeRoute(location.pathname) === "/history") navigateTo("/leaderboard");
+    return;
+  }
+  if (normalizeRoute(location.pathname) === "/history") await loadHistory();
 }
 
 function navigateTo(pathname) {
@@ -1546,12 +1551,17 @@ function closeHistoryVideo() {
 
 profileForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const actionOwner = state.authUser?.openId;
-
-  if (!state.authUser) {
-    window.location.href = `/auth/dingtalk?redirect=${encodeURIComponent(window.location.pathname)}`;
+  if (generateButton.disabled) return;
+  const requestedRoute = location.pathname;
+  generateButton.disabled = true;
+  const accessReady = await window.VisitorSession.ensureAccess();
+  generateButton.disabled = false;
+  if (!accessReady || location.pathname !== requestedRoute) {
+    if (location.pathname === requestedRoute) generateButton.focus();
     return;
   }
+  state.authUser = window.VisitorSession.user;
+  const actionOwner = state.authUser?.openId;
 
   if (state.recorder && state.recorder.state !== "inactive") {
     saveResult.textContent = "Finish and save the current recording before generating another question.";
@@ -1630,6 +1640,7 @@ profileForm.addEventListener("submit", async (event) => {
 async function startRecording() {
   if (!state.question) return;
   const actionOwner = state.authUser?.openId;
+  if (!await window.VisitorSession.ensureAccess() || actionOwner !== window.VisitorSession.user?.openId || !state.question) return;
 
   try {
     state.mimeType = getSupportedMimeType();
@@ -1985,7 +1996,7 @@ window.addEventListener("visitoridentitychange", (event) => {
   state.profile = null;
   state.question = null;
   state.leaderboardIdentity = null;
-  state.activeMode = null;
+  if (!event.detail.accessGranted) state.activeMode = null;
   evaluationResult.innerHTML = "";
   hideExperienceRating();
   saveResult.textContent = "";
@@ -1993,10 +2004,10 @@ window.addEventListener("visitoridentitychange", (event) => {
   stopPrepareCountdown();
   stopRecordingTimer();
   historyList.innerHTML = "";
-  navigateTo("/leaderboard");
+  if (!event.detail.accessGranted) navigateTo("/leaderboard");
   updateAuthView();
   setStatus(state.authUser?.identityType === "guest" ? "Guest" : "Signed in");
-  window.EvaluationQueue.restore().catch(() => {});
+  if (window.VisitorSession.hasAccess) window.EvaluationQueue.restore().catch(() => {});
 });
 
 privacyPolicyAgree.addEventListener("change", updatePrivacyAcceptButton);
@@ -2038,6 +2049,7 @@ speakDirectlyButton.addEventListener("click", () => {
     if (state.mediaRetryAction === "generate") {
       state.mediaRetryPending = false;
       state.mediaRetryAction = null;
+      generateButton.disabled = false;
       profileForm.requestSubmit();
     } else {
       startRecording();
@@ -2168,5 +2180,5 @@ setRoute(window.location.pathname);
 checkAuth();
 window.addEventListener("evaluation-job-completed", event => {
   renderEvaluation(event.detail.evaluation);
-  if (state.authUser) loadHistory(historyOffset).catch(() => {});
+  if (window.VisitorSession.hasAccess) loadHistory(historyOffset).catch(() => {});
 });

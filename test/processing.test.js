@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const { Queue } = require("../src/queue");
-const { context, modelFetch } = require("../src/processing");
+const { context, modelFetch, stage } = require("../src/processing");
 function setup(t) {
   const queue = new Queue(":memory:", { health: () => null });
   const admission = queue.enter("owner"); const { grant } = queue.grant("owner"); queue.beginUpload("owner", grant);
@@ -12,6 +12,15 @@ function setup(t) {
   t.after(() => { global.fetch = original; queue.close(); });
   return task;
 }
+test("resumed stages retain already measured resource time when using a cached response", async t => {
+  const task = setup(t);
+  task.checkpoint.progress = { stage: "scoring", workedMs: 4700, activeSince: null, startedAt: Date.now() - 6000 };
+  await context.run(task, () => stage("scoring", async () => ({ score: 80 })));
+  assert.equal(task.queue.get("SELECT duration FROM samples WHERE stage='scoring'").duration, 4700);
+  const timing = JSON.parse(task.queue.get("SELECT data FROM telemetry WHERE stage='scoring'").data);
+  assert.ok(timing.wallMs >= 6000);
+  assert.equal(timing.activeMs, 4700);
+});
 test("upstream retries persist and successful responses are replayed from checkpoints", async t => {
   const task = setup(t);
   let calls = 0;

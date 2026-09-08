@@ -134,6 +134,8 @@ fi
 ssh "$TARGET" "set -eu
 cd '$release_dir'
 npm ci --omit=dev --no-audit --no-fund --ignore-scripts
+node -e \"require('node:fs').chmodSync(require('@ffprobe-installer/ffprobe').path, 0o755)\"
+node -e \"require('node:child_process').execFileSync(require('@ffprobe-installer/ffprobe').path, ['-version'], {stdio:'ignore'})\"
 current_ffmpeg='$REMOTE_ROOT/current/node_modules/ffmpeg-static'
 release_ffmpeg='$release_dir/node_modules/ffmpeg-static'
 if test -x \"\$current_ffmpeg/ffmpeg\" && test \"\$(node -p \"require('\$current_ffmpeg/package.json').version\")\" = \"\$(node -p \"require('\$release_ffmpeg/package.json').version\")\"; then
@@ -192,6 +194,7 @@ Group=$remote_group
 WorkingDirectory=$REMOTE_ROOT/current
 EnvironmentFile=$REMOTE_ROOT/shared/.env
 EnvironmentFile=$REMOTE_ROOT/shared/.env.prod
+EnvironmentFile=$REMOTE_ROOT/current/ops/englisheval-capacity.env
 Environment=NODE_ENV=production
 Environment=HOST=127.0.0.1
 Environment=QUEUE_START_PAUSED=true

@@ -1,8 +1,8 @@
+const { listenForTest } = require("./test-http");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const http = require("node:http");
 const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 const { once } = require("node:events");
@@ -10,7 +10,7 @@ const { chromium } = require("playwright");
 
 async function main() {
   const data = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-guest-browser-"));
-  const probe = http.createServer(); probe.listen(0, "127.0.0.1"); await once(probe, "listening");
+  const probe = await listenForTest();
   const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
   const base = `http://127.0.0.1:${port}`;
   const env = { ...process.env, NODE_ENV: "test", DATA_DIR: data, PORT: String(port), SESSION_SECRET: "guest-browser-secret", DINGTALK_APP_KEY: "", DINGTALK_APP_SECRET: "", DINGTALK_CORP_ID: "", COOKIE_SECURE: "false", QUEUE_ENABLED: "true", QUEUE_START_PAUSED: "false" };
@@ -40,7 +40,13 @@ async function main() {
       await page.locator("#authUserName").filter({ hasText: /^Guest / }).waitFor({ state: "attached" });
       assert.equal(await page.locator("#loginPanel").isVisible(), false);
       assert.equal(await page.locator("#logoutButton").isVisible(), false);
-      assert.equal(await page.locator("#loginButton").isVisible(), false, "DingTalk is unconfigured");
+      assert.equal(await page.locator("#loginButton").isVisible(), true, "Invitation access remains available without DingTalk");
+      const invitation = crypto.randomUUID().toUpperCase();
+      fs.appendFileSync(path.join(data, "invitations", "metadata.jsonl"), JSON.stringify({ id: crypto.randomUUID(), hash: crypto.createHash("sha256").update(invitation).digest("hex") }) + "\n");
+      await page.locator("#loginButton").click();
+      await page.locator("#access-code").fill(invitation);
+      await page.locator(".access-submit").click();
+      await page.waitForFunction(() => VisitorSession.hasAccess && !document.querySelector("dialog"));
       const guestOwner = await page.evaluate(() => VisitorSession.user.openId);
       assert.match(guestOwner, /^guest:/);
       const timeoutFallback = await page.evaluate(async () => {

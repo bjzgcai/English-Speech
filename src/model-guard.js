@@ -96,4 +96,10 @@ function tokenReservation(options, kind) {
   // UTF-8 bytes conservatively reserve text; image tokens depend on the provider.
   return input + (body.max_tokens || (kind === "question" ? 4096 : 16384));
 }
-module.exports = { ModelGuard, tokenReservation, defaults };
+function modelConcurrency(kind, value = process.env[`MODEL_${kind.toUpperCase()}_CONCURRENT`]) {
+  const limit = value === undefined ? defaults[kind].concurrent : Number(value);
+  if (!Number.isSafeInteger(limit) || limit < 1) throw new Error(`Invalid model limit: ${kind}.concurrent`);
+  return limit;
+}
+
+module.exports = { ModelGuard, tokenReservation, defaults, modelConcurrency };

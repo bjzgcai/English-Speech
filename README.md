@@ -29,7 +29,7 @@ INTERNAL_LLM_TRANSCRIBE_MODEL=qwen-asr
 OPENROUTER_API_KEY=your-openrouter-key
 OPENROUTER_CHAT_COMPLETIONS_URL=https://openrouter.ai/api/v1/chat/completions
 OPENROUTER_EVAL_MODEL=z-ai/glm-5.3-flash
-EVAL_MAX_FRAMES=18
+EVAL_MAX_FRAMES=24
 EVAL_REQUEST_TIMEOUT_MS=600000
 ```
 
@@ -182,9 +182,11 @@ evaluation worker; production uses separate `englisheval` and
 
 The default capacity is 50 admitted sessions and 200 waiting-room positions,
 with one outstanding session per effective owner `openId`. Recording happens in the
-browser. Upload transfers are limited to four and processing to four pipelines,
-one single-threaded FFmpeg process, two ASR calls, and two scoring calls.
-Question generation is limited to two calls and is reused within an admission.
+browser. Upload transfers are limited to four. Generic defaults are four processing
+pipelines, CPU-derived FFmpeg concurrency, and two ASR/scoring calls each.
+The six-CPU production profile uses eight pipelines, three FFmpeg processes,
+three ASR slots and four scoring slots. Shared model budgets can reduce actual
+request concurrency. Question generation stays at two slots and is reused within an admission.
 These are single-server limits; do not start additional worker instances.
 
 Clients accept privacy terms, POST `/api/admission`, heartbeat every 20 seconds,
@@ -236,6 +238,71 @@ smaller bursts. `--fixture=/absolute/video.mp4 --real-upstreams --users=1` measu
 actual configured model services using the explicit fixture; it uses temporary
 storage and never reads production recordings. `--keep-data` retains the isolated
 test results. Do not load-test the live production application or user database.
+
+The media worker uses FFprobe JSON to select streams. One FFmpeg invocation
+produces the durable MP4, mono 16 kHz audio, volume/pause measurements and frames.
+Compliant H.264 (8-bit 4:2:0, square pixels, up to 1280x720, known bitrate up to
+2 Mbps, supported profile/level, no rotation or required trimming) is remuxed
+without video re-encoding. Other video is normalized with H.264. Frames span the
+whole answer, approximately every five seconds, subject to `EVAL_MAX_FRAMES`
+(at most 24). Artifact failures fall back to saving the MP4; old checkpoints and
+missing artifacts can resume from that recording.
+
+`FFMPEG_CONCURRENCY` accepts 1-4. When unset, CPU affinity and Linux cgroup v2
+quotas select 1-2 slots. `WORKER_CONCURRENCY` accepts 1-16 (default 4).
+Model semaphores use `MODEL_*_CONCURRENT`, matching the durable model guard.
+The queue estimator uses the worker's reported media, model and pipeline limits.
+All decoder, filter and encoder outputs remain single-threaded.
+
+The production web and worker units load the non-secret, versioned
+`ops/englisheval-capacity.env` profile. On the six-CPU / 12 GB shared host the
+worker gets `CPUQuota=400%`, `MemoryHigh=3G`, and `MemoryMax=4G`, leaving capacity
+for the web process and other applications. The profile sets media/pipeline/ASR/
+scoring limits to 3/8/3/4. RPM and TPM budgets remain unchanged; four scoring
+slots do not guarantee four simultaneous provider requests. Existing `.env.prod`
+values explicitly loaded by the app take precedence. Deployment and rollback
+switch code and systemd units together without modifying shared credentials.
+
+Admin capacity metrics show P50/P90, sample counts, duration class and pipeline
+version. Stage samples measure active resource time; telemetry also records wall
+time and resource waits. New and legacy pipeline samples are kept separate.
+`node scripts/stage-report.js --database=/absolute/queue.sqlite --hours=168`
+reads aggregate timings without opening user recordings or changing the database.
+Only the latest 30 samples per stage/class/version are retained; report sample
+size and workload when interpreting percentiles.
+
+On the production host, run this from the validated code directory:
+
+```sh
+TEST_ROOT=/path/to/validated/code bash scripts/production-load-check.sh \
+  --users=50 --arrivals=100 --duration=120 \
+  --ffmpeg-concurrency=1 --restart --keep-data
+```
+
+The wrapper defaults to constraining the test process group to one CPU and 1400 MiB, uses isolated
+temporary data, and stops if real queued work arrives, health checks fail, or
+memory/disk margins shrink. Use `--webm --size=1280x720` for camera-like transcoding,
+or `--fixture=/absolute/synthetic-spoken.mp4 --real-upstreams` for real model
+measurements. Never use a user's recording as a test fixture. `--keep-data`
+retains `report.json` with the synthetic test results.
+
+For the six-CPU profile, add `--capacity-profile` and set
+`BENCHMARK_CPU_QUOTA=400% BENCHMARK_MEMORY_MIB=4096` when running the wrapper.
+Its high-memory mode stops below 2 GiB available host memory. Benchmark reports
+separate local semaphore peaks from sampled actual in-flight model requests.
+
+`--resume-data=/tmp/englisheval-load-... --keep-data` resumes an interrupted
+synthetic member benchmark. It verifies the temporary path and synthetic owners,
+preserves existing recordings/checkpoints, and can revalidate a cached scoring
+response after a parser fix. Resume reports are marked explicitly; their elapsed
+time is the resumed portion, while stage measurements preserve already recorded
+resource time. Never use this option with the production database.
+
+Run `node scripts/full-browser-check.js --full-duration` with Playwright installed
+for desktop/mobile recording, two-minute auto-stop, upload, scoring, playback,
+share-image export, game, history, feedback and comments. Model responses are
+deterministic in this browser test. The other browser scripts cover queue recovery,
+guest/DingTalk identity changes and administrator monitoring.
 
 ## Partner API
 

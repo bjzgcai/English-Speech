@@ -2,13 +2,17 @@ const headerLogin = document.querySelector("[data-header-login]");
 const authChip = document.querySelector("[data-auth-chip]");
 const authUserName = document.querySelector("[data-auth-user-name]");
 const logoutButton = document.querySelector("[data-logout-button]");
+const invitationLink = document.querySelector("[data-invitation-link]");
 
-function showHeaderUser(user) {
+function showHeaderUser(user, memberFlag = user?.isZgcMember) {
   const isSignedIn = Boolean(user) && user.identityType !== "guest";
   headerLogin.hidden = isSignedIn;
-  authChip.hidden = !user;
+  authChip.hidden = !window.VisitorSession.hasAccess;
   authChip.classList.toggle("is-guest", user?.identityType === "guest");
   logoutButton.hidden = !isSignedIn;
+  // Keep the management entry discoverable for signed-in DingTalk users; the
+  // API still enforces the organization-member check before allowing access.
+  if (invitationLink) invitationLink.hidden = !(isSignedIn && user?.identityType === "dingtalk");
   authUserName.textContent = user?.name || "DingTalk user";
 }
 
@@ -22,8 +26,7 @@ async function checkHeaderAuth() {
     }
 
     const data = await response.json();
-    showHeaderUser(data.user || null);
-    if (!data.configured) headerLogin.hidden = true;
+    showHeaderUser(data.user || null, data.isZgcMember === true || data.user?.isZgcMember === true);
   } catch {
     showHeaderUser(null);
   }
