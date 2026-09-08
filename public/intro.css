@@ -164,10 +164,12 @@ h3 {
 
 .docs-nav nav {
   gap: 4px;
+  overflow-x: auto;
 }
 
 .docs-nav nav a {
   position: relative;
+  flex: none;
   border-radius: 10px;
   padding: 10px 11px;
   color: var(--muted);
@@ -701,15 +703,18 @@ h3 {
   }
 
   .docs-nav nav a {
-    flex: none;
-    padding: 8px 4px;
-    font-size: 10px;
+    min-width: 44px;
+    padding: 8px;
+    font-size: 12px;
   }
 
-  .docs-nav nav a[href="/intro"]:not([aria-current="page"]),
-  .docs-nav nav a[href="/methodology"]:not([aria-current="page"]),
-  .docs-nav nav a[href="/prepare"]:not([aria-current="page"]) {
-    display: none;
+  .docs-nav nav a,
+  .header-login,
+  .auth-chip button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
   }
 
   .auth-chip,

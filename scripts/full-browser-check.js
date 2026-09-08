@@ -62,8 +62,12 @@ async function main() {
       };
       await page.goto(base + "/examine");
       await page.waitForFunction(() => Boolean(VisitorSession.user));
+      const invitation = crypto.randomUUID().toUpperCase();
+      fs.appendFileSync(path.join(data, "invitations", "metadata.jsonl"), JSON.stringify({ id: crypto.randomUUID(), hash: crypto.createHash("sha256").update(invitation).digest("hex") }) + "\n");
       await page.locator("#role").fill("Software engineering and team communication");
       await page.locator("#generateButton").click();
+      await page.locator("#access-code").fill(invitation);
+      await page.locator(".access-submit").click();
       await page.locator("#privacyConsentModal").waitFor({ state: "visible" });
       await page.locator("#privacyPolicyAgree").check();
       assert.equal(await page.locator("#acceptPrivacyButton").isEnabled(), false);
@@ -165,6 +169,7 @@ async function main() {
       await member.locator("[data-identity-display]").filter({ hasText: `Browser Test ${viewport.width}` }).waitFor();
       await member.goto(base + "/methodology");
       await member.locator("#evaluationVideo").setInputFiles(fixture);
+      await member.locator("#publiclyShareVideo").check();
       await member.locator("#evaluateVideoButton").click();
       await member.locator(".queue-consent").waitFor({ state: "visible" });
       for (const checkbox of await member.locator('.queue-consent input[type="checkbox"]').all()) await checkbox.check();

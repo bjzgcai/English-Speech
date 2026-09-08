@@ -97,6 +97,7 @@ footer { display: flex; justify-content: space-between; margin-top: 20px; border
   .policy-meta { grid-template-columns: 1fr; }
   .privacy-layout { grid-template-columns: 1fr; }
   .toc { position: static; }
+  .data-item.sensitive { margin-right: 0; margin-left: 0; }
 }
 @media (max-width: 480px) {
   :root { --page: calc(100% - 24px); }

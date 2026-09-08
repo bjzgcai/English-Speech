@@ -33,6 +33,7 @@ test("public evaluation projection repairs titles already stored as mojibake", (
   const mojibakeFilename = Buffer.from(filename, "utf8").toString("latin1");
   const result = testHelpers.publicEvaluationForClient({
     id: "existing-upload",
+    publiclyShared: true,
     title: mojibakeFilename.slice(0, 100),
     originalFilename: mojibakeFilename,
     sourceType: "upload",
@@ -46,6 +47,7 @@ test("public evaluation projection repairs titles already stored as mojibake", (
 test("public evaluation projection contains feedback but excludes private evaluation data", () => {
   const record = {
     id: "public-evaluation-1",
+    publiclyShared: true,
     title: "Product launch speech",
     originalFilename: "Product_launch_speech.mp4",
     sourceType: "upload",

@@ -268,13 +268,16 @@ button:disabled {
 
 .main-nav {
   display: flex;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
   align-items: center;
   gap: 4px;
 }
 
 .main-nav a {
   position: relative;
+  flex: none;
   color: var(--muted);
   border-radius: 10px;
   padding: 10px 11px;
@@ -2400,6 +2403,11 @@ video {
   padding: clamp(22px, 3vw, 32px);
 }
 
+.prepare-content,
+.prepare-footer {
+  display: contents;
+}
+
 .prepare-dialog.is-recording {
   width: min(1040px, 100%);
   padding: 12px;
@@ -2491,7 +2499,7 @@ video {
   text-wrap: balance;
 }
 
-.prepare-dialog.is-countdown > p:not(.muted-label) {
+.prepare-dialog.is-countdown #prepareModalMessage {
   grid-area: message;
   margin-top: 0;
 }
@@ -2537,7 +2545,7 @@ video {
 .prepare-dialog.is-countdown .countdown-display {
   grid-area: countdown;
   margin-top: 0;
-  font-size: clamp(64px, 8vw, 92px);
+  font-size: 72px;
 }
 
 .prepare-dialog.is-countdown .prepare-actions {
@@ -3422,7 +3430,7 @@ video {
     text-wrap: pretty;
   }
 
-  .prepare-dialog.is-countdown > p:not(.muted-label) {
+  .prepare-dialog.is-countdown #prepareModalMessage {
     max-width: none;
     font-size: 13px;
     line-height: 1.4;
@@ -3497,6 +3505,269 @@ video {
 
   .login-button {
     width: 100%;
+  }
+}
+
+/* Keep timed actions outside scrolling content, including on landscape phones. */
+@media (max-width: 820px), (max-height: 500px) {
+  .prepare-modal {
+    padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  }
+
+  .prepare-dialog,
+  .prepare-dialog.is-countdown,
+  .prepare-dialog.is-recording {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    max-height: calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    overflow: hidden;
+    padding: 18px;
+    text-align: left;
+  }
+
+  .prepare-content {
+    display: block;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .prepare-dialog.is-countdown .prepare-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .prepare-dialog.is-countdown .prepare-content > * {
+    flex: none;
+    margin: 0;
+  }
+
+  .prepare-dialog.is-countdown h2,
+  .prepare-dialog.is-recording #questionText {
+    max-width: none;
+    font-size: 22px;
+    line-height: 1.2;
+    letter-spacing: 0;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+
+  .prepare-dialog.is-countdown #prepareModalMessage {
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .prepare-dialog.is-countdown .prepare-preview {
+    width: 100%;
+    max-height: min(28dvh, 240px);
+  }
+
+  .prepare-dialog.is-countdown .prepare-camera-guidance {
+    width: 100%;
+    max-width: none;
+    padding: 9px 12px;
+  }
+
+  .prepare-footer {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 16px;
+    padding-top: 16px;
+  }
+
+  .prepare-footer:not(:has(> :not([hidden]))) {
+    display: none;
+  }
+
+  .prepare-dialog.is-countdown .countdown-display {
+    flex: none;
+    width: 112px;
+    min-width: 112px;
+    margin: 0;
+    font-size: 42px;
+    line-height: 1;
+  }
+
+  .prepare-footer .prepare-actions {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+  }
+
+  .prepare-dialog .prepare-footer .prepare-actions .primary-button {
+    width: 100%;
+    min-height: 52px;
+    padding: 10px 8px;
+    font-size: 15px;
+  }
+
+  .prepare-dialog.is-recording {
+    width: min(680px, 100%);
+    padding: 12px;
+  }
+
+  .recorder-modal-slot {
+    min-height: 0;
+  }
+
+  .prepare-dialog.is-recording .recorder-panel {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100dvh - 48px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    gap: 10px;
+    padding: 0;
+  }
+
+  .prepare-dialog.is-recording .recorder-panel > * {
+    flex: none;
+    margin: 0;
+  }
+
+  .prepare-dialog.is-recording .question-block {
+    flex: 0 1 auto;
+    min-height: 64px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: 10px;
+  }
+
+  .prepare-dialog.is-recording #questionMeta,
+  .prepare-dialog.is-recording .camera-guidance > strong,
+  .prepare-dialog.is-recording .camera-guidance > p,
+  .prepare-dialog.is-recording .save-result:empty,
+  .prepare-dialog.is-recording .evaluation-result:empty {
+    display: none;
+  }
+
+  .prepare-dialog.is-recording .video-frame {
+    height: min(30dvh, 260px);
+    min-height: 140px;
+    aspect-ratio: auto;
+  }
+
+  .prepare-dialog.is-recording .camera-guidance {
+    padding: 6px 8px;
+  }
+
+  .prepare-dialog.is-recording .device-status {
+    flex-wrap: nowrap;
+    gap: 8px;
+    margin: 0;
+  }
+
+  .prepare-dialog.is-recording .device-status span {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font-size: 11px;
+  }
+
+  .prepare-dialog.is-recording .control-row {
+    position: static;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 0 0 5px;
+    background: var(--panel);
+    box-shadow: none;
+  }
+
+  .prepare-dialog.is-recording .recording-hud {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 6px 12px;
+    inset: 8px 8px auto;
+    padding: 8px 10px 10px;
+  }
+
+  .prepare-dialog.is-recording .recording-state {
+    grid-column: 1 / -1;
+  }
+
+  .prepare-dialog.is-recording .recording-time {
+    justify-content: space-between;
+  }
+
+  .discard-dialog {
+    max-height: calc(100dvh - 48px);
+    overflow-y: auto;
+  }
+
+  .brand > span:last-child {
+    display: none;
+  }
+
+  .header-menu {
+    flex: 1;
+    gap: 8px;
+  }
+
+  .main-nav {
+    flex: 1;
+  }
+
+  .main-nav a[href] {
+    display: inline-flex;
+    flex: none;
+    min-width: 44px;
+    padding: 8px;
+    font-size: 12px;
+  }
+
+  .main-nav a,
+  .auth-chip button,
+  .header-login {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+@media (max-height: 500px) and (min-width: 480px) {
+  .prepare-dialog.is-recording {
+    width: min(1040px, 100%);
+  }
+
+  .prepare-dialog.is-recording .recorder-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(64px, 1fr) auto auto;
+    grid-template-areas: "question video" "controls video" "status guidance";
+  }
+
+  .prepare-dialog.is-recording .video-frame {
+    height: 100%;
+    min-height: 0;
+    grid-area: video;
+  }
+
+  .prepare-dialog.is-recording .question-block { grid-area: question; }
+  .prepare-dialog.is-recording .control-row { grid-area: controls; }
+  .prepare-dialog.is-recording .camera-guidance { grid-area: guidance; }
+  .prepare-dialog.is-recording .save-result { grid-area: status; }
+
+  .discard-dialog {
+    padding: 18px 20px;
+  }
+
+  .discard-dialog h2 {
+    font-size: 30px;
+    line-height: 1.1;
+    letter-spacing: 0;
+  }
+
+  .discard-dialog > p:not(.muted-label) {
+    margin-top: 8px;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .discard-actions {
+    margin-top: 16px;
   }
 }
 

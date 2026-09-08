@@ -125,6 +125,18 @@ test("invalid input and missing microphones fail media preparation", async t => 
   await assert.rejects(processMedia(input, { artifactBaseDir: path.join(dir, "artifacts") }), /no usable microphone/);
 });
 
+test("uploaded playlists cannot read other server media files", async t => {
+  const dir = directory(t);
+  await fixture(dir);
+  const playlist = path.join(dir, "upload.mp4");
+  fs.writeFileSync(playlist, "ffconcat version 1.0\nfile input.mp4\n");
+  await assert.rejects(inspectMedia(playlist));
+  await assert.rejects(processMedia(playlist, {
+    outputPath: path.join(dir, "output.mp4"),
+    mediaInfo: { hasAudio: true, hasVideo: false, audio: { index: 1 } },
+  }));
+});
+
 test("media with multiple audio tracks uses the default track for normalization and evaluation", async t => {
   const dir = directory(t);
   const video = await fixture(dir, { audio: null });

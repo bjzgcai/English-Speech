@@ -80,6 +80,16 @@ test("expired worker leases recover checkpoints and reject stale completions", t
   assert.equal(q.finish(id, second.token, { evaluation: { status: "completed" } }), true);
   assert.equal(q.admission("a"), null);
 });
+
+test("job claiming honors the configured pipeline capacity above four", t => {
+  const previous = process.env.WORKER_CONCURRENCY;
+  process.env.WORKER_CONCURRENCY = "8";
+  t.after(() => { if (previous === undefined) delete process.env.WORKER_CONCURRENCY; else process.env.WORKER_CONCURRENCY = previous; });
+  const { q } = fixture(t);
+  for (let i = 0; i < 9; i++) submit(q, `claim-${i}`);
+  for (let i = 0; i < 8; i++) assert.ok(q.claim(), `Pipeline ${i + 1} must be usable`);
+  assert.equal(q.claim(), null);
+});
 test("cancellation tombstones prevent late acceptance and late worker results", t => {
   const { q } = fixture(t);
   const id = submit(q, "a"); const job = q.claim();
