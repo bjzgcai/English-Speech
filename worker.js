@@ -4,11 +4,13 @@ const workerId = require("node:crypto").randomUUID();
 const config = require("./src/config");
 const { Queue } = require("./src/queue");
 const { context, stage, resources } = require("./src/processing");
+const { mediaPipelineVersion, pipelineConcurrency } = require("./src/media-config");
 process.env.QUEUE_WORKER = "true";
 const { testHelpers: evaluation } = require("./src/app");
 
 const queue = new Queue(config.queueFile);
 const active = new Map();
+const pipelineLimit = pipelineConcurrency();
 let stopping = false;
 
 async function processJob(job) {
@@ -22,25 +24,35 @@ async function processJob(job) {
   try {
     if (job.recovery_count >= 3) throw new Error("Processing was interrupted repeatedly. Please retry later.");
     await context.run(task, async () => {
+      if (task.checkpoint.normalized && !fs.existsSync(videoPath)) {
+        delete task.checkpoint.normalized;
+        delete task.checkpoint.media;
+        valid = false;
+      }
       const media = await stage("normalized", async () => {
         const inspected = await evaluation.inspectMedia(job.payload.inputPath);
         if (!inspected.hasAudio) throw new Error("The recording has no usable microphone audio.");
         if (job.payload.mode !== "standalone-speech" && !inspected.hasVideo) throw new Error("The answer requires both camera and microphone tracks.");
         const media = evaluation.limitStandaloneMediaInfo(inspected);
         task.checkpoint.category = media.durationSeconds <= 40 ? "short" : "long";
+        task.checkpoint.pipelineVersion = mediaPipelineVersion;
         fs.mkdirSync(artifactBaseDir, { recursive: true, mode: 0o700 });
         const temporaryPath = path.join(artifactBaseDir, "normalizing.mp4");
-        await evaluation.convertToMp4(job.payload.inputPath, temporaryPath, { maximumDurationSeconds: 120 });
+        const prepared = await evaluation.normalizeRecording(job.payload.inputPath, temporaryPath, { artifactBaseDir, mediaInfo: inspected });
+        if (!inspected.durationSeconds && prepared.prepared?.analysis.durationSeconds) {
+          media.durationSeconds = Math.min(120, prepared.prepared.analysis.durationSeconds);
+          task.checkpoint.category = media.durationSeconds <= 40 ? "short" : "long";
+        }
         controller.signal.throwIfAborted();
         fs.renameSync(temporaryPath, videoPath);
         for (const target of [videoPath, config.recordingsDir]) {
           const descriptor = fs.openSync(target, "r");
           try { fs.fsyncSync(descriptor); } finally { fs.closeSync(descriptor); }
         }
-        return media;
+        return { ...media, ...prepared };
       });
       valid = true;
-      if (task.checkpoint.media && (!fs.existsSync(path.join(artifactBaseDir, "audio.mp3")) || task.checkpoint.media.framePaths.some(file => !fs.existsSync(file)))) delete task.checkpoint.media;
+      task.checkpoint.pipelineVersion ||= media.pipelineVersion || "legacy";
       const result = await evaluation.evaluateSavedVideo({ videoPath, artifactBaseDir, profile: record.profile, question: record.question, evaluationMode: job.payload.mode, mediaInfo: media });
       if (job.payload.mode === "standalone-speech" && result.rubric?.coherence) result.rubric.coherence.label = "Coherence / speech consistency";
       queue.finish(job.id, job.token, { ...record, bytes: fs.statSync(videoPath).size, path: `/api/recordings/${job.id}/video`, evaluation: result });
@@ -65,7 +77,7 @@ function tick() {
     return true;
   });
   if (!leader) return;
-  queue.setting("workerResources", JSON.stringify({ ...resources(), rssBytes: process.memoryUsage().rss }));
+  queue.setting("workerResources", JSON.stringify({ ...resources(), pipelines: { limit: pipelineLimit, active: active.size }, rssBytes: process.memoryUsage().rss }));
   if (Date.now() - Number(queue.setting("lastPrune") || 0) > 3600000) {
     queue.run("DELETE FROM telemetry WHERE id NOT IN (SELECT id FROM telemetry ORDER BY id DESC LIMIT 10000)");
     queue.setting("lastPrune", Date.now());
@@ -75,7 +87,7 @@ function tick() {
     else queue.renew(id, task.token);
   }
   if (stopping || Number(queue.setting("circuitUntil") || 0) > Date.now()) return;
-  while (active.size < 4) {
+  while (active.size < pipelineLimit) {
     const job = queue.claim();
     if (!job) break;
     processJob(job).catch(() => { console.error("Worker job could not be finalized; it will recover from its lease."); });

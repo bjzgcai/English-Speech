@@ -1,8 +1,8 @@
+const { listenForTest } = require("./test-http");
 const { chromium } = require("playwright");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const http = require("node:http");
 const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 const { once } = require("node:events");
@@ -10,7 +10,7 @@ const assert = require("node:assert/strict");
 async function main() {
   const root = path.resolve(__dirname, "..");
   const data = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-browser-"));
-  const probe = http.createServer(); probe.listen(0, "127.0.0.1"); await once(probe, "listening");
+  const probe = await listenForTest();
   const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
   const base = `http://127.0.0.1:${port}`;
   const env = { ...process.env, NODE_ENV: "test", DATA_DIR: data, PORT: String(port), QUEUE_ENABLED: "true", SESSION_SECRET: "browser-test", DINGTALK_APP_KEY: "test", DINGTALK_APP_SECRET: "test", DINGTALK_CORP_ID: "test", COOKIE_SECURE: "false", QUEUE_START_PAUSED: "false" };

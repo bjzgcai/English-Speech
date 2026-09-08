@@ -1,3 +1,4 @@
+const { listenForTest } = require("../scripts/test-http");
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
@@ -144,9 +145,8 @@ test("admin statistics distinguish entrants, submitters, scored users, and repea
 });
 
 test("admin page requires DingTalk sign-in and remains outside the main app menu", async (context) => {
-  const server = app.listen(0);
+  const server = await listenForTest(app);
   context.after(() => new Promise((resolve) => server.close(resolve)));
-  await new Promise((resolve) => server.once("listening", resolve));
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
 
   const signedOut = await fetch(`${baseUrl}/admin`, { redirect: "manual" });
@@ -170,9 +170,8 @@ test("admin page requires DingTalk sign-in and remains outside the main app menu
 });
 
 test("admin statistics API requires both DingTalk session and the separate access token", async (context) => {
-  const server = app.listen(0);
+  const server = await listenForTest(app);
   context.after(() => new Promise((resolve) => server.close(resolve)));
-  await new Promise((resolve) => server.once("listening", resolve));
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   const session = testHelpers.createSessionToken({
     openId: "admin-statistics-reader",

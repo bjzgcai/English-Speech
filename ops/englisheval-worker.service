@@ -10,6 +10,7 @@ Group=ubuntu
 WorkingDirectory=/opt/englisheval/current
 EnvironmentFile=/opt/englisheval/shared/.env
 EnvironmentFile=/opt/englisheval/shared/.env.prod
+EnvironmentFile=/opt/englisheval/current/ops/englisheval-capacity.env
 Environment=NODE_ENV=production
 Environment=QUEUE_WORKER=true
 Environment=QUEUE_START_PAUSED=true
@@ -18,9 +19,9 @@ Restart=always
 RestartSec=3
 TimeoutStopSec=30
 KillMode=control-group
-MemoryHigh=900M
-MemoryMax=1200M
-CPUQuota=100%
+MemoryHigh=3G
+MemoryMax=4G
+CPUQuota=400%
 Nice=10
 NoNewPrivileges=true
 PrivateTmp=true

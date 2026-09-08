@@ -190,6 +190,44 @@ button:disabled {
   text-decoration: none;
 }
 
+.login-hint {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--accent-dark);
+  border-radius: 50%;
+  color: var(--accent-dark);
+  font-size: 13px;
+  font-weight: 900;
+  cursor: help;
+}
+
+.login-hint-tooltip {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 10px);
+  right: 0;
+  width: max-content;
+  max-width: 280px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.login-hint:hover .login-hint-tooltip,
+.login-hint:focus-visible .login-hint-tooltip { opacity: 1; transform: translateY(0); }
+
 .login-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

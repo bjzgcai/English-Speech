@@ -1,0 +1,13 @@
+.access-dialog { width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); box-sizing: border-box; padding: 28px; border: 1px solid #d9d6e8; border-radius: 8px; background: #fff; color: #25243b; font: 16px/1.5 system-ui, sans-serif; }
+.access-dialog::backdrop { background: rgb(25 24 40 / 48%); }
+.access-form { display: grid; gap: 12px; position: relative; }
+.access-form h2 { font-size: 24px; margin: 0 30px 8px 0; }
+.access-form .access-close { position: absolute; top: -16px; right: -16px; width: 40px; height: 40px; padding: 0; border: 0; background: transparent; color: #535066; font-size: 28px; cursor: pointer; }
+.access-login, .access-submit { display: block; padding: 12px 16px; border: 0; border-radius: 6px; background: #5545cb; color: white; font: inherit; text-align: center; text-decoration: none; cursor: pointer; }
+.access-login[hidden] { display: none; }
+.access-divider { margin: 4px 0; color: #676477; text-align: center; }
+.access-form input { width: 100%; min-width: 0; box-sizing: border-box; padding: 12px; border: 1px solid #aaa5be; border-radius: 4px; font: inherit; }
+.access-error { color: #aa2439; margin: 0; overflow-wrap: anywhere; }
+.access-error:empty { display: none; }
+.access-submit:disabled { opacity: .6; cursor: wait; }
+.access-form :focus-visible { outline: 3px solid #e7b337; outline-offset: 3px; }

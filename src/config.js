@@ -34,6 +34,8 @@ const consentsDir = path.join(dataDir, "consents");
 const consentsMetadataFile = path.join(consentsDir, "metadata.jsonl");
 const ratingsDir = path.join(dataDir, "ratings");
 const ratingsMetadataFile = path.join(ratingsDir, "metadata.jsonl");
+const invitationsDir = path.join(dataDir, "invitations");
+const invitationsMetadataFile = path.join(invitationsDir, "metadata.jsonl");
 
 for (const directory of [
   recordingsDir,
@@ -43,6 +45,7 @@ for (const directory of [
   commentsDir,
   consentsDir,
   ratingsDir,
+  invitationsDir,
 ]) {
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   fs.chmodSync(directory, 0o700);
@@ -63,5 +66,6 @@ module.exports = {
   commentsMetadataFile,
   consentsMetadataFile,
   ratingsMetadataFile,
+  invitationsMetadataFile,
   openApiFile: path.join(rootDir, "openapi.yaml"),
 };

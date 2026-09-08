@@ -1,3 +1,4 @@
+const { listenForTest } = require("./test-http");
 const { chromium } = require("playwright");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -8,10 +9,13 @@ Object.assign(process.env, { NODE_ENV: "test", DATA_DIR: data, QUEUE_ENABLED: "t
   DINGTALK_APP_KEY: "synthetic-app", DINGTALK_APP_SECRET: "synthetic-secret", ADMIN_ACCESS_TOKEN: "synthetic-admin-token" });
 const { app, testHelpers } = require("../src/app");
 const { AlertStore, applySample, monitorFile, MiB } = require("../src/monitoring");
+const { Queue } = require("../src/queue");
 async function main() {
-  const server = app.listen(0); await new Promise(resolve => server.once("listening", resolve));
+  const server = await listenForTest(app);
   const base = `http://127.0.0.1:${server.address().port}`;
   const store = new AlertStore(monitorFile(path.join(data, "recordings")));
+  const queue = new Queue(path.join(data, "recordings", "queue.sqlite"), { health: () => null });
+  for (const stage of ["normalized", "media", "transcription", "scoring"]) for (const duration of [1000, 2000, 5000]) queue.sample(stage, duration);
   const sample = { at: Date.now() - 30000, memoryAvailable: 400 * MiB, cpuPercent: 30, disks: [], services: [], errors: [],
     health: { ok: true, latencyMs: 20 }, queue: { outstanding: 50, waiting: 0, workerHeartbeat: Date.now(), circuitUntil: 0 } };
   applySample(store, sample); applySample(store, { ...sample, at: Date.now() });
@@ -32,6 +36,10 @@ async function main() {
       assert.match(await page.locator("#monitorAlerts").innerText(), /Critical/);
       assert.match(await page.locator("#monitorDelivery").innerText(), /unknown/);
       assert.equal(await page.locator("#modelBudgets li").count(), 4);
+      assert.match(await page.locator("#queueTimings").innerText(), /P50 2.0s, P90 5.0s/);
+      await page.locator("#queuePaused").check();
+      await page.waitForFunction(() => document.querySelector("#queueSummary").textContent.includes("paused"));
+      await page.locator("#queuePaused").uncheck();
       await page.locator("#queueSummary").scrollIntoViewIfNeeded();
       await page.screenshot({ path: path.join(data, `budgets-${viewport.width}.png`) });
       await page.locator("#monitorHeading").scrollIntoViewIfNeeded();
@@ -41,6 +49,6 @@ async function main() {
     }
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ screenshots: data, errors }));
-  } finally { await browser.close(); store.close(); await new Promise(resolve => server.close(resolve)); }
+  } finally { await browser.close(); queue.close(); store.close(); await new Promise(resolve => server.close(resolve)); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

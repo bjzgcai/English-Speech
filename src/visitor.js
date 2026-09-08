@@ -1,6 +1,7 @@
 const crypto = require("node:crypto");
 
 const guestCookieName = "englisheval_guest";
+const accessCookieName = "englisheval_access";
 const guestTtlMs = 180 * 24 * 60 * 60 * 1000;
 const guestIdPattern = /^guest:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -49,6 +50,25 @@ function createVisitorAccess({ readSession, parseCookies, useSecureSessionCookie
     return req.visitor;
   }
 
+  function setGuestSession(res, id) {
+    const payload = Buffer.from(JSON.stringify({ id, exp: Date.now() + guestTtlMs })).toString("base64url");
+    res.cookie(guestCookieName, `${payload}.${signature(payload)}`, { httpOnly: true, sameSite: "lax", secure: useSecureSessionCookie(), maxAge: guestTtlMs, path: "/" });
+    res.cookie(accessCookieName, `${id}.${signature(id)}`, { httpOnly: true, sameSite: "lax", secure: useSecureSessionCookie(), maxAge: guestTtlMs, path: "/" });
+  }
+
+  function hasAccess(req, user) {
+    if (user?.identityType === "dingtalk") return true;
+    const value = (parseCookies(req)[accessCookieName] || "").split(".");
+    return value.length === 2 && value[0] === user?.openId && value[1] === signature(value[0]);
+  }
+
+  function requireAccess(req, res, next) {
+    requireVisitor(req, res, () => {
+      if (hasAccess(req, req.user)) return next();
+      return res.status(401).json({ code: "AUTH_REQUIRED", error: "DingTalk sign-in or an invitation code is required.", loginUrl: "/auth/dingtalk", inviteUrl: "/invite" });
+    });
+  }
+
   function requireVisitor(req, res, next) {
     try { req.user = resolveVisitor(req, res); }
     catch { return res.status(503).json({ error: "Visitor sessions are not configured." }); }
@@ -60,7 +80,7 @@ function createVisitorAccess({ readSession, parseCookies, useSecureSessionCookie
     next();
   }
 
-  return { resolveVisitor, requireVisitor };
+  return { resolveVisitor, requireVisitor, requireAccess, hasAccess, setGuestSession };
 }
 
 module.exports = { createVisitorAccess, isGuest, guestCookieName, guestTtlMs };

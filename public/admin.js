@@ -401,7 +401,7 @@ async function loadQueueMetrics() {
   const data = await response.json();
   setText("queueSummary", `${data.admissions.map(item => `${item.count} ${item.state}`).join(", ") || "No active sessions"}. Capacity: ${data.capacity}. ${data.pressure || "Worker available."}`);
   document.querySelector("#queuePaused").checked = data.paused;
-  setText("queueTimings", data.stages.filter(item => item.stage !== "release").map(item => `${item.stage}: ${(item.averageMs / 1000).toFixed(1)} seconds average`).join(". "));
+  setText("queueTimings", data.stages.filter(item => item.stage !== "release").map(item => `${item.stage} (${item.category}, ${item.pipeline}, n=${item.samples}): P50 ${(item.p50Ms / 1000).toFixed(1)}s, P90 ${(item.p90Ms / 1000).toFixed(1)}s`).join(". "));
   document.querySelector("#modelBudgets").replaceChildren(...(data.models || []).map(item => {
     const row = document.createElement("li");
     const label = { internal: "Internal gateway", question: "Questions", transcription: "ASR", scoring: "Scoring" }[item.scope] || item.scope;

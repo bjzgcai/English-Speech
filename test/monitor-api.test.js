@@ -1,3 +1,4 @@
+const { listenForTest } = require("../scripts/test-http");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -9,7 +10,7 @@ Object.assign(process.env, { NODE_ENV: "test", DATA_DIR: data, QUEUE_ENABLED: "t
 const { app, testHelpers } = require("../src/app");
 const { AlertStore, monitorFile } = require("../src/monitoring");
 test("monitor metrics require both DingTalk authentication and administrator token", async t => {
-  const server = app.listen(0); await new Promise(resolve => server.once("listening", resolve));
+  const server = await listenForTest(app);
   t.after(async () => { await new Promise(resolve => server.close(resolve)); fs.rmSync(data, { recursive: true, force: true }); });
   const base = `http://127.0.0.1:${server.address().port}`;
   const cookie = `englisheval_session=${testHelpers.createSessionToken({ openId: "synthetic-admin", name: "Synthetic" })}`;

@@ -1,8 +1,9 @@
 const { AsyncLocalStorage } = require("node:async_hooks");
 const { spawn } = require("node:child_process");
 const ffmpeg = require("ffmpeg-static");
+const { mediaConcurrency, mediaPipelineVersion } = require("./media-config");
 const context = new AsyncLocalStorage();
-const { ModelGuard, tokenReservation } = require("./model-guard");
+const { ModelGuard, tokenReservation, modelConcurrency } = require("./model-guard");
 const guards = new WeakMap();
 let modelQueue = null;
 function modelGuard(queue = modelQueue) {
@@ -34,7 +35,7 @@ class Semaphore {
     }
   }
 }
-const gates = { ffmpeg: new Semaphore(1), transcription: new Semaphore(2), scoring: new Semaphore(2), question: new Semaphore(2) };
+const gates = { ffmpeg: new Semaphore(mediaConcurrency()), ...Object.fromEntries(["transcription", "scoring", "question"].map(kind => [kind, new Semaphore(modelConcurrency(kind))])) };
 let questionObserver = null;
 const delay = (ms, signal) => new Promise((resolve, reject) => {
   const timer = setTimeout(() => { signal?.removeEventListener("abort", abort); resolve(); }, ms);
@@ -46,20 +47,32 @@ function runMedia(args, { probe = false } = {}) {
   const signal = context.getStore()?.signal;
   return gates.ffmpeg.run(() => measureResource(() => new Promise((resolve, reject) => {
     const outputArgs = probe ? args : [...args.slice(0, -1), "-threads", "1", args.at(-1)];
-    const child = spawn(ffmpeg, ["-nostdin", "-threads", "1", "-filter_threads", "1", "-filter_complex_threads", "1", ...outputArgs]);
+    const child = probe
+      ? spawn(require("@ffprobe-installer/ffprobe").path, args)
+      : spawn(ffmpeg, ["-nostdin", "-hide_banner", "-nostats", "-threads", "1", "-filter_threads", "1", "-filter_complex_threads", "1", ...outputArgs]);
     let output = "";
+    let stdout = "";
     let stopped = false;
+    let settled = false;
     const stop = () => { stopped = true; child.kill("SIGKILL"); };
     const timer = setTimeout(stop, Number(process.env.FFMPEG_TIMEOUT_MS) || 180000);
     signal?.addEventListener("abort", stop, { once: true });
     child.stderr.on("data", chunk => { output = (output + chunk.toString()).slice(-65536); });
+    child.stdout.on("data", chunk => {
+      if (probe) {
+        stdout += chunk.toString();
+        if (stdout.length > 1024 * 1024) stop();
+      }
+    });
     const finish = (error, code) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       signal?.removeEventListener("abort", stop);
       if (signal?.aborted) reject(signal.reason);
       else if (stopped) reject(new Error("Media processing timed out."));
       else if (error) reject(error);
-      else if (code === 0 || probe) resolve(output);
+      else if (code === 0) resolve(probe ? stdout : output);
       else reject(new Error(output || `FFmpeg exited with code ${code}`));
     };
     child.on("error", error => finish(error));
@@ -191,14 +204,19 @@ async function stage(name, fn) {
   if (!task) return fn();
   if (Object.hasOwn(task.checkpoint, name)) return task.checkpoint[name];
   task.signal.throwIfAborted();
+  const previous = task.checkpoint.progress?.stage === name ? task.checkpoint.progress : null;
+  const start = previous?.startedAt || (previous && task.stage_started) || Date.now();
   task.queue.stage(task.id, task.token, name);
-  const start = Date.now();
-  task.checkpoint.progress = { stage: name, workedMs: 0, activeSince: null };
+  task.checkpoint.progress = { stage: name, startedAt: start, workedMs: previous?.workedMs || 0, activeSince: null };
   const value = await fn();
   task.signal.throwIfAborted();
   task.checkpoint[name] = value;
   if (!task.queue.checkpoint(task.id, task.token, task.checkpoint)) throw new Error("Worker lease expired.");
-  task.queue.sample(name, task.checkpoint.progress.workedMs || Date.now() - start, task.checkpoint.category || "long");
+  const wallMs = Date.now() - start;
+  const activeMs = task.checkpoint.progress.workedMs || wallMs;
+  const pipeline = task.checkpoint.pipelineVersion || mediaPipelineVersion;
+  task.queue.sample(name, activeMs, task.checkpoint.category || "long", pipeline);
+  task.queue.run("INSERT INTO telemetry(job,stage,created,data) VALUES(?,?,?,?)", task.id, name, Date.now(), JSON.stringify({ event: "stage-completed", pipeline, category: task.checkpoint.category || "long", activeMs, wallMs, waitingMs: Math.max(0, wallMs - activeMs), normalization: task.checkpoint.normalized?.normalization || null }));
   return value;
 }
-module.exports = { context, Semaphore, runMedia, modelFetch, delay, stage, modelGuard, setModelQueue: queue => { modelQueue = queue; modelGuard(queue); }, resources: () => Object.fromEntries(Object.entries(gates).map(([key, gate]) => [key, { active: gate.active, peak: gate.peak, waiting: gate.waiters.length }])), setQuestionObserver: observer => { questionObserver = observer; } };
+module.exports = { context, Semaphore, runMedia, modelFetch, delay, stage, modelGuard, setModelQueue: queue => { modelQueue = queue; modelGuard(queue); }, resources: () => Object.fromEntries(Object.entries(gates).map(([key, gate]) => [key, { limit: gate.limit, active: gate.active, peak: gate.peak, waiting: gate.waiters.length }])), setQuestionObserver: observer => { questionObserver = observer; } };

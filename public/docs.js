@@ -290,6 +290,15 @@ videoInput.addEventListener("change", () => {
 
 evaluatorForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (evaluateVideoButton.disabled) return;
+  const requestedFile = videoInput.files?.[0];
+  evaluateVideoButton.disabled = true;
+  const accessReady = await window.VisitorSession.ensureAccess();
+  evaluateVideoButton.disabled = false;
+  if (!accessReady || !requestedFile || videoInput.files?.[0] !== requestedFile) {
+    evaluateVideoButton.focus();
+    return;
+  }
   evaluatorResult.hidden = true;
   evaluatorStatus.className = "";
 
@@ -327,13 +336,13 @@ evaluatorForm.addEventListener("submit", async (event) => {
 
 loadPublicEvaluations();
 window.VisitorSession.fetch("/api/me").then(response => response.json()).then(data => {
-  if (data.user) window.EvaluationQueue.restore().catch(() => {});
+  if (data.hasAccess) window.EvaluationQueue.restore().catch(() => {});
 }).catch(() => {});
-window.addEventListener("visitoridentitychange", () => {
+window.addEventListener("visitoridentitychange", event => {
   evaluatorResult.innerHTML = "";
   evaluatorStatus.textContent = "";
-  videoInput.value = "";
-  window.EvaluationQueue.restore().catch(() => {});
+  if (!event.detail.accessGranted) videoInput.value = "";
+  if (window.VisitorSession.hasAccess) window.EvaluationQueue.restore().catch(() => {});
 });
 window.addEventListener("evaluation-job-completed", event => {
   if (event.detail.evaluation?.status === "completed") {

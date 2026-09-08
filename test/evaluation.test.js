@@ -22,6 +22,16 @@ test("evaluation reads normal model content", () => {
   });
 });
 
+test("evaluation extracts a complete JSON object when a provider repeats it after Markdown", () => {
+  const evaluation = { summary: 'A string containing {braces} and an escaped "quote".', rubric: { fluency: { score: 80 } } };
+  const object = JSON.stringify(evaluation);
+  assert.deepEqual(testHelpers.extractJsonObject(`${object}\n\x60\x60\n${object}`), evaluation);
+  assert.deepEqual(testHelpers.extractJsonObject(`\x60\x60\x60json\n${object}\n\x60\x60\x60`), evaluation);
+  assert.throws(() => testHelpers.extractJsonObject('{"rubric":{"fluency":{"score":80}}'));
+  assert.throws(() => testHelpers.extractJsonObject('{"summary":"broken",}'));
+  assert.throws(() => testHelpers.extractJsonObject('{/* comment */"score":80}'));
+});
+
 test("answer save IDs accept UUID v4 values only", () => {
   const id = "777c2d86-6d44-4d8b-ab1c-b823529ca1b5";
   assert.equal(testHelpers.validAnswerSaveId(id), id);
