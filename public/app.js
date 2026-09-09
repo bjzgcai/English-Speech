@@ -289,6 +289,9 @@ function closePrivacyConsentModal(agreed) {
 }
 
 function requestPrivacyConsent() {
+  privacyPolicyAgree.checked = true;
+  sensitiveInfoAgree.checked = true;
+  updatePrivacyAcceptButton();
   privacyConsentError.hidden = true;
   privacyConsentError.textContent = "";
   privacyConsentModal.hidden = false;

@@ -11,7 +11,6 @@ process.env.QUEUE_ENABLED = "false";
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-sync-media-"));
 process.env.SESSION_SECRET = "sync-test-secret";
 process.env.INTERNAL_LLM_API_KEY = "test";
-process.env.OPENROUTER_API_KEY = "test";
 const { app } = require("../src/app");
 const { runMedia } = require("../src/processing");
 

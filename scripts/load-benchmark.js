@@ -92,9 +92,10 @@ async function main() {
       assert.equal(generated.status, 0, generated.stderr?.toString());
     }
     upstream = http.createServer(async (req, res) => {
-      req.resume();
+      const chunks = [];
+      req.on("data", chunk => chunks.push(chunk));
       await once(req, "end");
-      const kind = req.url === "/asr" ? "transcription" : req.url === "/question" ? "question" : "scoring";
+      const kind = req.url === "/asr" ? "transcription" : JSON.parse(Buffer.concat(chunks).toString()).model === "test-question" ? "question" : "scoring";
       running[kind]++; peaks[kind] = Math.max(peaks[kind], running[kind]);
       await sleep(Number(arg("model-delay", 100)));
       running[kind]--;
@@ -119,7 +120,7 @@ async function main() {
       const dotenv = require("dotenv");
       for (const file of [".env", ".env.prod"]) if (fs.existsSync(path.join(root, file))) Object.assign(upstreamEnv, dotenv.parse(fs.readFileSync(path.join(root, file))));
     }
-    const env = { ...process.env, ...upstreamEnv, ...capacity, NODE_ENV: "test", DATA_DIR: data, HOST: "127.0.0.1", PORT: String(port), FFMPEG_CONCURRENCY: String(concurrency), QUEUE_ENABLED: "true", QUEUE_START_PAUSED: "false", SESSION_SECRET: "isolated-load-test-secret", DINGTALK_APP_KEY: "test", DINGTALK_APP_SECRET: "test", DINGTALK_CORP_ID: "test", COOKIE_SECURE: "false", ...(real ? {} : { INTERNAL_LLM_API_KEY: "test", OPENROUTER_API_KEY: "test", INTERNAL_LLM_TRANSCRIPTIONS_URL: `${upstreamUrl}/asr`, INTERNAL_LLM_CHAT_COMPLETIONS_URL: `${upstreamUrl}/question`, OPENROUTER_CHAT_COMPLETIONS_URL: `${upstreamUrl}/score` }) };
+    const env = { ...process.env, ...upstreamEnv, ...capacity, NODE_ENV: "test", DATA_DIR: data, HOST: "127.0.0.1", PORT: String(port), FFMPEG_CONCURRENCY: String(concurrency), QUEUE_ENABLED: "true", QUEUE_START_PAUSED: "false", SESSION_SECRET: "isolated-load-test-secret", DINGTALK_APP_KEY: "test", DINGTALK_APP_SECRET: "test", DINGTALK_CORP_ID: "test", COOKIE_SECURE: "false", ...(real ? {} : { INTERNAL_LLM_API_KEY: "test", INTERNAL_LLM_QUESTION_MODEL: "test-question", INTERNAL_LLM_EVAL_MODEL: "test-scoring", INTERNAL_LLM_TRANSCRIPTIONS_URL: `${upstreamUrl}/asr`, INTERNAL_LLM_CHAT_COMPLETIONS_URL: `${upstreamUrl}/chat` }) };
     if (guests) Object.assign(env, { DINGTALK_APP_KEY: "", DINGTALK_APP_SECRET: "", DINGTALK_CORP_ID: "" });
     const launch = name => {
       const child = spawn(process.execPath, [path.join(root, name)], { cwd: root, env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
