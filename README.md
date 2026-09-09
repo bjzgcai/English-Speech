@@ -26,9 +26,7 @@ INTERNAL_LLM_CHAT_COMPLETIONS_URL=https://llm.zgci.org/hub/v1/chat/completions
 INTERNAL_LLM_TRANSCRIPTIONS_URL=https://llm.zgci.org/hub/v1/audio/transcriptions
 INTERNAL_LLM_QUESTION_MODEL=glm
 INTERNAL_LLM_TRANSCRIBE_MODEL=qwen-asr
-OPENROUTER_API_KEY=your-openrouter-key
-OPENROUTER_CHAT_COMPLETIONS_URL=https://openrouter.ai/api/v1/chat/completions
-OPENROUTER_EVAL_MODEL=z-ai/glm-5.3-flash
+INTERNAL_LLM_EVAL_MODEL=qwen
 EVAL_MAX_FRAMES=24
 EVAL_REQUEST_TIMEOUT_MS=600000
 ```
@@ -167,9 +165,10 @@ The evaluator therefore uses different evidence for different dimensions:
   reliability and intelligibility clues. The scoring model does not receive the
   original audio, so this is not a phoneme-level acoustic pronunciation test.
 
-Both `INTERNAL_LLM_API_KEY` (transcription) and `OPENROUTER_API_KEY`
-(evaluation) are required to complete evaluation. Qwen requests explicitly use
-English and retry transient failures. Audio longer than the configured chunk
+`INTERNAL_LLM_API_KEY` is required for both transcription and evaluation.
+Evaluation uses `INTERNAL_LLM_EVAL_MODEL` (default `qwen`) through the internal
+chat gateway; question generation remains on `INTERNAL_LLM_QUESTION_MODEL`
+(default `glm`). Qwen ASR requests explicitly use English and retry transient failures. Audio longer than the configured chunk
 size (30 seconds by default, capped at 40) is split and transcribed in order;
 known Qwen input-format failures trigger WAV/MP3 format fallback.
 

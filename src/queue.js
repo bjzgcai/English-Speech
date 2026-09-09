@@ -1,5 +1,5 @@
 const fs = require("node:fs");
-const os = require("node:os");
+const { availableMemory } = require("./memory");
 const crypto = require("node:crypto");
 const { DatabaseSync } = require("node:sqlite");
 
@@ -60,11 +60,7 @@ class Queue {
     const count = this.get("SELECT count(*) AS n FROM admissions WHERE state!='waiting'").n;
     const disk = fs.statfsSync(require("./config").recordingsDir);
     if (Number(disk.bavail) * Number(disk.bsize) < 5 * 1024 ** 3 + (count + 1) * 512 * 1024 ** 2) return "Storage capacity is temporarily limited.";
-    let available = os.freemem();
-    if (process.platform === "linux") {
-      const match = fs.readFileSync("/proc/meminfo", "utf8").match(/^MemAvailable:\s+(\d+)/m);
-      if (match) available = Number(match[1]) * 1024;
-    }
+    const available = availableMemory();
     if (available < 512 * 1024 ** 2) {
       const since = Number(this.setting("lowMemorySince") || this.now());
       this.setting("lowMemorySince", since);

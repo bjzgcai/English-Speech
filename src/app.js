@@ -66,10 +66,7 @@ const internalLlmTranscriptionsUrl =
   "https://llm.zgci.org/hub/v1/audio/transcriptions";
 const internalLlmQuestionModel = process.env.INTERNAL_LLM_QUESTION_MODEL || "glm";
 const internalLlmTranscribeModel = process.env.INTERNAL_LLM_TRANSCRIBE_MODEL || "qwen-asr";
-const openRouterChatCompletionsUrl =
-  process.env.OPENROUTER_CHAT_COMPLETIONS_URL ||
-  "https://openrouter.ihainan.me/api/v1/chat/completions";
-const openRouterEvalModel = process.env.OPENROUTER_EVAL_MODEL || "z-ai/glm-5.3-flash";
+const internalLlmEvalModel = process.env.INTERNAL_LLM_EVAL_MODEL || "qwen";
 const maximumVideoBytes = 250 * 1024 * 1024;
 const standaloneEvaluationMaxSeconds = 2 * 60;
 const answerCancellationTtlMs = 60 * 60 * 1000;
@@ -1258,7 +1255,7 @@ function normalizeEvaluation(
         : ["Start speaking in English and give at least one complete response to the question."],
     model: {
       transcribe: internalLlmTranscribeModel,
-      evaluate: openRouterEvalModel,
+      evaluate: internalLlmEvalModel,
     },
   };
 }
@@ -1518,7 +1515,7 @@ async function evaluateAnswer({
     );
   }
 
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = process.env.INTERNAL_LLM_API_KEY;
   const requestTimeoutMs = positiveInteger(Number(process.env.EVAL_REQUEST_TIMEOUT_MS), 600_000);
   const content = [
     {
@@ -1544,19 +1541,15 @@ async function evaluateAnswer({
     const headers = {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
-      "X-OpenRouter-Title": "OScanner-Eng",
     };
-    if (safeText(process.env.APP_BASE_URL)) {
-      headers["HTTP-Referer"] = safeText(process.env.APP_BASE_URL);
-    }
 
-    const response = await processing.modelFetch(openRouterChatCompletionsUrl, {
+    const response = await processing.modelFetch(internalLlmChatCompletionsUrl, {
       method: "POST",
       // Queue waits do not spend the upstream deadline; modelFetch times each attempt.
       signal: config.queueEnabled ? undefined : AbortSignal.timeout(requestTimeoutMs),
       headers,
       body: JSON.stringify({
-        model: openRouterEvalModel,
+        model: internalLlmEvalModel,
         max_tokens: 16384,
         temperature: 0.1,
         response_format: { type: "json_object" },
@@ -1576,7 +1569,7 @@ async function evaluateAnswer({
 
     if (!response.ok) {
       const detail = await response.text();
-      throw new Error(`OpenRouter evaluation failed: ${detail}`);
+      throw new Error(`Internal model evaluation failed: ${detail}`);
     }
 
     const payload = await response.json();
@@ -1604,7 +1597,6 @@ async function evaluateSavedVideo({
 }) {
   const missingConfiguration = [
     !process.env.INTERNAL_LLM_API_KEY && "INTERNAL_LLM_API_KEY",
-    !process.env.OPENROUTER_API_KEY && "OPENROUTER_API_KEY",
   ].filter(Boolean);
   if (missingConfiguration.length) {
     return {

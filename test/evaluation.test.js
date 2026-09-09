@@ -455,18 +455,18 @@ test("long audio is transcribed in ordered chunks", async (context) => {
   assert.equal(transcript, "segment 1 segment 2 segment 3");
 });
 
-test("sends evaluations through the OpenRouter proxy with GLM-5.3-Flash and JSON mode", async (context) => {
+test("sends evaluations through the internal gateway with Qwen, frames, and JSON mode", async (context) => {
   const originalFetch = global.fetch;
-  const originalApiKey = process.env.OPENROUTER_API_KEY;
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-openrouter-"));
+  const originalApiKey = process.env.INTERNAL_LLM_API_KEY;
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-internal-"));
   const framePath = path.join(tempDir, "frame.jpg");
   fs.writeFileSync(framePath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
-  process.env.OPENROUTER_API_KEY = "test-openrouter-key";
+  process.env.INTERNAL_LLM_API_KEY = "test-internal-key";
 
   context.after(() => {
     global.fetch = originalFetch;
-    if (originalApiKey === undefined) delete process.env.OPENROUTER_API_KEY;
-    else process.env.OPENROUTER_API_KEY = originalApiKey;
+    if (originalApiKey === undefined) delete process.env.INTERNAL_LLM_API_KEY;
+    else process.env.INTERNAL_LLM_API_KEY = originalApiKey;
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -512,13 +512,13 @@ test("sends evaluations through the OpenRouter proxy with GLM-5.3-Flash and JSON
   });
 
   const body = JSON.parse(capturedOptions.body);
-  assert.equal(capturedUrl, "https://openrouter.ihainan.me/api/v1/chat/completions");
-  assert.equal(capturedOptions.headers.Authorization, "Bearer test-openrouter-key");
-  assert.equal(capturedOptions.headers["X-OpenRouter-Title"], "OScanner-Eng");
-  assert.equal(body.model, "z-ai/glm-5.3-flash");
+  assert.equal(capturedUrl, "https://llm.zgci.org/hub/v1/chat/completions");
+  assert.equal(capturedOptions.headers.Authorization, "Bearer test-internal-key");
+  assert.equal(capturedOptions.headers["X-OpenRouter-Title"], undefined);
+  assert.equal(body.model, "qwen");
   assert.deepEqual(body.response_format, { type: "json_object" });
   assert.equal(body.messages[1].content[1].type, "image_url");
-  assert.equal(evaluation.model.evaluate, "z-ai/glm-5.3-flash");
+  assert.equal(evaluation.model.evaluate, "qwen");
   assert.equal(evaluation.overallScore, 80);
   assert.match(evaluation.improvedAnswer, /collaborate more effectively/);
 });
