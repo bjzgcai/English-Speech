@@ -9,6 +9,11 @@
   --line: #d7d7e2;
   --accent: #5749c8;
   --accent-strong: #4235a8;
+  /* Fills behind light text. Separate from --accent because in the dark scheme
+     --accent becomes a light tint that doubles as a text colour, which left
+     accent-filled surfaces at 3.54:1. */
+  --accent-fill: #5749c8;
+  --accent-fill-strong: #4235a8;
   --accent-soft: #e8e5fb;
   --positive: #237a57;
   --negative: #b33a4e;
@@ -44,8 +49,11 @@ button {
 }
 
 button:disabled {
-  cursor: wait;
-  opacity: 0.6;
+  cursor: not-allowed;
+  border-color: #d5d2ea;
+  background: #e7e5f5;
+  color: #55536d;
+  opacity: 1;
 }
 
 .skip-link {
@@ -91,7 +99,7 @@ button:disabled {
   height: 34px;
   place-items: center;
   border-radius: 10px;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #f8f7ff;
   font-weight: 850;
 }
@@ -226,14 +234,14 @@ button:disabled {
 .primary-button {
   width: 100%;
   margin-top: 22px;
-  border: 1px solid var(--accent);
-  background: var(--accent);
+  border: 1px solid var(--accent-fill);
+  background: var(--accent-fill);
   color: #f8f7ff;
   padding: 0 18px;
 }
 
 .primary-button:hover {
-  background: var(--accent-strong);
+  background: var(--accent-fill-strong);
 }
 
 .secondary-button {
@@ -336,7 +344,7 @@ button:disabled {
 
 .metric-featured {
   border-color: var(--accent);
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #f8f7ff;
 }
 
@@ -837,6 +845,9 @@ tbody tr + tr {
     --line: #3c3c4b;
     --accent: #8274e5;
     --accent-strong: #b4abf4;
+    /* #8274e5 / #b4abf4 are text tints here; the fills keep light labels legible. */
+    --accent-fill: #5b4fc4;
+    --accent-fill-strong: #4a3fa8;
     --accent-soft: #302d4d;
     --negative: #ff8798;
     --shadow: 0 18px 55px rgba(8, 8, 14, 0.25);

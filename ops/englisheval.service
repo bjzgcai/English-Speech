@@ -10,6 +10,7 @@ Group=ubuntu
 WorkingDirectory=/opt/englisheval/current
 EnvironmentFile=/opt/englisheval/shared/.env
 EnvironmentFile=/opt/englisheval/shared/.env.prod
+EnvironmentFile=/opt/englisheval/current/ops/englisheval-capacity.env
 Environment=NODE_ENV=production
 Environment=HOST=127.0.0.1
 Environment=QUEUE_START_PAUSED=true

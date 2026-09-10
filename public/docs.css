@@ -32,6 +32,18 @@ body.modal-open { overflow: hidden; }
 
 a { color: inherit; }
 button { border: 0; cursor: pointer; font: inherit; }
+
+/* Disabled buttons keep their label readable on a muted fill. Fading the whole
+   element with opacity blends the text into the page as well as the fill. */
+button:disabled {
+  cursor: not-allowed;
+  border-color: #d5d2ea;
+  background: #e7e5f5;
+  color: #55536d;
+  opacity: 1;
+  box-shadow: none;
+  transform: none;
+}
 [hidden] { display: none !important; }
 
 .docs-nav,
@@ -240,7 +252,7 @@ main { overflow: hidden; }
 .evaluator-submit-row button:hover { background: var(--accent-dark); }
 .evaluator-submit-row button:active { box-shadow: 0 1px 0 var(--accent-dark); transform: translateY(4px); }
 .evaluator-submit-row button:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
-.evaluator-submit-row button:disabled { cursor: wait; opacity: .65; }
+.evaluator-submit-row button:disabled { cursor: wait; }
 .evaluator-submit-row p { color: var(--muted); font-size: 12px; line-height: 1.4; }
 .evaluator-submit-row .is-error { color: #9f302b; }
 .evaluator-submit-row .is-success { color: var(--accent-dark); font-weight: 750; }
@@ -268,7 +280,7 @@ main { overflow: hidden; }
 .evaluation-share button { min-height: 44px; border: 1px solid var(--accent-dark); border-radius: 7px; padding: 0 18px; font-weight: 800; transition: background 160ms ease, color 160ms ease, transform 160ms ease; }
 .evaluation-share button:hover:not(:disabled) { background: var(--accent-dark); color: #fff; }
 .evaluation-share button:active:not(:disabled) { transform: translateY(1px); }
-.evaluation-share button:disabled { cursor: wait; opacity: .6; }
+.evaluation-share button:disabled { cursor: wait; }
 .share-evaluation { background: var(--accent); color: #fff; }
 .copy-evaluation { background: transparent; color: var(--accent-dark); }
 .share-feedback { min-height: 18px; color: var(--muted); font-size: 13px; font-weight: 700; line-height: 1.35; }
@@ -691,7 +703,10 @@ h1 {
   justify-content: space-between;
   border: 0;
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--tone) 82%, white);
+  /* The tone is used directly. Blending it 82% with white (as this did) pushed
+     the light end of the ramp to 1.80:1 against its white label; the inline
+     --tone ramp in docs.html is the compliant one. */
+  background: var(--tone);
   color: #fff;
   padding: 20px;
   cursor: pointer;
@@ -748,7 +763,7 @@ h1 {
 .formula strong { display: block; margin-top: 12px; font-size: clamp(42px, 5vw, 66px); letter-spacing: -.055em; }
 .formula .operator { color: var(--accent); font-size: 30px; font-weight: 700; }
 .formula-result { padding: 22px; border-radius: var(--radius); background: var(--accent); color: #fff; }
-.formula-result span { color: rgba(255,255,255,.78); }
+.formula-result span { color: #fff; }
 .calculation-note { grid-column: 2; margin-top: 32px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--muted); line-height: 1.55; }
 
 .closing { display: grid; justify-items: start; }
