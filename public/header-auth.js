@@ -6,14 +6,15 @@ const invitationLink = document.querySelector("[data-invitation-link]");
 
 function showHeaderUser(user, memberFlag = user?.isZgcMember) {
   const isSignedIn = Boolean(user) && user.identityType !== "guest";
-  headerLogin.hidden = isSignedIn;
-  authChip.hidden = !window.VisitorSession.hasAccess;
-  authChip.classList.toggle("is-guest", user?.identityType === "guest");
-  logoutButton.hidden = !isSignedIn;
+  const hasAccess = window.VisitorSession.hasAccess;
+  // An invited guest is signed in too: hide the sign-in entry and offer logout.
+  headerLogin.hidden = hasAccess;
+  authChip.hidden = !hasAccess;
+  logoutButton.hidden = !hasAccess;
   // Keep the management entry discoverable for signed-in DingTalk users; the
   // API still enforces the organization-member check before allowing access.
   if (invitationLink) invitationLink.hidden = !(isSignedIn && user?.identityType === "dingtalk");
-  authUserName.textContent = user?.name || "DingTalk user";
+  window.VisitorSession.renderIdentityName(authUserName, user?.name);
 }
 
 async function checkHeaderAuth() {

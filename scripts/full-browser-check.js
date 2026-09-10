@@ -67,6 +67,7 @@ async function main() {
       await page.locator("#role").fill("Software engineering and team communication");
       await page.locator("#generateButton").click();
       await page.locator("#access-code").fill(invitation);
+      await page.locator("#access-name").fill("Full Browser Guest");
       await page.locator(".access-submit").click();
       await page.locator("#privacyConsentModal").waitFor({ state: "visible" });
       await page.locator("#privacyPolicyAgree").check();

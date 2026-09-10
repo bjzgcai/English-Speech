@@ -102,6 +102,7 @@ async function main() {
       const invitation = crypto.randomUUID().toUpperCase();
       fs.appendFileSync(path.join(data, "invitations", "metadata.jsonl"), JSON.stringify({ id: crypto.randomUUID(), hash: crypto.createHash("sha256").update(invitation).digest("hex") }) + "\n");
       await page.locator("#access-code").fill(invitation);
+      await page.locator("#access-name").fill("Mobile Guest");
       await page.locator(".access-submit").tap();
       await page.locator("#privacyConsentModal").waitFor({ state: "visible" });
       await capture("privacy-consent");

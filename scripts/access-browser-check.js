@@ -49,6 +49,7 @@ async function main() {
       await page.locator(".access-dialog").waitFor();
       assert.equal(await page.evaluate(() => state.stream), null);
       await page.locator("#access-code").fill("INVALID");
+      await page.locator("#access-name").fill("Nobody");
       await page.locator(".access-submit").click();
       await page.waitForFunction(() => document.querySelector(".access-error").textContent.includes("Invalid"));
       const bounds = await page.locator(".access-dialog").boundingBox();
@@ -60,6 +61,7 @@ async function main() {
       await page.locator("#role").fill("Researcher");
       await page.locator("#generateButton").click();
       await page.locator("#access-code").fill(issue());
+      await page.locator("#access-name").fill("Access Guest");
       await page.locator(".access-submit").click();
       await page.waitForFunction(() => VisitorSession.hasAccess && !document.querySelector("dialog"));
       assert.equal(await page.locator("#role").inputValue(), "Researcher");
@@ -71,6 +73,7 @@ async function main() {
       await page.goto(base + "/history");
       await page.locator(".access-dialog").waitFor();
       await page.locator("#access-code").fill(issue());
+      await page.locator("#access-name").fill("History Guest");
       await page.locator(".access-submit").click();
       await page.waitForFunction(() => document.querySelector("#historyList").textContent.includes("No saved answers"));
 
@@ -83,10 +86,11 @@ async function main() {
       assert.equal(await page.evaluate(() => window.submissions), 0);
       const code = issue();
       await page.locator("#access-code").fill(code);
+      await page.locator("#access-name").fill("Upload Guest");
       await page.locator(".access-submit").click();
       await page.waitForFunction(() => window.submissions === 1);
       assert.equal(await page.locator("#evaluationVideo").evaluate(input => input.files[0].name), "test.mp4");
-      assert.equal((await fetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) })).status, 400);
+      assert.equal((await fetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) })).status, 409);
 
       await page.goto(base + "/history");
       await page.waitForFunction(() => document.querySelector("#historyList").textContent.includes("No saved answers"));

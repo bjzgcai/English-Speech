@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const { readJsonLines, writeJsonLines } = require("./storage");
+const { readJsonLines, updateJsonLines } = require("./storage");
 
 const dayMs = 24 * 60 * 60 * 1000;
 
@@ -34,43 +34,55 @@ function expireRecordings({
   if (retentionDays === 0) return { expired: 0, failed: 0 };
 
   const cutoff = now.getTime() - retentionDays * dayMs;
-  let expired = 0;
-  let failed = 0;
-  let changed = false;
   const records = readJsonLines(metadataFile);
-  const updatedRecords = records.map((record) => {
-    if (!record?.filename || !isSafeName(record.filename)) return record;
+  const expiredKeys = new Set();
+  let failed = 0;
+
+  // Media removal happens before the metadata commit so a failure leaves the
+  // record untouched rather than pointing at a file that no longer exists.
+  for (const record of records) {
+    if (!record?.filename || !isSafeName(record.filename)) continue;
 
     const finishedAt = Date.parse(record.finishedAt || record.startedAt || "");
-    if (!Number.isFinite(finishedAt) || finishedAt > cutoff) return record;
-
-    const videoPath = path.join(recordingsDir, record.filename);
-    const artifactPath = isSafeName(record.id) ? path.join(artifactsDir, record.id) : null;
+    if (!Number.isFinite(finishedAt) || finishedAt > cutoff) continue;
 
     try {
-      if (artifactPath) fs.rmSync(artifactPath, { recursive: true, force: true });
-      fs.rmSync(videoPath, { force: true });
+      if (isSafeName(record.id)) fs.rmSync(path.join(artifactsDir, record.id), { recursive: true, force: true });
+      fs.rmSync(path.join(recordingsDir, record.filename), { force: true });
     } catch (error) {
       failed += 1;
       console.error(`Unable to expire recording ${record.id || "unknown"}: ${error.message}`);
-      return record;
+      continue;
     }
 
-    expired += 1;
-    changed = true;
-    return {
-      ...record,
-      hasVideo: false,
-      filename: null,
-      mimeType: null,
-      bytes: 0,
-      recordingDeletedAt: now.toISOString(),
-      recordingDeletionReason: "retention",
-    };
+    expiredKeys.add(record.id || `filename:${record.filename}`);
+  }
+
+  if (!expiredKeys.size) return { expired: 0, failed };
+
+  // This process runs on a timer, separately from the web server. Marking the
+  // records inside the shared write lock means an answer saved concurrently is
+  // never lost by this rewrite.
+  updateJsonLines(metadataFile, (current) => {
+    let changed = false;
+    const marked = current.map((record) => {
+      if (!record?.filename || !isSafeName(record.filename)) return record;
+      if (!expiredKeys.has(record.id || `filename:${record.filename}`)) return record;
+      changed = true;
+      return {
+        ...record,
+        hasVideo: false,
+        filename: null,
+        mimeType: null,
+        bytes: 0,
+        recordingDeletedAt: now.toISOString(),
+        recordingDeletionReason: "retention",
+      };
+    });
+    return changed ? marked : current;
   });
 
-  if (changed) writeJsonLines(metadataFile, updatedRecords);
-  return { expired, failed };
+  return { expired: expiredKeys.size, failed };
 }
 
 module.exports = { expireRecordings, parseRetentionDays };

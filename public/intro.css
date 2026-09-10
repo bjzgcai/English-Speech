@@ -684,10 +684,16 @@ h3 {
     padding: 8px;
   }
 
+  /* The wordmark would starve the navigation once the chip shows a real guest name. */
+  .brand > span:last-child {
+    display: none;
+  }
+
   .header-menu {
     flex: 1;
     gap: 4px;
-    overflow: hidden;
+    /* Not clipped: the full-name overlay opens below the chip when the preview is tapped. */
+    overflow: visible;
   }
 
   .docs-nav nav {
@@ -720,10 +726,7 @@ h3 {
   .auth-chip,
   .header-login { padding: 7px; font-size: 10px; }
 
-  .auth-chip [data-auth-user-name] {
-    display: none;
-  }
-  .auth-chip.is-guest::before { content: "Guest"; }
+  .auth-chip .identity-name { padding: 5px 9px; font-size: 12px; }
 
   .intro-hero {
     gap: 38px;

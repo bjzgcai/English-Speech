@@ -45,6 +45,7 @@ async function main() {
       fs.appendFileSync(path.join(data, "invitations", "metadata.jsonl"), JSON.stringify({ id: crypto.randomUUID(), hash: crypto.createHash("sha256").update(invitation).digest("hex") }) + "\n");
       await page.locator("#loginButton").click();
       await page.locator("#access-code").fill(invitation);
+      await page.locator("#access-name").fill("Guest Browser");
       await page.locator(".access-submit").click();
       await page.waitForFunction(() => VisitorSession.hasAccess && !document.querySelector("dialog"));
       const guestOwner = await page.evaluate(() => VisitorSession.user.openId);

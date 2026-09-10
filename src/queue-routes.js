@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { Queue, terminal } = require("./queue");
-const { readJsonLines, writeJsonLines } = require("./storage");
+const { readJsonLines, updateJsonLines } = require("./storage");
 const { readMonitorStatus, monitorFile } = require("./monitoring");
 const { isGuest } = require("./visitor");
 
@@ -36,25 +36,42 @@ function registerQueueRoutes(app, deps) {
   function project() {
     const updates = queue.all("SELECT * FROM jobs WHERE projected=0 ORDER BY created");
     if (!updates.length) return;
-    let records = readJsonLines(config.metadataFile);
     const done = [];
+    const upserts = [];
+    const discardedIds = new Set();
+    const removals = [];
     for (const job of updates) {
       const payload = JSON.parse(job.payload);
       if (job.state === "canceled") {
         // A canceled worker may still be exiting FFmpeg. Delete only after its lease expires.
         if (job.lease && job.lease > Date.now()) continue;
-        records = records.filter(record => record.id !== job.id);
-        for (const target of [payload.inputPath, payload.record.filename ? path.join(config.recordingsDir, payload.record.filename) : null, path.join(config.artifactsDir, job.id)].filter(Boolean)) fs.rmSync(target, { force: true, recursive: true });
+        discardedIds.add(job.id);
+        removals.push(payload.inputPath, payload.record.filename ? path.join(config.recordingsDir, payload.record.filename) : null, path.join(config.artifactsDir, job.id));
       } else {
-        const record = job.result ? JSON.parse(job.result) : { ...payload.record, filename: null, hasVideo: false, bytes: 0, evaluation: { status: job.state, stage: job.stage }, pendingJobId: job.id };
-        const index = records.findIndex(record => record.id === job.id);
-        if (index < 0) records.push(record); else records[index] = record;
-        if (terminal.has(job.state)) fs.rmSync(payload.inputPath, { force: true });
+        upserts.push(job.result ? JSON.parse(job.result) : { ...payload.record, filename: null, hasVideo: false, bytes: 0, evaluation: { status: job.state, stage: job.stage }, pendingJobId: job.id });
+        if (terminal.has(job.state)) removals.push(payload.inputPath);
       }
       done.push(job);
     }
     if (!done.length) return;
-    writeJsonLines(config.metadataFile, records);
+
+    // Read and rewrite share one lock so an answer appended by a request in
+    // flight (or by another process) is never dropped by this projection.
+    updateJsonLines(config.metadataFile, (records) => {
+      let next = records;
+      const detach = () => { if (next === records) next = [...records]; return next; };
+      if (discardedIds.size && records.some((record) => discardedIds.has(record.id))) {
+        next = records.filter((record) => !discardedIds.has(record.id));
+      }
+      for (const record of upserts) {
+        const index = next.findIndex((item) => item.id === record.id);
+        if (index < 0) next = [...next, record];
+        else { detach(); next[index] = record; }
+      }
+      return next;
+    });
+
+    for (const target of removals.filter(Boolean)) fs.rmSync(target, { force: true, recursive: true });
     // A worker completing during projection must remain eligible for the next pass.
     for (const job of done) queue.run("UPDATE jobs SET projected=1 WHERE id=? AND state=? AND updated=?", job.id, job.state, job.updated);
   }

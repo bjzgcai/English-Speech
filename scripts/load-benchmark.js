@@ -141,7 +141,7 @@ async function main() {
       for (const index of Array.from({ length: arrivals }, (_, i) => [i, i + 1000]).flat()) {
         const code = crypto.randomUUID().toUpperCase();
         fs.appendFileSync(path.join(data, "invitations", "metadata.jsonl"), JSON.stringify({ id: crypto.randomUUID(), hash: crypto.createHash("sha256").update(code).digest("hex") }) + "\n");
-        const response = await fetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
+        const response = await fetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: `Load guest ${index}` }) });
         assert.equal(response.status, 200);
         const redeemed = await response.json();
         assert.equal(redeemed.user.identityType, "guest");

@@ -3012,7 +3012,8 @@ video {
   .header-menu {
     flex: 1;
     gap: 8px;
-    overflow: hidden;
+    /* Not clipped: the full-name overlay opens below the chip when the preview is tapped. */
+    overflow: visible;
   }
 
   .main-nav {
@@ -3042,10 +3043,7 @@ video {
     padding: 8px;
   }
 
-  #authUserName {
-    display: none;
-  }
-  .auth-chip.is-guest::before { content: "Guest"; }
+  .auth-chip .identity-name { padding: 5px 9px; font-size: 12px; }
 
   .view-heading {
     display: grid;
