@@ -7,7 +7,7 @@
   --panel: #ffffff;
   --accent: #6558e8;
   --accent-dark: #473bb7;
-  --danger: #d6465a;
+  --danger: #c8344b;
   --soft: #efedff;
   --gold: #ffc857;
   --gold-soft: #fff1bd;
@@ -81,9 +81,18 @@ button {
   cursor: pointer;
 }
 
+/* Disabled buttons carry their label at full strength on a muted fill.
+   Dimming the whole element with opacity blends the label into the page as
+   well as the fill -- white on --accent only reaches 2.36:1 at .48 and cannot
+   clear AA at any opacity below .95 -- so the state is painted explicitly. */
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.48;
+  border-color: #d5d2ea;
+  background: #e7e5f5;
+  color: #55536d;
+  opacity: 1;
+  box-shadow: none;
+  transform: none;
 }
 
 .app-shell {
@@ -1200,7 +1209,9 @@ input[readonly] {
 
 .primary-button:hover:not(:disabled),
 .finish-button:hover:not(:disabled) {
-  background: #7367ee;
+  /* #7367ee dropped the white label to 4.28:1; this lift still reads as a
+     hover but keeps it above AA. */
+  background: #6a5de8;
   transform: translateY(-1px);
 }
 
@@ -1221,7 +1232,7 @@ input[readonly] {
   box-shadow: 0 5px 0 #a62c40;
 }
 
-.danger-button:hover:not(:disabled) { background: #e05267; }
+.danger-button:hover:not(:disabled) { background: #cf3e53; }
 
 .finish-button {
   border-color: var(--accent-dark);
@@ -2802,23 +2813,29 @@ video {
     aspect-ratio: auto;
   }
 
+  /* Flex, not a 3-column grid: the device chips are bilingual in 中 mode and
+     measure ~515px together, far more than the free space left of a `1fr`
+     text column. As an `auto`/`1fr` grid track they could never shrink below
+     their content, so the row pushed the chips past the card border at every
+     desktop width. As a wrapping flex line the chip group drops to its own
+     line whenever it does not fit and never leaves the box. */
   .camera-guidance {
-    display: grid;
-    grid-template-columns: auto minmax(120px, 1fr) auto;
-    grid-template-rows: auto;
-    gap: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
     align-items: center;
     margin-top: 12px;
     padding: 8px 10px;
   }
 
   .camera-guidance strong {
-    grid-column: 1;
+    flex: 0 0 auto;
     white-space: nowrap;
   }
 
   .camera-guidance p {
-    grid-column: 2;
+    flex: 1 1 220px;
+    min-width: 0;
     margin: 0;
     max-width: none;
     font-size: 12px;
@@ -2826,16 +2843,19 @@ video {
   }
 
   .device-status {
-    grid-column: 3;
-    grid-row: 1;
-    flex-wrap: nowrap;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    min-width: 0;
     margin-top: 0;
+    margin-left: auto;
   }
 
   .device-status span {
     padding: 5px 7px;
     font-size: 11px;
-    white-space: nowrap;
+    /* Deliberately not `white-space: nowrap`: a single chip wider than the box
+       it is given (e.g. the narrow guidance column of the recording dialog)
+       must be able to wrap its own label instead of sticking out of the card. */
   }
 
   .control-row {
@@ -2870,25 +2890,6 @@ video {
 
   .identity-save {
     margin-top: 0;
-  }
-
-  .camera-guidance {
-    grid-template-columns: minmax(120px, 1fr) auto;
-    grid-template-rows: auto auto;
-  }
-
-  .camera-guidance strong,
-  .camera-guidance p {
-    grid-column: 1;
-  }
-
-  .camera-guidance p {
-    grid-row: 2;
-  }
-
-  .device-status {
-    grid-column: 2;
-    grid-row: 1 / span 2;
   }
 }
 
@@ -3325,21 +3326,6 @@ video {
     box-shadow: 0 5px 0 var(--accent-dark), 0 10px 28px rgba(101, 88, 232, 0.2);
   }
 
-  .finish-button:disabled {
-    border-color: #aaa4d1;
-    background: #b9b4d7;
-    color: #fff;
-    opacity: 1;
-    box-shadow: none;
-  }
-
-  .danger-button:disabled {
-    background: #7f6c70;
-    color: #fff;
-    opacity: 1;
-    box-shadow: none;
-  }
-
   .recorder-panel.is-recording .control-row {
     bottom: 0;
     margin: 10px -4px 0;
@@ -3653,7 +3639,7 @@ video {
   }
 
   .prepare-dialog.is-recording .device-status {
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 8px;
     margin: 0;
   }

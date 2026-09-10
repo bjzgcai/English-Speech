@@ -423,8 +423,10 @@ directory.
 ## Deploy
 
 The included script deploys versioned releases over SSH, installs a systemd
-service, and keeps `.env`, `.env.prod`, `recordings/`, `questions/`, `comments/`, `consents/`, and `ratings/` in shared persistent
-storage on the target host. `.env` contains settings shared by development and
+service, and keeps `.env`, `.env.prod`, `recordings/`, `questions/`, `comments/`, `consents/`, `ratings/`, and `invitations/` in shared persistent
+storage on the target host. Local-only working state (`.workbuddy/`, `output/`,
+`tmp/`, `downloads/`, `backups/`, and the offline age/LUKS key material) is
+excluded from the release. `.env` contains settings shared by development and
 production, while `.env.local` and `.env.prod` override environment-specific
 values. Deployment never copies `.env.local`.
 

@@ -63,14 +63,91 @@
 /* ---------------- Chinese companion lines ------------------------- */
 /* Spans only exist while 中 mode is active (html[data-lang-mode="zh"]). */
 
+:root {
+  /* Ink for the injected Chinese companion line.
+     A fixed literal on purpose: --accent-dark is redefined per stylesheet
+     (#473bb7 on styles/docs, absent on intro/invite where it fell back to a
+     much lighter #5651d9), so the same line read solidly on one page and
+     washed out on another. #473bb7 clears WCAG AA on every light surface the
+     app uses: #ffffff 8.15:1, #fffaf0 7.83:1, #efedff 7.07:1, #ffe6df 6.84:1. */
+  --zh-sub-ink-light: #473bb7;
+  /* Ink for the same line when it lands on a dark or accent-filled surface. */
+  --zh-sub-ink-dark: #ffffff;
+  /* Whichever of the two the current surface calls for. Surfaces below flip it. */
+  --zh-sub-ink: var(--zh-sub-ink-light);
+}
+
 [data-lang-zh] {
   display: inline;
   margin-left: 0.4em;
   font-size: 0.82em;
   font-weight: 600;
-  color: var(--accent-dark, #5651d9);
-  opacity: 0.85;
+  /* No opacity wash: it was the main reason the Chinese sank into whatever
+     surface it sat on. The line is already quieter than its English host
+     through size and weight. */
+  /* !important because page stylesheets legitimately colour the host element
+     with higher specificity than this overlay layer, e.g. `.device-status span`
+     or `.dimension-list span` -- which silently discarded the intended colour. */
+  color: var(--zh-sub-ink) !important;
   word-break: break-word;
+}
+
+/* ---------------- Chinese on dark / accent surfaces ---------------- */
+/* Any surface that paints itself dark also paints its own text white; the
+   companion line has to follow, or it disappears (1.13:1 on --accent).
+   Keep this list in step when a new dark button or panel is added. */
+.primary-button,
+.secondary-button,
+.finish-button,
+.danger-button,
+.skip-link,
+.comment-submit,
+.comment-toggle,
+.comment-fab,
+.recommended-badge,
+.codes-action,
+.invite-enter,
+.access-submit,
+.access-login,
+.evaluator-submit-row button,
+.lang-toggle button.is-active,
+.closing a,
+.weight-segment,
+.formula-result,
+.video-frame,
+.prepare-preview,
+.video-modal video,
+.evaluation-card-poster-fallback span,
+.evaluation-modal-poster-fallback span {
+  --zh-sub-ink: var(--zh-sub-ink-dark);
+}
+
+/* Hover/pressed states of the same accents, plus surfaces that lighten. */
+.primary-button:hover:not(:disabled),
+.finish-button:hover:not(:disabled),
+.secondary-button:hover:not(:disabled),
+.danger-button:hover:not(:disabled),
+.evaluator-submit-row button:hover,
+.comment-submit:hover:not(:disabled),
+.comment-fab:hover,
+.lang-toggle button:hover {
+  --zh-sub-ink: var(--zh-sub-ink-dark);
+}
+
+/* A disabled accent button is repainted with the light muted fill from the
+   button baseline, so the companion line has to hand the ink back. */
+.primary-button:disabled,
+.secondary-button:disabled,
+.finish-button:disabled,
+.danger-button:disabled,
+.evaluator-submit-row button:disabled,
+.comment-submit:disabled,
+.recommended-badge:disabled,
+.codes-action:disabled,
+.invite-enter:disabled,
+.access-submit:disabled,
+.access-login:disabled {
+  --zh-sub-ink: var(--zh-sub-ink-light);
 }
 
 /* Block companion line under headings and paragraphs. */
@@ -104,7 +181,6 @@ header nav a > [data-lang-zh] {
   font-size: 0.62em;
   line-height: 1.15;
   text-align: center;
-  opacity: 0.75;
 }
 
 /* Keep inline controls compact. */
@@ -129,7 +205,6 @@ th > [data-lang-zh] {
   font-size: 0.72em;
   margin-left: 0;
   margin-top: 1px;
-  opacity: 0.75;
 }
 
 /* Status pill and other tiny badges: keep the Chinese on the same line. */

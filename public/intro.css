@@ -4,7 +4,9 @@
   --surface: #ffffff;
   --surface-soft: #efedff;
   --ink: #24243f;
-  --muted: #686984;
+  /* #686984 only reaches 4.47:1 on the peach card (--peach), just under AA;
+     the slightly deeper grey clears every tint used on this page. */
+  --muted: #5c5d78;
   --line: #dedcf0;
   --accent: #6558e8;
   --accent-strong: #473bb7;
@@ -57,6 +59,18 @@ button {
   border: 0;
   font: inherit;
   cursor: pointer;
+}
+
+/* Disabled buttons keep their label readable on a muted fill; an opacity wash
+   would blend the text into the page as well as the fill. */
+button:disabled {
+  cursor: not-allowed;
+  border-color: #d5d2ea;
+  background: #e7e5f5;
+  color: #55536d;
+  opacity: 1;
+  box-shadow: none;
+  transform: none;
 }
 
 [hidden] {
@@ -310,7 +324,6 @@ h3 {
 .primary-link span {
   font-size: 12px;
   font-weight: 700;
-  opacity: 0.82;
 }
 
 .primary-link:hover {
@@ -487,7 +500,9 @@ h3 {
 
 .workflow-track article > span {
   display: block;
-  color: var(--accent);
+  /* --accent only reaches 4.29:1 on the peach card and 4.43:1 on the soft one,
+     so the step number uses the darker accent for every card. */
+  color: var(--accent-strong);
   font-size: 12px;
   font-weight: 900;
   font-variant-numeric: tabular-nums;

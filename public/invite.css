@@ -78,8 +78,11 @@
 }
 
 .invite-enter:disabled {
-  opacity: 0.6;
-  cursor: wait;
+  border-color: #d5d2ea;
+  background: #e7e5f5;
+  color: #55536d;
+  opacity: 1;
+  cursor: not-allowed;
 }
 
 .invite-enter:focus-visible {

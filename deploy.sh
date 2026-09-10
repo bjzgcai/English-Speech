@@ -107,6 +107,16 @@ rsync -az --delete \
   --exclude 'consents/' \
   --exclude 'invitations/' \
   --exclude 'ratings/' \
+  --exclude 'backups/' \
+  --exclude '.workbuddy/' \
+  --exclude 'output/' \
+  --exclude 'tmp/' \
+  --exclude 'downloads/' \
+  --exclude 'luks-recordings.key' \
+  --exclude 'luks-recordings-header.img' \
+  --exclude 'englisheval-backup-identity.txt' \
+  --exclude 'not-empty-user.json' \
+  --exclude 'npm-debug.log*' \
   --exclude '.DS_Store' \
   ./ "$TARGET:$release_dir/"
 
