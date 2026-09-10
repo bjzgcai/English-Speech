@@ -371,7 +371,35 @@
     "Loading codes...": "加载中...",
 
     // Invite page
-    "Enter invitation code": "输入邀请码"
+    "Invitation": "邀请",
+    "You are invited": "你被邀请了",
+    "Join the English speaking challenge with your invitation code and your name.":
+      "用邀请码和你的名字加入英语口语挑战。",
+    "Your invitation code": "你的邀请码",
+    "Enter invitation code": "输入邀请码",
+    "One invitation code opens one learner account. Use the same name every time to keep your evaluation history.":
+      "一个邀请码对应一个学习者账号。每次使用相同的名字，才能保留你的评估历史。",
+
+    // Invitation share link and invitation-code sign-in
+    "Invitation link": "邀请链接",
+    "Copy invitation link": "复制邀请链接",
+    "Send this link to your invitee. It opens the invitation-code sign-in with the code already filled in, and asks only for their name.":
+      "把这个链接发给被邀请人。打开后会自动填入邀请码，只需填写名字。",
+    "Invitation link copied. Send it to your invitee.": "邀请链接已复制，发送给被邀请人即可。",
+    "Invitation created. Copy the invitation link to share it.": "邀请已创建，复制邀请链接即可分享。",
+    "Unable to copy automatically. Select and copy the invitation link shown below.":
+      "无法自动复制，请手动选择并复制下方显示的邀请链接。",
+    "Sign in to continue": "登录以继续",
+    "Sign in with your invitation code": "使用邀请码登录",
+    "Your invitation code is already filled in. Add your name to continue.":
+      "邀请码已自动填入，填写你的名字即可继续。",
+    "Invitation code": "邀请码",
+    "Your name": "你的名字",
+    "Continue": "继续",
+    "QR code copied to clipboard.": "二维码已复制到剪贴板。",
+    "Code copied to clipboard.": "邀请码已复制到剪贴板。",
+    "Used": "已使用",
+    "Available": "可用"
   };
 
   /* ------------------------------------------------------------------ */

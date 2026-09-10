@@ -27,12 +27,31 @@
     }, 2600);
   }
   const qrUrl = id => `/api/invitation-codes/${encodeURIComponent(id)}/qr`;
+  // The server builds the link from APP_BASE_URL so it matches the QR payload exactly;
+  // the origin fallback keeps the page usable if an older server omits shareUrl.
+  const linkFor = record => record.shareUrl || new URL(`/invite#code=${encodeURIComponent(record.code)}`, location.origin).toString();
   function preview(record) {
     selected = record;
     panel.hidden = false;
     document.querySelector('#qr-preview').src = qrUrl(record.id);
     document.querySelector('#qr-code').textContent = record.code;
+    document.querySelector('#invite-link').value = linkFor(record);
     document.querySelector('#download-qr').href = qrUrl(record.id);
+  }
+  async function copyLink(record) {
+    preview(record);
+    const url = linkFor(record);
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('Invitation link copied. Send it to your invitee.');
+    } catch {
+      // The link stays visible in the field, so a manual copy is always possible.
+      const field = document.querySelector('#invite-link');
+      field.focus();
+      field.select();
+      message.textContent = 'Unable to copy automatically. Select and copy the invitation link shown below.';
+      toast('Unable to copy automatically. Select and copy the invitation link shown below.', 'error');
+    }
   }
   async function copyCode(record) {
     try {
@@ -66,7 +85,7 @@
     const data = await response.json();
     records.clear();
     data.codes.forEach(record => records.set(record.id, record));
-    list.innerHTML = data.codes.length ? data.codes.map(record => `<tr><td class="code-value" data-code="${esc(record.id)}">••••${esc(record.codePreview)}</td><td><span class="status ${record.usedAt ? 'used' : ''}">${record.usedAt ? 'Used' : 'Available'}</span></td><td>${esc(record.guestName || '')}</td><td>${new Date(record.createdAt).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</td><td class="code-actions"><button class="icon-button toggle" data-id="${esc(record.id)}" title="Show or hide code" aria-label="Show or hide code">${eyeIcon}</button><button class="icon-button copy-qr" data-id="${esc(record.id)}" title="Copy QR code" aria-label="Copy QR code">QR</button><button class="icon-button copy" data-id="${esc(record.id)}" title="Copy invitation code" aria-label="Copy invitation code">⧉</button>${!record.usedAt ? `<button class="delete" data-id="${esc(record.id)}">Delete</button>` : ''}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No invitation codes yet.</td></tr>';
+    list.innerHTML = data.codes.length ? data.codes.map(record => `<tr><td class="code-value" data-code="${esc(record.id)}">••••${esc(record.codePreview)}</td><td><span class="status ${record.usedAt ? 'used' : ''}">${record.usedAt ? 'Used' : 'Available'}</span></td><td>${esc(record.guestName || '')}</td><td>${new Date(record.createdAt).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</td><td class="code-actions"><button class="icon-button toggle" data-id="${esc(record.id)}" title="Show or hide code" aria-label="Show or hide code">${eyeIcon}</button><button class="icon-button copy-qr" data-id="${esc(record.id)}" title="Copy QR code" aria-label="Copy QR code">QR</button><button class="icon-button copy-link" data-id="${esc(record.id)}" title="Copy invitation link" aria-label="Copy invitation link">Link</button><button class="icon-button copy" data-id="${esc(record.id)}" title="Copy invitation code" aria-label="Copy invitation code">⧉</button>${!record.usedAt ? `<button class="delete" data-id="${esc(record.id)}">Delete</button>` : ''}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No invitation codes yet.</td></tr>';
   }
   list.addEventListener('click', async event => {
     const button = event.target.closest('button[data-id]');
@@ -82,6 +101,7 @@
         button.title = button.ariaLabel = showing ? 'Hide code' : 'Show code';
         toast(showing ? 'Code shown.' : 'Code hidden.');
       } else if (button.classList.contains('copy-qr')) await copyQr(record);
+      else if (button.classList.contains('copy-link')) await copyLink(record);
       else if (button.classList.contains('copy')) await copyCode(record);
       else if (button.classList.contains('delete')) {
         if (!window.confirm('Delete this invitation code? This cannot be undone.')) return;
@@ -96,6 +116,7 @@
     finally { button.disabled = false; }
   });
   document.querySelector('#copy-qr').onclick = () => selected && copyQr(selected);
+  document.querySelector('#copy-link').onclick = () => selected && copyLink(selected);
   document.querySelector('#copy-code').onclick = () => selected && copyCode(selected);
   document.querySelector('#qr-preview').onerror = () => { message.textContent = 'Unable to load the QR code. Try selecting Copy QR code again.'; toast('Unable to load the QR code. Try selecting Copy QR code again.', 'error'); };
   document.querySelector('#create').onclick = async event => {
@@ -106,8 +127,8 @@
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Unable to generate code.');
       preview(data.record);
-      message.textContent = 'Invitation created. Copy the QR code to share it.';
-      toast('Invitation created. Copy the QR code to share it.');
+      message.textContent = 'Invitation created. Copy the invitation link to share it.';
+      toast('Invitation created. Copy the invitation link to share it.');
       await load();
     } catch (error) { message.textContent = error.message; toast(error.message, 'error'); }
     finally { button.disabled = false; }

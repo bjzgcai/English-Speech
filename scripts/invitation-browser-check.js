@@ -20,6 +20,15 @@ async function open(browser, viewport) {
 function accessDialog(page) {
   return page.locator('.access-dialog:not(.occupied-dialog)');
 }
+// An invitation link must land on the invitation-code path only, with the code
+// already filled in: DingTalk sign-in is hidden so it cannot distract the invitee.
+async function assertInvitationOnly(page) {
+  const dialog = accessDialog(page);
+  assert.equal(await dialog.locator('.access-login').isVisible(), false, 'DingTalk sign-in is offered on an invitation link');
+  assert.equal(await dialog.locator('.access-divider').isVisible(), false, 'the "or use an invitation code" divider survives on an invitation link');
+  assert.equal(await dialog.locator('.access-intro').innerText(), 'Your invitation code is already filled in. Add your name to continue.');
+  assert.equal(await page.locator('#invite-code-line').isVisible(), true, 'the invitee cannot see the code they arrived with');
+}
 async function signIn(page, code, name) {
   await page.locator('#access-code').fill(code);
   await page.locator('#access-name').fill(name);
@@ -79,6 +88,18 @@ async function main() {
       await owner.page.locator('#copy-code').click();
       await owner.page.getByText('Code copied to clipboard.', { exact: true }).waitFor();
       assert.equal(await owner.page.evaluate(() => navigator.clipboard.readText()), manualCode);
+      // The shareable link is what the inviter sends: it must be readable in the panel
+      // and copy exactly the same URL the QR encodes.
+      const inviteLink = `${base}/invite#code=${manualCode}`;
+      assert.equal(await owner.page.locator('#invite-link').inputValue(), inviteLink);
+      await owner.page.locator('#copy-link').click();
+      await owner.page.getByText('Invitation link copied. Send it to your invitee.', { exact: true }).waitFor();
+      assert.equal(await owner.page.evaluate(() => navigator.clipboard.readText()), inviteLink);
+      // The row action copies the link of that specific code without opening the panel.
+      const manualRow = owner.page.locator('#list tr', { has: owner.page.locator('.code-value', { hasText: '••••' + manualCode.slice(-4) }) });
+      await manualRow.locator('.copy-link').click();
+      await owner.page.getByText('Invitation link copied. Send it to your invitee.', { exact: true }).waitFor();
+      assert.equal(await owner.page.evaluate(() => navigator.clipboard.readText()), inviteLink);
       await owner.page.evaluate(() => { navigator.clipboard.write = async () => { throw new Error('Permission denied'); }; });
       await owner.page.locator('.copy-qr').first().click();
       await owner.page.getByText('Unable to copy the QR image in this browser. Use Download QR code below.', { exact: true }).waitFor();
@@ -95,6 +116,9 @@ async function main() {
       assert.equal(new URL(first.page.url()).hash, '');
       assert.equal(await first.page.locator('#access-code').inputValue(), scanned);
       assert.equal(await first.page.locator('#access-name').inputValue(), '');
+      await assertInvitationOnly(first.page);
+      // The code arrived with the link, so the name field is ready to type.
+      assert.equal(await first.page.evaluate(() => document.activeElement?.id), 'access-name');
       await first.page.locator('.access-form .access-submit').click();
       assert.equal(await first.page.locator('.access-error').innerText(), '');
       await signIn(first.page, scanned, '  Ada Lovelace  ');
@@ -146,6 +170,7 @@ async function main() {
       const recovered = await open(browser, viewport);
       await recovered.page.goto(base + '/invite#code=' + scanned);
       await accessDialog(recovered.page).waitFor();
+      await assertInvitationOnly(recovered.page);
       await signIn(recovered.page, scanned, 'ada lovelace');
       await recovered.page.waitForURL(base + '/examine');
       assert.equal((await identity(recovered.page)).openId, ownerId);
@@ -156,6 +181,7 @@ async function main() {
       const stranger = await open(browser, viewport);
       await stranger.page.goto(base + '/invite#code=' + scanned);
       await accessDialog(stranger.page).waitFor();
+      await assertInvitationOnly(stranger.page);
       await signIn(stranger.page, scanned, 'Mallory');
       const warning = stranger.page.locator('.occupied-dialog');
       await warning.waitFor();
@@ -177,6 +203,9 @@ async function main() {
       await manual.page.goto(base + '/examine');
       await manual.page.locator('#loginButton').click();
       await accessDialog(manual.page).waitFor();
+      // Signing in from anywhere else keeps offering DingTalk: only an invitation link hides it.
+      assert.equal(await accessDialog(manual.page).locator('.access-login').isVisible(), true);
+      assert.equal(await accessDialog(manual.page).locator('.access-divider').isVisible(), true);
       await signIn(manual.page, 'INVALID', 'Manual Guest');
       await manual.page.getByText('Invalid invitation code.', { exact: true }).waitFor();
       // QR-image upload on the invitation-code field: a non-QR image is rejected,
@@ -232,6 +261,8 @@ async function main() {
       // The owner sees the name each guest bound to their used codes.
       await owner.page.reload();
       await owner.page.waitForFunction(() => document.querySelector('#list').textContent.includes('Ada Lovelace'));
+      // Used codes keep their link: the same guest recovers their identity on a new browser.
+      assert.equal(await owner.page.locator('#list .copy-link').count(), 3);
       const table = await owner.page.locator('#list').innerText();
       assert.ok(table.includes('Ada Lovelace'), table);
       assert.ok(table.includes('Manual Guest'), table);
