@@ -212,7 +212,11 @@
       return code;
     } finally { bitmap.close?.(); }
   }
-  function ensureAccess({ force = false } = {}) {
+  function ensureAccess({ force = false, invitationOnly = false } = {}) {
+    // A shared invitation link lands on /invite with the code in the fragment. That
+    // page has one job, so DingTalk sign-in is hidden there: the invitation path is
+    // the only thing in view. Other entry points keep the full choice.
+    const codeOnly = invitationOnly || Boolean(window.__invitationCode);
     if (accessPending) return accessPending;
     accessPending = (async () => {
       try { if ((await refresh()).hasAccess && !force) return true; } catch { /* The modal offers a retry. */ }
@@ -220,15 +224,20 @@
         const dialog = document.createElement("dialog");
         dialog.className = "access-dialog";
         dialog.setAttribute("aria-labelledby", "access-title");
-        dialog.innerHTML = `<form class="access-form"><button type="button" class="access-close" aria-label="Close">&times;</button><h2 id="access-title">Sign in to continue</h2><a class="access-login">Sign in with DingTalk</a><p class="access-divider">or use an invitation code</p><label class="access-label" for="access-code">Invitation code <button class="access-help" type="button" aria-label="How to get an invitation code" aria-expanded="false" aria-controls="access-code-help">?</button><span class="access-help-tip" id="access-code-help" role="tooltip">Get a code from your invitation provider. Each code grants one access.</span></label><span class="access-code-zone"><span class="access-input-wrap"><input id="access-code" name="code" required autocomplete="one-time-code" maxlength="200" placeholder="Enter code or upload QR image"><button class="access-qr-button" type="button" aria-label="Upload invitation QR image" title="Upload invitation QR image">▧</button></span><input id="access-qr-file" type="file" accept="image/*" hidden><span class="access-qr-status" role="status"></span></span><label class="access-label" for="access-name">Your name <button class="access-help" type="button" aria-label="How to sign in on another browser" aria-expanded="false" aria-controls="access-name-help">?</button><span class="access-help-tip" id="access-name-help" role="tooltip">Use this same name and invitation code when signing in from another browser.</span></label><input id="access-name" name="name" required autocomplete="name" maxlength="30" placeholder="Enter a name to remember"><p class="access-error" role="alert"></p><button class="access-submit" type="submit">Continue</button></form>`;
+        dialog.innerHTML = `<form class="access-form"><button type="button" class="access-close" aria-label="Close">&times;</button><h2 id="access-title">Sign in to continue</h2><p class="access-intro" hidden></p><a class="access-login">Sign in with DingTalk</a><p class="access-divider">or use an invitation code</p><label class="access-label" for="access-code">Invitation code <button class="access-help" type="button" aria-label="How to get an invitation code" aria-expanded="false" aria-controls="access-code-help">?</button><span class="access-help-tip" id="access-code-help" role="tooltip">Get a code from your invitation provider. Each code grants one access.</span></label><span class="access-code-zone"><span class="access-input-wrap"><input id="access-code" name="code" required autocomplete="one-time-code" maxlength="200" placeholder="Enter code or upload QR image"><button class="access-qr-button" type="button" aria-label="Upload invitation QR image" title="Upload invitation QR image">▧</button></span><input id="access-qr-file" type="file" accept="image/*" hidden><span class="access-qr-status" role="status"></span></span><label class="access-label" for="access-name">Your name <button class="access-help" type="button" aria-label="How to sign in on another browser" aria-expanded="false" aria-controls="access-name-help">?</button><span class="access-help-tip" id="access-name-help" role="tooltip">Use this same name and invitation code when signing in from another browser.</span></label><input id="access-name" name="name" required autocomplete="name" maxlength="30" placeholder="Enter a name to remember"><p class="access-error" role="alert"></p><button class="access-submit" type="submit">Continue</button></form>`;
         const previousFocus = document.activeElement;
         const login = dialog.querySelector(".access-login");
         if (window.__invitationCode) dialog.querySelector("[name=code]").value = window.__invitationCode;
         login.href = `/auth/dingtalk?redirect=${encodeURIComponent(location.pathname + location.search)}`;
-        login.hidden = current?.configured === false;
+        login.hidden = codeOnly || current?.configured === false;
         if (login.hidden) {
-          dialog.querySelector("h2").textContent = "Enter invitation code";
+          dialog.querySelector("h2").textContent = codeOnly ? "Sign in with your invitation code" : "Enter invitation code";
           dialog.querySelector(".access-divider").hidden = true;
+        }
+        if (codeOnly) {
+          const intro = dialog.querySelector(".access-intro");
+          intro.textContent = "Your invitation code is already filled in. Add your name to continue.";
+          intro.hidden = false;
         }
         let busy = false;
         let granted = false;
@@ -311,6 +320,8 @@
         };
         document.body.append(dialog);
         dialog.showModal();
+        // The code came in with the link, so the name is the only field left to fill.
+        if (codeOnly) nameInput.focus();
       });
     })().finally(() => { accessPending = null; });
     return accessPending;

@@ -315,6 +315,15 @@ function shareServiceUrl(req) {
   return `${req.protocol}://${req.get("host")}/`;
 }
 
+// The shareable invitation link an inviter sends to their invitee. The code rides
+// in the fragment so it never reaches the server logs or the Referer header, and
+// the QR route encodes the exact same URL so a link and a scan stay interchangeable.
+function invitationShareUrl(req, code) {
+  const url = new URL("invite", shareServiceUrl(req));
+  url.hash = new URLSearchParams({ code }).toString();
+  return url.toString();
+}
+
 app.get("/api/share-qr", async (req, res, next) => {
   try {
     const png = await QRCode.toBuffer(shareServiceUrl(req), {
@@ -1825,7 +1834,10 @@ function invitationQuotaFor(openId) {
 }
 app.get("/api/invitation-codes", requireAuth, requireZgcMember, (req, res) => {
   res.json({
-    codes: invitationRecords().filter(x => x.inviterOpenId === req.user.openId && !x.deletedAt).map(({ hash, guestNameHash, ...x }) => x),
+    codes: invitationRecords().filter(x => x.inviterOpenId === req.user.openId && !x.deletedAt).map(({ hash, guestNameHash, ...x }) => ({
+      ...x,
+      shareUrl: x.code ? invitationShareUrl(req, x.code) : null,
+    })),
     quota: invitationQuotaFor(req.user.openId),
   });
 });
@@ -1841,15 +1853,13 @@ app.post("/api/invitation-codes", requireAuth, requireZgcMember, (req, res) => {
   const code = crypto.randomBytes(6).toString("hex").toUpperCase();
   const record = { id: crypto.randomUUID(), code, hash: crypto.createHash("sha256").update(code).digest("hex"), codePreview: code.slice(-4), inviterOpenId: req.user.openId, inviterName: req.user.name, createdAt: new Date().toISOString(), usedAt: null, usedBy: null, deletedAt: null };
   appendJsonLine(invitationsMetadataFile, record);
-  res.status(201).json({ code, record: { ...record, hash: undefined } });
+  res.status(201).json({ code, record: { ...record, hash: undefined, shareUrl: invitationShareUrl(req, code) } });
 });
 app.get("/api/invitation-codes/:id/qr", requireAuth, requireZgcMember, async (req, res, next) => {
   const record = invitationRecords().find(x => x.id === req.params.id && x.inviterOpenId === req.user.openId && !x.deletedAt);
   if (!record?.code) return res.status(404).json({ error: "Invitation code not found." });
   try {
-    const url = new URL("invite", shareServiceUrl(req));
-    url.hash = new URLSearchParams({ code: record.code }).toString();
-    const png = await QRCode.toBuffer(url.toString(), { type: "png", width: 480, margin: 4, errorCorrectionLevel: "M" });
+    const png = await QRCode.toBuffer(invitationShareUrl(req, record.code), { type: "png", width: 480, margin: 4, errorCorrectionLevel: "M" });
     res.set({ "Content-Type": "image/png", "Cache-Control": "no-store" }).send(png);
   } catch (error) { next(error); }
 });

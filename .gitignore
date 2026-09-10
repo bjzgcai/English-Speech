@@ -16,3 +16,6 @@ invitations/
 not-empty-user.json
 npm-debug.log*
 .DS_Store
+
+# Generated artifacts: verification screenshots, posters, print PDFs, plan exports.
+output/

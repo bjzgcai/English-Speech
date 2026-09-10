@@ -37,6 +37,24 @@
 - Save the recording even if downstream evaluation fails, recording the evaluation failure in metadata rather than losing the user's answer.
 - Keep recording history and video access filtered by the signed-in `openId`; never publicly serve the recordings directory.
 
+### Invitation share link
+
+- An inviter copies a shareable link from `/invitation-codes` and sends it to the invitee. The link is
+  `<share-service-url>/invite#code=<CODE>`; the code rides in the fragment so it never reaches the server
+  logs or the `Referer` header. `invitationShareUrl(req, code)` in `src/app.js` is the single source of that
+  URL and is used by the QR route, the create response, and the list response (`shareUrl` per record).
+- The QR payload and the copied link must stay byte-identical, or a scan and a paste would stop being
+  interchangeable. `test/invitation.test.js` asserts both against `APP_BASE_URL`.
+- Opening the link must land on the invitation path only. `VisitorSession.ensureAccess` hides the DingTalk
+  sign-in whenever `window.__invitationCode` is set (or `invitationOnly` is passed), prefills the code, focuses
+  the name field, and shows an explainer instead of the "or use an invitation code" divider. Every other entry
+  point keeps offering DingTalk — do not hide it globally.
+- `public/invite.js` strips the fragment with `replaceState` once the code is in memory. A full page reload
+  after that therefore arrives without a code and shows the ordinary dialog; the in-page "Enter invitation
+  code" fallback still stays invitation-only.
+- The link is offered for used codes too: the same guest recovers their identity on another browser by
+  re-entering the name bound to the code.
+
 ### Audio and evaluation
 
 - Qwen ASR is used only for English audio-to-text transcription. It does not score the learner.

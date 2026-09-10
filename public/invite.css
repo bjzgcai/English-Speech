@@ -1,0 +1,105 @@
+/*
+ * invite.css — the invitation landing page (/invite).
+ *
+ * An inviter copies this link on /invitation-codes and sends it to an invitee.
+ * Opening it prefills the invitation code and opens the access dialog on top of
+ * this card, so the page behind it stays calm and tells the invitee what to do.
+ */
+
+.invite-main {
+  display: grid;
+  justify-items: center;
+  padding: clamp(28px, 9vh, 96px) 0 96px;
+}
+
+.invite-card {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  width: min(540px, calc(100% - 40px));
+  padding: clamp(28px, 6vw, 44px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.invite-brand {
+  margin-bottom: 4px;
+}
+
+.invite-kicker {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.invite-card h1 {
+  font-size: clamp(30px, 6vw, 42px);
+}
+
+.invite-lead {
+  max-width: 42ch;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.invite-code-line {
+  margin-top: 4px;
+  padding: 12px 20px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--accent-strong);
+  font-size: 15px;
+}
+
+.invite-code-line strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 17px;
+  letter-spacing: 0.14em;
+}
+
+.invite-enter {
+  margin-top: 6px;
+  padding: 15px 28px;
+  border-radius: var(--radius-control);
+  background: var(--accent);
+  box-shadow: 0 5px 0 var(--accent-strong);
+  color: var(--accent-text);
+  font-weight: 800;
+}
+
+.invite-enter:hover {
+  background: var(--accent-strong);
+}
+
+.invite-enter:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.invite-enter:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 3px;
+}
+
+.invite-note {
+  max-width: 46ch;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+@media (max-width: 700px) {
+  .invite-main {
+    padding-top: 24px;
+  }
+
+  .invite-card {
+    width: min(540px, calc(100% - 28px));
+  }
+}

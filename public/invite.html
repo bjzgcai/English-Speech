@@ -1,10 +1,38 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Invitation | OScanner-Eng</title><link rel="stylesheet" href="/i18n.css" /></head>
-<body>
-  <main><h1>OScanner-Eng</h1><a href="/leaderboard">Leaderboard</a> <button id="enter">Enter invitation code</button></main>
-  <script src="/i18n.js"></script>
-  <script src="/visitor-session.js"></script>
-  <script src="/invite.js"></script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Open your OScanner-Eng invitation with a code and your name." />
+    <title>Invitation | OScanner-Eng</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/intro.css" />
+    <link rel="stylesheet" href="/invite.css" />
+    <link rel="stylesheet" href="/i18n.css" />
+  </head>
+  <body>
+    <main class="invite-main">
+      <section class="invite-card">
+        <a class="brand invite-brand" href="/intro">
+          <span class="brand-mark"><span>E</span></span>
+          <span>OScanner-Eng</span>
+        </a>
+        <p class="invite-kicker">Invitation</p>
+        <h1>You are invited</h1>
+        <p class="invite-lead">
+          Join the English speaking challenge with your invitation code and your name.
+        </p>
+        <p class="invite-code-line" id="invite-code-line" hidden>
+          Your invitation code <strong id="invite-code-value" data-no-i18n></strong>
+        </p>
+        <button id="enter" class="invite-enter" type="button">Enter invitation code</button>
+        <p class="invite-note">
+          One invitation code opens one learner account. Use the same name every time to keep your evaluation history.
+        </p>
+      </section>
+    </main>
+    <script src="/i18n.js"></script>
+    <script src="/visitor-session.js"></script>
+    <script src="/invite.js"></script>
+  </body>
 </html>

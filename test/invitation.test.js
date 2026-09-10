@@ -37,6 +37,21 @@ test('QR is owner-only PNG with configured URL, and viewing never claims it', as
   assert.equal((await fetch(route, { headers: member() })).status, 404);
   assert.equal((await redeem(code)).status, 400);
 });
+test('the shareable link matches the QR payload and is listed for its owner', async () => {
+  const { record, code } = await issue();
+  const expected = `https://english.example.test/service/invite#code=${code}`;
+  assert.equal(record.shareUrl, expected);
+  const listed = await (await fetch(base + '/api/invitation-codes', { headers: member() })).json();
+  const row = listed.codes.find(entry => entry.id === record.id);
+  // The inviter copies this exact string, so it must not drift from what the QR encodes.
+  assert.equal(row.shareUrl, expected);
+  // The code rides in the fragment: the part before it carries no secret.
+  const parsed = new URL(row.shareUrl);
+  assert.equal(parsed.search, '');
+  assert.equal(parsed.pathname, '/service/invite');
+  assert.equal(new URLSearchParams(parsed.hash.slice(1)).get('code'), code);
+  assert.equal((await fetch(base + `/api/invitation-codes/${record.id}`, { method: 'DELETE', headers: member() })).status, 200);
+});
 test('first claim stores the name, and a blank name cannot claim an unused code', async () => {
   const { code, record } = await issue();
   const omitted = await fetch(base + '/api/invitation/redeem', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
