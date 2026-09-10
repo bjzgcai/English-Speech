@@ -49,11 +49,14 @@ async function consent(person) {
 async function invitedGuest() {
   const code = crypto.randomUUID().toUpperCase();
   appendJsonLine(config.invitationsMetadataFile, { id: crypto.randomUUID(), hash: crypto.createHash("sha256").update(code).digest("hex") });
-  const response = await fetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
+  const response = await fetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "Invited Guest" }) });
   assert.equal(response.status, 200);
   const cookie = response.headers.getSetCookie().map(value => value.split(";")[0]).join("; ");
-  const repeated = await fetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
-  assert.equal(repeated.status, 400);
+  const repeated = await fetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "Someone Else" }) });
+  assert.equal(repeated.status, 409);
+  assert.equal((await repeated.json()).code, "INVITATION_NAME_MISMATCH");
+  const recovered = await fetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "invited guest" }) });
+  assert.equal(recovered.status, 200);
   const person = await guest(cookie);
   person.cookie = cookie;
   assert.equal(person.hasAccess, true);
@@ -167,4 +170,36 @@ test("public browsing needs no access, while private actions require login or in
   assert.equal((await call(visitor, "/api/recordings")).status, 401);
   const invalid = await fetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: "INVALID" }) });
   assert.equal(invalid.status, 400);
+});
+
+test("an invited guest can sign out and loses access without losing the invitation", async () => {
+  const code = crypto.randomUUID().toUpperCase();
+  appendJsonLine(config.invitationsMetadataFile, { id: crypto.randomUUID(), hash: crypto.createHash("sha256").update(code).digest("hex") });
+  const claimed = await fetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "Ada Lovelace" }) });
+  assert.equal(claimed.status, 200);
+  const cookie = claimed.headers.getSetCookie().map(value => value.split(";")[0]).join("; ");
+  const before = await guest(cookie);
+  assert.equal(before.hasAccess, true);
+  assert.equal(before.user.name, "Ada Lovelace");
+  assert.equal(before.accessMode, "invitation");
+  const logout = await fetch(base + "/auth/logout", { method: "POST", headers: { Cookie: cookie } });
+  assert.equal(logout.status, 200);
+  const cleared = logout.headers.getSetCookie();
+  for (const name of ["englisheval_guest", "englisheval_access"]) {
+    const dropped = cleared.find(value => value.startsWith(`${name}=`));
+    assert.ok(dropped, `${name} should be cleared`);
+    assert.match(dropped, /Expires=Thu, 01 Jan 1970|Max-Age=0/);
+  }
+  // Cookies are stateless, so a browser that honours the clearing loses access immediately.
+  const after = await guest("");
+  assert.equal(after.hasAccess, false);
+  assert.equal(after.accessMode, null);
+  assert.notEqual(after.user.openId, before.user.openId);
+  // The invitation keeps its owner, so the same name restores the same identity.
+  const again = await fetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "ada lovelace" }) });
+  assert.equal(again.status, 200);
+  assert.equal((await again.json()).user.openId, before.user.openId);
+  const restored = await guest(again.headers.getSetCookie().map(value => value.split(";")[0]).join("; "));
+  assert.equal(restored.hasAccess, true);
+  assert.equal(restored.user.name, "Ada Lovelace");
 });

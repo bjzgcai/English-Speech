@@ -28,7 +28,7 @@ test("non-queue standalone upload keeps its owned MP4 and failure history when s
   const base = `http://127.0.0.1:${server.address().port}`;
   const code = crypto.randomUUID().toUpperCase();
   fs.appendFileSync(path.join(process.env.DATA_DIR, "invitations", "metadata.jsonl"), JSON.stringify({ id: crypto.randomUUID(), hash: crypto.createHash("sha256").update(code).digest("hex") }) + "\n");
-  const me = await originalFetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
+  const me = await originalFetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "Sync Guest" }) });
   assert.equal(me.status, 200);
   const owner = (await me.json()).user.openId;
   const cookie = me.headers.getSetCookie().map(value => value.split(";")[0]).join("; ");

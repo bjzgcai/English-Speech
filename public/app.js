@@ -106,6 +106,7 @@ const historyView = document.querySelector("#historyView");
 const loginPanel = document.querySelector("#loginPanel");
 const loginButton = document.querySelector("#loginButton");
 const loginPanelButton = document.querySelector(".login-panel .login-button");
+const loginHint = document.querySelector(".login-hint");
 const authChip = document.querySelector("#authChip");
 const authUserName = document.querySelector("#authUserName");
 const invitationLink = document.querySelector("[data-invitation-link]");
@@ -468,18 +469,19 @@ function stopRecordingTimer() {
 }
 
 function updateAuthView() {
-  const isSignedIn = Boolean(state.authUser);
   const route = normalizeRoute(window.location.pathname);
 
   loginPanel.hidden = true;
-  loginButton.hidden = window.VisitorSession.hasAccess && state.authUser?.identityType === "dingtalk";
-  logoutButton.hidden = !isSignedIn || state.authUser?.identityType === "guest";
+  // An invited guest is signed in too: hide the sign-in entry and offer logout.
+  loginButton.hidden = window.VisitorSession.hasAccess;
+  // The hint explains how to sign in, so it is only useful before access is granted.
+  if (loginHint) loginHint.hidden = window.VisitorSession.hasAccess;
+  logoutButton.hidden = !window.VisitorSession.hasAccess;
   authChip.hidden = !window.VisitorSession.hasAccess;
-  authChip.classList.toggle("is-guest", state.authUser?.identityType === "guest");
   playView.hidden = route === "/history" || route === "/leaderboard";
   leaderboardView.hidden = route !== "/leaderboard";
   historyView.hidden = route !== "/history";
-  authUserName.textContent = state.authUser?.name || "DingTalk user";
+  window.VisitorSession.renderIdentityName(authUserName, state.authUser?.name);
   if (invitationLink) invitationLink.hidden = !(state.authUser?.identityType === "dingtalk");
   nameInput.value = state.authUser?.name || "";
   const loginHref = `/auth/dingtalk?redirect=${encodeURIComponent(window.location.pathname)}`;

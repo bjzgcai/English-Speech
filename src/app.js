@@ -9,7 +9,8 @@ const { parseTree } = require("jsonc-parser");
 const config = require("./config");
 const processing = require("./processing");
 const { inspectMedia, convertToMp4, normalizeRecording, processMedia, audioMetrics: deriveAudioMetrics, preparedMediaExists } = require("./media");
-const { appendJsonLine, readJsonLines, writeJsonLines } = require("./storage");
+const { appendJsonLine, readJsonLines, updateJsonLines } = require("./storage");
+const { clientIp, createFailureLimiter } = require("./rate-limit");
 const { createQuestionService } = require("./questions");
 const { registerPageRoutes } = require("./routes/pages");
 const { createVisitorAccess, isGuest } = require("./visitor");
@@ -53,6 +54,28 @@ const {
 const ZGC_CORP_ID = "ding216d3a4e9fdd44cef5bf40eda33b7ba0";
 const MAX_OWNER_ATTEMPTS = 100;
 const MAX_OWNER_VIDEOS = 10;
+const INVITATION_NAME_MAX_LENGTH = 30;
+// A lifetime cap per DingTalk member: deleting a code does not restore the quota.
+const MAX_INVITATION_CODES_PER_INVITER = 100;
+// Redeeming is unauthenticated, so failed attempts are throttled twice: once per
+// client address (code enumeration) and once per invitation record (guessing the
+// name that unlocks a used code). Overridable so tests can tighten the budgets.
+const REDEEM_IP_FAIL_LIMIT = positiveInteger(process.env.INVITATION_REDEEM_IP_LIMIT, 20);
+// Ten wrong names is generous for someone recovering their own identity from a
+// second browser, and small enough that guessing a real name is not practical.
+const REDEEM_NAME_FAIL_LIMIT = positiveInteger(process.env.INVITATION_REDEEM_NAME_LIMIT, 10);
+const redeemIpThrottle = createFailureLimiter({
+  limit: REDEEM_IP_FAIL_LIMIT,
+  windowMs: 10 * 60 * 1000,
+  blockBaseMs: 60 * 1000,
+  blockMaxMs: 15 * 60 * 1000,
+});
+const redeemCodeThrottle = createFailureLimiter({
+  limit: REDEEM_NAME_FAIL_LIMIT,
+  windowMs: 15 * 60 * 1000,
+  blockBaseMs: 2 * 60 * 1000,
+  blockMaxMs: 30 * 60 * 1000,
+});
 const sessionCookieName = "englisheval_session";
 const sessionTtlMs = 7 * 24 * 60 * 60 * 1000;
 const oauthNonceCookieName = "englisheval_oauth_nonce";
@@ -502,6 +525,7 @@ function requirePageAuth(req, res, next) {
 
 const visitorAccess = createVisitorAccess({
   readSession, parseCookies, useSecureSessionCookie,
+  guestName: id => invitationRecords().find(x => x.usedBy === id)?.guestName || "",
 });
 // API services require DingTalk authentication or a redeemed invitation.
 const { requireAccess: requireVisitor } = visitorAccess;
@@ -790,25 +814,28 @@ function discardPersistedAnswer({
   artifactsPath = artifactsDir,
   requireSubmissionId = false,
 }) {
-  const records = readJsonLines(metadataPath);
   const matchesDiscard = (record) =>
     record.id === id &&
     recordOpenId(record) === openId &&
     (!requireSubmissionId || record.submissionId === id);
-  const discardedRecords = records.filter(matchesDiscard);
 
-  if (discardedRecords.length) {
-    discardedRecords.forEach((record) => {
-      if (record.filename && path.basename(record.filename) === record.filename) {
-        removePath(path.join(recordingsPath, record.filename));
-      }
-    });
-    writeJsonLines(
-      metadataPath,
-      records.filter((record) => !matchesDiscard(record)),
-    );
-    removePath(path.join(artifactsPath, id));
-  }
+  let discardedRecords = [];
+  // The read and the rewrite share one lock so a concurrent append is never lost.
+  updateJsonLines(metadataPath, (records) => {
+    discardedRecords = records.filter(matchesDiscard);
+    if (!discardedRecords.length) return records;
+    return records.filter((record) => !matchesDiscard(record));
+  });
+
+  if (!discardedRecords.length) return 0;
+
+  // Media removal happens after the metadata commit, and outside the lock.
+  discardedRecords.forEach((record) => {
+    if (record.filename && path.basename(record.filename) === record.filename) {
+      removePath(path.join(recordingsPath, record.filename));
+    }
+  });
+  removePath(path.join(artifactsPath, id));
   return discardedRecords.length;
 }
 
@@ -1752,6 +1779,8 @@ app.post("/auth/dingtalk/in-app", async (req, res) => {
 
 app.post("/auth/logout", (_req, res) => {
   clearSessionCookie(res);
+  // Invited guests sign in with a code and name rather than DingTalk, so they need their own cookies cleared too.
+  visitorAccess.clearGuestSession(res);
   res.json({ ok: true });
 });
 
@@ -1779,16 +1808,50 @@ function requireVideoQuota(req, res, next) {
 function invitationRecords() {
   const latest = new Map();
   for (const record of readJsonLines(invitationsMetadataFile)) latest.set(record.id, record);
-  return [...latest.values()];
+  return [...latest.values()].sort((left, right) => {
+    const rightCreated = Date.parse(right.createdAt || '') || 0;
+    const leftCreated = Date.parse(left.createdAt || '') || 0;
+    return rightCreated - leftCreated;
+  });
+}
+function invitationNameHash(name) {
+  return crypto.createHash("sha256").update(String(name).trim().toLocaleLowerCase()).digest("hex");
+}
+// Every code an inviter ever generated counts, including deleted and redeemed
+// ones, so the quota cannot be reset by deleting unused codes.
+function invitationQuotaFor(openId) {
+  const issued = invitationRecords().filter((record) => record.inviterOpenId === openId).length;
+  return { issued, limit: MAX_INVITATION_CODES_PER_INVITER, remaining: Math.max(0, MAX_INVITATION_CODES_PER_INVITER - issued) };
 }
 app.get("/api/invitation-codes", requireAuth, requireZgcMember, (req, res) => {
-  res.json({ codes: invitationRecords().filter(x => x.inviterOpenId === req.user.openId && !x.deletedAt).map(({ hash, ...x }) => x) });
+  res.json({
+    codes: invitationRecords().filter(x => x.inviterOpenId === req.user.openId && !x.deletedAt).map(({ hash, guestNameHash, ...x }) => x),
+    quota: invitationQuotaFor(req.user.openId),
+  });
 });
 app.post("/api/invitation-codes", requireAuth, requireZgcMember, (req, res) => {
+  const quota = invitationQuotaFor(req.user.openId);
+  if (quota.remaining <= 0) {
+    return res.status(429).json({
+      code: "INVITATION_QUOTA_EXCEEDED",
+      error: `You have reached the limit of ${MAX_INVITATION_CODES_PER_INVITER} invitation codes.`,
+      quota,
+    });
+  }
   const code = crypto.randomBytes(6).toString("hex").toUpperCase();
   const record = { id: crypto.randomUUID(), code, hash: crypto.createHash("sha256").update(code).digest("hex"), codePreview: code.slice(-4), inviterOpenId: req.user.openId, inviterName: req.user.name, createdAt: new Date().toISOString(), usedAt: null, usedBy: null, deletedAt: null };
   appendJsonLine(invitationsMetadataFile, record);
   res.status(201).json({ code, record: { ...record, hash: undefined } });
+});
+app.get("/api/invitation-codes/:id/qr", requireAuth, requireZgcMember, async (req, res, next) => {
+  const record = invitationRecords().find(x => x.id === req.params.id && x.inviterOpenId === req.user.openId && !x.deletedAt);
+  if (!record?.code) return res.status(404).json({ error: "Invitation code not found." });
+  try {
+    const url = new URL("invite", shareServiceUrl(req));
+    url.hash = new URLSearchParams({ code: record.code }).toString();
+    const png = await QRCode.toBuffer(url.toString(), { type: "png", width: 480, margin: 4, errorCorrectionLevel: "M" });
+    res.set({ "Content-Type": "image/png", "Cache-Control": "no-store" }).send(png);
+  } catch (error) { next(error); }
 });
 app.delete("/api/invitation-codes/:id", requireAuth, requireZgcMember, (req, res) => {
   const record = invitationRecords().find(x => x.id === req.params.id && x.inviterOpenId === req.user.openId && !x.deletedAt);
@@ -1797,16 +1860,62 @@ app.delete("/api/invitation-codes/:id", requireAuth, requireZgcMember, (req, res
   appendJsonLine(invitationsMetadataFile, { ...record, deletedAt: new Date().toISOString() });
   res.json({ ok: true });
 });
+function redeemThrottled(res, verdict, code, error) {
+  res.set("Retry-After", String(verdict.retryAfterSeconds));
+  return res.status(429).json({ code, error, retryAfter: verdict.retryAfterSeconds });
+}
 app.post("/api/invitation/redeem", (req, res) => {
+  const ip = clientIp(req);
+  // Every refusal counts against the caller's address, so probe traffic cannot
+  // be hidden behind a high volume of well-formed requests.
+  const deny = (status, body) => {
+    redeemIpThrottle.fail(ip);
+    return res.status(status).json(body);
+  };
   const value = safeText(req.body?.code).toUpperCase();
+  const name = safeText(req.body?.name);
   const hash = crypto.createHash("sha256").update(value).digest("hex");
-  const records = invitationRecords();
-  const record = records.filter(x => x.hash === hash && !x.deletedAt && !x.usedAt).pop();
-  if (!record) return res.status(400).json({ error: "Invalid or already-used invitation code." });
+  const record = invitationRecords().filter(x => x.hash === hash).pop();
+  // A caller who already holds this guest's signed session is its owner. They
+  // pass ahead of the throttle so a lockout aimed at name guessers can never
+  // also lock out the real person, nor an office sharing one address.
+  const owner = Boolean(record?.usedAt) && visitorAccess.readGuest(req) === record.usedBy;
+  if (!owner) {
+    // Checked before any other branch, otherwise a flood of invalid codes would
+    // never consult the block that the flood itself recorded.
+    const ipVerdict = redeemIpThrottle.check(ip);
+    if (ipVerdict.blocked) return redeemThrottled(res, ipVerdict, "INVITATION_RATE_LIMITED", "Too many failed invitation attempts. Please try again later.");
+  }
+  if (!record || record.deletedAt) return deny(400, { error: "Invalid invitation code." });
+  if (owner) {
+    redeemCodeThrottle.reset(record.id);
+    visitorAccess.setGuestSession(res, record.usedBy);
+    return res.json({ ok: true, user: { openId: record.usedBy, identityType: "guest", name: record.guestName || `Guest ${record.usedBy.slice(6, 14)}` } });
+  }
+  const codeVerdict = redeemCodeThrottle.check(record.id);
+  if (codeVerdict.blocked) return redeemThrottled(res, codeVerdict, "INVITATION_NAME_LOCKED", "Too many incorrect names for this invitation. Please try again later.");
+  if (name.length > INVITATION_NAME_MAX_LENGTH) return deny(400, { code: "INVITATION_NAME_TOO_LONG", error: `The invitation name must be ${INVITATION_NAME_MAX_LENGTH} characters or fewer.` });
+  if (record.usedAt) {
+    if (!record.guestName) return deny(409, { code: "INVITATION_NAME_REQUIRED", error: "Enter the original invitation name to continue." });
+    if (!name) return deny(409, { code: "INVITATION_NAME_REQUIRED", error: "Enter the original invitation name to continue." });
+    // Only a wrong name counts against the code, so guessing stays capped no
+    // matter how many addresses the attacker spreads across.
+    if (invitationNameHash(name) !== record.guestNameHash) {
+      redeemCodeThrottle.fail(record.id);
+      return deny(409, { code: "INVITATION_NAME_MISMATCH", error: "The invitation name does not match." });
+    }
+    redeemCodeThrottle.reset(record.id);
+    visitorAccess.setGuestSession(res, record.usedBy);
+    return res.json({ ok: true, user: { openId: record.usedBy, identityType: "guest", name: record.guestName } });
+  }
+  if (!name.trim()) return deny(400, { code: "INVITATION_NAME_REQUIRED", error: "A name is required." });
   const guestId = `guest:${crypto.randomUUID()}`;
-  appendJsonLine(invitationsMetadataFile, { ...record, usedAt: new Date().toISOString(), usedBy: guestId });
+  const normalized = name.trim();
+  const guestNameHash = invitationNameHash(normalized);
+  appendJsonLine(invitationsMetadataFile, { ...record, usedAt: new Date().toISOString(), usedBy: guestId, guestName: normalized, guestNameHash });
+  redeemCodeThrottle.reset(record.id);
   visitorAccess.setGuestSession(res, guestId);
-  res.json({ ok: true, user: { openId: guestId, identityType: "guest", name: `Guest ${guestId.slice(6, 14)}` } });
+  res.json({ ok: true, user: { openId: guestId, identityType: "guest", name: normalized } });
 });
 
 app.get("/api/v1/users", requirePartnerApiKey, (req, res) => {

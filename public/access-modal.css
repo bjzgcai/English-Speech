@@ -9,5 +9,83 @@
 .access-form input { width: 100%; min-width: 0; box-sizing: border-box; padding: 12px; border: 1px solid #aaa5be; border-radius: 4px; font: inherit; }
 .access-error { color: #aa2439; margin: 0; overflow-wrap: anywhere; }
 .access-error:empty { display: none; }
+/* The invitation-code field doubles as the QR-image uploader: clicking it opens the
+   file picker and dropping an image on it reads the code directly. */
+.access-code-zone { display: grid; gap: 4px; }
+.access-code-zone #access-code { cursor: pointer; }
+.access-code-zone.is-dragover #access-code { border-color: #5545cb; box-shadow: 0 0 0 3px rgb(85 69 203 / 18%); background: #f6f4fe; }
+.access-qr-status { font-size: 13px; line-height: 1.4; color: #676477; overflow-wrap: anywhere; }
+.access-qr-status.is-ok { color: #1c7c3c; }
+.access-qr-status:empty { display: none; }
 .access-submit:disabled { opacity: .6; cursor: wait; }
 .access-form :focus-visible { outline: 3px solid #e7b337; outline-offset: 3px; }
+
+/* Congratulations toast for invitation-code sign-ins. Non-blocking: it floats above
+   the page, dismisses on click, and removes itself after a few seconds. */
+.congrats-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 60;
+  max-width: min(340px, calc(100vw - 40px));
+  padding: 16px 18px;
+  border: 1px solid #d9d6e8;
+  border-left: 4px solid #5545cb;
+  border-radius: 8px;
+  background: #fff;
+  color: #25243b;
+  box-shadow: 0 10px 30px rgb(25 24 40 / 18%);
+  font: 14px/1.5 system-ui, sans-serif;
+  cursor: pointer;
+  animation: congrats-in 240ms ease;
+}
+.congrats-toast .congrats-title { display: block; margin: 0 0 4px; color: #5144c5; font-size: 18px; font-weight: 800; }
+.congrats-toast .congrats-text { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.congrats-toast .congrats-sub { margin: 4px 0 0; color: #676477; font-size: 12px; }
+@keyframes congrats-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@media (max-width: 480px) { .congrats-toast { left: 20px; right: 20px; bottom: 16px; max-width: none; } }
+
+/* Header identity name. The chip always shows a short preview and the full name opens in
+   an overlay: on hover where a pointer exists, and on tap/click everywhere else. The chip
+   itself never grows, so opening the name cannot squeeze the navigation out of the bar. */
+.identity-name { display: inline-block; min-width: 0; font-weight: 800; white-space: nowrap; vertical-align: middle; }
+.auth-chip .identity-name { padding: 6px 11px; border-radius: 999px; background: #f1effb; color: #5144c5; font-size: 13px; }
+.identity-name.is-truncated { position: relative; cursor: pointer; }
+.identity-name.is-truncated::after {
+  content: attr(data-full-name);
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: max-content;
+  max-width: min(260px, 62vw);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #25243b;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .identity-name.is-truncated:hover::after,
+  .identity-name.is-truncated:focus-visible::after { opacity: 1; visibility: visible; }
+}
+/* Touch and keyboard have no hover, so a tap/click/Enter/space pins the overlay open. */
+.identity-name.is-truncated[data-expanded="true"]::after { opacity: 1; visibility: visible; }
+.identity-name:focus-visible { outline: 3px solid #e7b337; outline-offset: 3px; }
+.access-label { position: relative; display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.access-help { width: 20px; height: 20px; padding: 0; border: 1px solid #aaa5be; border-radius: 50%; background: #fff; color: #5545cb; font: 700 13px/18px system-ui, sans-serif; cursor: pointer; }
+.access-help-tip { position: absolute; left: 26px; top: calc(100% + 6px); z-index: 5; width: min(280px, calc(100vw - 88px)); padding: 8px 10px; border-radius: 6px; background: #25243b; color: #fff; font-size: 12px; font-weight: 500; line-height: 1.4; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 120ms ease; }
+.access-help:hover + .access-help-tip, .access-help:focus-visible + .access-help-tip, .access-help[data-expanded="true"] + .access-help-tip { opacity: 1; visibility: visible; }
+.access-input-wrap { position: relative; display: block; }
+.access-input-wrap #access-code { padding-right: 48px; }
+.access-qr-button { position: absolute; top: 50%; right: 8px; width: 32px; height: 32px; padding: 0; transform: translateY(-50%); border: 0; border-radius: 4px; background: transparent; color: #5545cb; font-size: 24px; line-height: 1; cursor: pointer; }
+.access-qr-button:hover, .access-qr-button:focus-visible { background: #f1effb; }

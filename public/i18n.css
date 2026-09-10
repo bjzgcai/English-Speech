@@ -1,0 +1,161 @@
+/*
+ * i18n.css — styles for the header Eng/中 language toggle and the
+ * Chinese companion lines shown in 中 (bilingual) mode.
+ * Self-contained: works on app pages (styles.css) and doc pages (docs.css).
+ */
+
+/* ---------------- Toggle button ----------------------------------- */
+
+.lang-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  border: 1px solid rgba(86, 81, 217, 0.35);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  padding: 2px;
+  gap: 2px;
+  font-family: inherit;
+  user-select: none;
+}
+
+.lang-toggle button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 7px 11px;
+  cursor: pointer;
+  opacity: 0.72;
+  transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+.lang-toggle button:hover {
+  opacity: 1;
+  background: rgba(86, 81, 217, 0.1);
+}
+
+.lang-toggle button.is-active {
+  background: var(--accent-dark, #5651d9);
+  color: #fff;
+  opacity: 1;
+}
+
+.lang-toggle button:focus-visible {
+  outline: 3px solid rgba(86, 81, 217, 0.35);
+  outline-offset: 2px;
+}
+
+/* Fallback placement for pages without a header (invite.html). */
+.lang-toggle.lang-toggle-floating {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 9999;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(31, 27, 81, 0.18);
+}
+
+/* ---------------- Chinese companion lines ------------------------- */
+/* Spans only exist while 中 mode is active (html[data-lang-mode="zh"]). */
+
+[data-lang-zh] {
+  display: inline;
+  margin-left: 0.4em;
+  font-size: 0.82em;
+  font-weight: 600;
+  color: var(--accent-dark, #5651d9);
+  opacity: 0.85;
+  word-break: break-word;
+}
+
+/* Block companion line under headings and paragraphs. */
+h1 > [data-lang-zh],
+h2 > [data-lang-zh],
+h3 > [data-lang-zh],
+h4 > [data-lang-zh],
+p > [data-lang-zh],
+li > [data-lang-zh],
+figcaption > [data-lang-zh],
+blockquote > [data-lang-zh],
+strong > [data-lang-zh] {
+  display: block;
+  margin-left: 0;
+  margin-top: 0.2em;
+  font-size: 0.78em;
+  line-height: 1.45;
+  /* Inside flex/grid rows (e.g. numbered notes) take the remaining space
+     instead of being squeezed into a one-character column. */
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Nav links: stack a small Chinese label under the English one. */
+.main-nav a > [data-lang-zh],
+.docs-nav nav a > [data-lang-zh],
+header nav a > [data-lang-zh] {
+  display: block;
+  margin-left: 0;
+  margin-top: 1px;
+  font-size: 0.62em;
+  line-height: 1.15;
+  text-align: center;
+  opacity: 0.75;
+}
+
+/* Keep inline controls compact. */
+a > [data-lang-zh],
+label > [data-lang-zh],
+span > [data-lang-zh],
+.small > [data-lang-zh] {
+  margin-left: 0.35em;
+}
+
+/* Buttons: stack the Chinese label inside the button so it never overflows. */
+button > [data-lang-zh] {
+  display: block;
+  margin: 3px 0 0;
+  font-size: 0.72em;
+  line-height: 1.2;
+}
+
+/* Table headers stay on one line each. */
+th > [data-lang-zh] {
+  display: block;
+  font-size: 0.72em;
+  margin-left: 0;
+  margin-top: 1px;
+  opacity: 0.75;
+}
+
+/* Status pill and other tiny badges: keep the Chinese on the same line. */
+.status-pill > [data-lang-zh] {
+  display: inline;
+  margin-left: 0.35em;
+  font-size: 0.85em;
+}
+
+/* Numbered grid notes on the methodology page: share the text column. */
+.validation-notes p > [data-lang-zh] {
+  grid-column: 2;
+  grid-row: 2;
+  margin-top: 0;
+}
+
+@media (max-width: 700px) {
+  .lang-toggle button {
+    padding: 6px 9px;
+    font-size: 12px;
+  }
+
+  /* Slim down the nav companion labels on phones so the nav stays one row. */
+  .main-nav a > [data-lang-zh],
+  .docs-nav nav a > [data-lang-zh],
+  header nav a > [data-lang-zh] {
+    display: none;
+  }
+}

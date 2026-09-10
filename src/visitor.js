@@ -9,7 +9,7 @@ function isGuest(user) {
   return user?.identityType === "guest" || String(user?.openId || "").startsWith("guest:");
 }
 
-function createVisitorAccess({ readSession, parseCookies, useSecureSessionCookie }) {
+function createVisitorAccess({ readSession, parseCookies, useSecureSessionCookie, guestName = () => "" }) {
   const signature = payload => {
     const secret = process.env.SESSION_SECRET || process.env.DINGTALK_APP_SECRET;
     if (!secret) throw new Error("SESSION_SECRET is required when DingTalk credentials are absent.");
@@ -40,8 +40,9 @@ function createVisitorAccess({ readSession, parseCookies, useSecureSessionCookie
         httpOnly: true, sameSite: "lax", secure: useSecureSessionCookie(),
         maxAge: guestTtlMs, path: "/",
       });
+      const displayName = guestName(id);
       req.visitor = {
-        openId: id, identityType: "guest", name: `Guest ${id.slice(6, 14)}`,
+        openId: id, identityType: "guest", name: displayName || `Guest ${id.slice(6, 14)}`,
         userId: "", unionId: "", jobNumber: "", email: "", orgEmail: "",
       };
     }
@@ -54,6 +55,12 @@ function createVisitorAccess({ readSession, parseCookies, useSecureSessionCookie
     const payload = Buffer.from(JSON.stringify({ id, exp: Date.now() + guestTtlMs })).toString("base64url");
     res.cookie(guestCookieName, `${payload}.${signature(payload)}`, { httpOnly: true, sameSite: "lax", secure: useSecureSessionCookie(), maxAge: guestTtlMs, path: "/" });
     res.cookie(accessCookieName, `${id}.${signature(id)}`, { httpOnly: true, sameSite: "lax", secure: useSecureSessionCookie(), maxAge: guestTtlMs, path: "/" });
+  }
+
+  function clearGuestSession(res) {
+    const options = { httpOnly: true, sameSite: "lax", secure: useSecureSessionCookie(), path: "/" };
+    res.clearCookie(guestCookieName, options);
+    res.clearCookie(accessCookieName, options);
   }
 
   function hasAccess(req, user) {
@@ -80,7 +87,7 @@ function createVisitorAccess({ readSession, parseCookies, useSecureSessionCookie
     next();
   }
 
-  return { resolveVisitor, requireVisitor, requireAccess, hasAccess, setGuestSession };
+  return { resolveVisitor, requireVisitor, requireAccess, hasAccess, setGuestSession, clearGuestSession, readGuest };
 }
 
 module.exports = { createVisitorAccess, isGuest, guestCookieName, guestTtlMs };

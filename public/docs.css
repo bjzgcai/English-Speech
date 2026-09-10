@@ -809,13 +809,13 @@ footer p { color: var(--muted); font-size: 13px; }
   .docs-nav { min-height: 64px; gap: 8px; padding: 8px; }
   .docs-nav nav { min-width: 0; flex: 1; gap: 2px; overflow-x: auto; scrollbar-width: none; }
   .docs-nav nav::-webkit-scrollbar { display: none; }
-  .header-menu { min-width: 0; flex: 1; gap: 4px; overflow: hidden; }
+  /* Not clipped: the full-name overlay opens below the chip when the preview is tapped. */
+  .header-menu { min-width: 0; flex: 1; gap: 4px; overflow: visible; }
   .docs-nav nav a { min-width: 44px; padding: 8px; font-size: 12px; }
   .docs-nav nav a, .header-login, .auth-chip button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; }
   .auth-chip,
   .header-login { padding: 7px; }
-  .auth-chip [data-auth-user-name] { display: none; }
-  .auth-chip.is-guest::before { content: "Guest"; }
+  .auth-chip .identity-name { padding: 5px 9px; font-size: 12px; }
   .brand > span:last-child { display: none; }
   .video-evaluator { padding-top: 46px; gap: 38px; }
   .video-evaluator-form { padding: 24px 18px; }
