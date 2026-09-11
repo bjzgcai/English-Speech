@@ -6,7 +6,7 @@ if (location.hash) history.replaceState(null, "", location.pathname + location.s
 async function enterInvitation({ force = false } = {}) {
   // An invitation link signs in with the code alone, so DingTalk stays out of the way.
   const granted = await window.VisitorSession.ensureAccess({ force, invitationOnly: Boolean(invitationCode) });
-  if (granted) location.href = "/examine";
+  if (granted) location.href = "/game";
 }
 async function hasAccess() {
   try { return (await window.VisitorSession.refresh()).hasAccess === true; } catch { return false; }
@@ -25,7 +25,7 @@ async function start() {
       // Reading the fragment never redeems it. A browser that already has access keeps it;
       // anyone else must supply the name bound to this code.
       const granted = (await hasAccess()) || (await window.VisitorSession.ensureAccess({ force: true, invitationOnly: true }));
-      if (granted) location.replace("/examine");
+      if (granted) location.replace("/game");
     } finally { enter.disabled = false; }
     return;
   }
