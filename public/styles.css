@@ -1103,7 +1103,41 @@ h1 {
   text-decoration: none;
 }
 
-.leaderboard-footer a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.leaderboard-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 52px;
+  border: 2px solid var(--accent-dark);
+  border-radius: 14px;
+  background: var(--accent-dark);
+  box-shadow: 0 5px 0 rgba(32, 27, 89, 0.2);
+  color: #fff !important;
+  padding: 0 20px;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.leaderboard-cta:hover {
+  background: #574bd0;
+  box-shadow: 0 7px 0 rgba(32, 27, 89, 0.2);
+  text-decoration: none;
+  transform: translateY(-2px);
+}
+
+.leaderboard-cta:active {
+  box-shadow: 0 2px 0 rgba(32, 27, 89, 0.2);
+  transform: translateY(2px);
+}
+
+.leaderboard-cta-arrow { font-size: 22px; line-height: 1; }
+
+.leaderboard-cta-top {
+  width: 100%;
+  margin: 20px 0 14px;
+}
 
 .section-heading {
   margin-bottom: 30px;
@@ -1138,6 +1172,12 @@ label {
   font-size: 12px;
   line-height: 1.5;
 }
+
+.camera-option { display:flex; align-items:center; gap:10px; margin:14px 0 4px; padding:12px 16px; border:1px solid var(--line); border-radius:14px; background:rgba(255,255,255,.72); font-weight:650; color:var(--ink); cursor:pointer; }
+.camera-option input { width:18px; height:18px; accent-color:var(--accent); }
+.camera-option:has(input:focus-visible) { outline:3px solid color-mix(in srgb, var(--accent) 35%, transparent); outline-offset:2px; }
+#audioOnlyHint { margin:6px 0 0; color:var(--muted); font-size:.9rem; }
+.shiba-mascot { width:72px; height:54px; display:block; margin:0 auto 4px; }
 
 .privacy-note a,
 .consent-check a {
@@ -1514,6 +1554,13 @@ video {
   margin: 4px 0 0;
   color: var(--muted);
   line-height: 1.5;
+}
+
+.camera-purpose {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .device-status {
@@ -2999,6 +3046,8 @@ video {
     display: grid;
     gap: 10px;
   }
+
+  .leaderboard-cta { width: 100%; }
 
   .app-nav {
     min-height: 64px;

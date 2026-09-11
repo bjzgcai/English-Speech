@@ -30,6 +30,7 @@ const state = {
   gameChallenges: [],
   leaderboardIdentity: null,
   activeMode: null,
+  useCamera: true,
   experienceRatingScore: null,
   experienceRatingTags: [],
   experienceRatingSubmitting: false,
@@ -55,6 +56,11 @@ const profileForm = document.querySelector("#profileForm");
 const nameInput = document.querySelector("#name");
 const nameField = document.querySelector("#nameField");
 const generateButton = document.querySelector("#generateButton");
+const useCameraInput = document.querySelector("#useCamera");
+const audioOnlyHint = document.querySelector("#audioOnlyHint");
+const previewLabel = document.querySelector("#previewLabel");
+try { state.useCamera = localStorage.getItem("oscanner-use-camera") !== "false"; if (useCameraInput) useCameraInput.checked = state.useCamera; if (audioOnlyHint) audioOnlyHint.hidden = state.useCamera; } catch {}
+useCameraInput?.addEventListener("change", () => { state.useCamera = useCameraInput.checked; try { localStorage.setItem("oscanner-use-camera", String(state.useCamera)); } catch {} if (audioOnlyHint) audioOnlyHint.hidden = state.useCamera; if (previewLabel) previewLabel.textContent = state.useCamera ? "Camera preview" : "Audio recording"; });
 const finishButton = document.querySelector("#finishButton");
 const discardButton = document.querySelector("#discardButton");
 const controlRow = document.querySelector(".control-row");
@@ -705,7 +711,7 @@ function getUnavailableRequiredDevice() {
   if (!audioTrack || audioTrack.readyState !== "live" || audioTrack.muted || !audioTrack.enabled) {
     return "microphone";
   }
-  if (!videoTrack || videoTrack.readyState !== "live" || videoTrack.muted || !videoTrack.enabled) {
+  if (state.useCamera && (!videoTrack || videoTrack.readyState !== "live" || videoTrack.muted || !videoTrack.enabled)) {
     return "camera";
   }
   return null;
@@ -729,13 +735,13 @@ async function acquireRequiredMedia() {
   updateDeviceStatus("checking", "Waiting for camera and microphone permission");
   try {
     state.stream = await navigator.mediaDevices.getUserMedia({
-      video: {
+      video: state.useCamera ? {
         facingMode: { ideal: "user" },
         width: { ideal: 1280 },
         height: { ideal: 720 },
         frameRate: { ideal: 24, max: 30 },
         aspectRatio: { ideal: 16 / 9 },
-      },
+      } : false,
       audio: {
         echoCancellation: true,
         noiseSuppression: true,
@@ -754,9 +760,9 @@ async function acquireRequiredMedia() {
   preview.srcObject = state.stream;
   preparePreview.srcObject = state.stream;
   videoPlaceholder.classList.add("hidden");
-  preparePreviewWrap.hidden = false;
+  preparePreviewWrap.hidden = !state.useCamera;
   await Promise.allSettled([preview.play(), preparePreview.play()]);
-  updateDeviceStatus("ready", "Camera and microphone are ready");
+  updateDeviceStatus("ready", state.useCamera ? "Camera and microphone are ready" : "Microphone is ready (audio only)");
 }
 
 async function requireMediaBeforeQuestion() {
@@ -812,13 +818,13 @@ function getProfileFromForm() {
 }
 
 function getSupportedMimeType() {
-  const candidates = [
+  const candidates = state.useCamera ? [
     "video/mp4;codecs=h264,aac",
     "video/mp4",
     "video/webm;codecs=vp9,opus",
     "video/webm;codecs=vp8,opus",
     "video/webm",
-  ];
+  ] : ["audio/mp4;codecs=mp4a.40.2", "audio/mp4", "audio/webm;codecs=opus", "audio/webm"];
 
   if (!window.MediaRecorder || typeof MediaRecorder.isTypeSupported !== "function") return "";
   return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
@@ -1252,7 +1258,7 @@ function getEvaluationDimensions(evaluation) {
     rubric.vocabulary,
     rubric.coherence,
     rubric.visualDelivery,
-  ].filter(Boolean);
+  ].filter((item) => item && item.available !== false);
 }
 
 function renderScoreRows(evaluation) {
@@ -1468,8 +1474,8 @@ function setPlayMode(route) {
     ? "The topic is fixed for everyone. Check your devices, plan clearly, and record your answer."
     : "Used by the LLM to generate one targeted speaking question.";
   generateButton.textContent = isGame
-    ? "Check camera & start challenge"
-    : "Check camera & generate question";
+    ? "Start challenge"
+    : "Generate question";
 
   if (state.activeMode !== route) {
     state.activeMode = route;
@@ -1664,10 +1670,7 @@ async function startRecording() {
     await acquireRequiredMedia();
     if (actionOwner !== state.authUser?.openId) { stopStream(); return; }
 
-    const requiredTracks = [
-      ...state.stream.getAudioTracks(),
-      ...state.stream.getVideoTracks(),
-    ];
+    const requiredTracks = [...state.stream.getAudioTracks(), ...(state.useCamera ? state.stream.getVideoTracks() : [])];
     const handleRequiredDeviceUnavailable = () => {
       if (!state.recorder || state.recorder.state === "inactive") return;
       const unavailableTrack = requiredTracks.find(
@@ -1687,7 +1690,7 @@ async function startRecording() {
     preview.srcObject = state.stream;
     videoPlaceholder.classList.add("hidden");
 
-    const options = { ...(state.mimeType ? { mimeType: state.mimeType } : {}), videoBitsPerSecond: 1500000, audioBitsPerSecond: 64000 };
+    const options = { ...(state.mimeType ? { mimeType: state.mimeType } : {}), ...(state.useCamera ? { videoBitsPerSecond: 1500000 } : {}), audioBitsPerSecond: 64000 };
     state.recorder = new MediaRecorder(state.stream, options);
     state.startedAt = new Date().toISOString();
     const recordingChunks = state.chunks;
@@ -1731,7 +1734,7 @@ async function startRecording() {
     setDiscardAvailable(false);
     generateButton.disabled = true;
     logoutButton.disabled = false;
-    saveResult.textContent = "Turn on your camera and microphone to record this answer.";
+    saveResult.textContent = state.useCamera ? "Turn on your camera and microphone to record this answer." : "Turn on your microphone to record this answer.";
     showMediaRequiredModal(error, "record");
   }
 }
