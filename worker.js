@@ -32,7 +32,6 @@ async function processJob(job) {
       const media = await stage("normalized", async () => {
         const inspected = await evaluation.inspectMedia(job.payload.inputPath);
         if (!inspected.hasAudio) throw new Error("The recording has no usable microphone audio.");
-        if (job.payload.mode !== "standalone-speech" && !inspected.hasVideo) throw new Error("The answer requires both camera and microphone tracks.");
         const media = evaluation.limitStandaloneMediaInfo(inspected);
         task.checkpoint.category = media.durationSeconds <= 40 ? "short" : "long";
         task.checkpoint.pipelineVersion = mediaPipelineVersion;

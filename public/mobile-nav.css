@@ -1,0 +1,101 @@
+.mobile-menu-toggle { display: none; }
+
+@media (max-width: 820px) {
+  .has-mobile-menu.app-nav,
+  .has-mobile-menu.docs-nav {
+    gap: 12px;
+    min-height: 64px;
+    padding: 8px 12px;
+    overflow: visible;
+  }
+
+  .has-mobile-menu .brand > span:last-child {
+    display: inline;
+    font-size: 14px;
+  }
+
+  .has-mobile-menu .mobile-menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex: none;
+    min-height: 44px;
+    padding: 8px 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #efedff;
+    color: #473bb7;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .mobile-menu-chevron {
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+  }
+
+  .menu-open .mobile-menu-chevron { transform: translateY(2px) rotate(225deg); }
+  .mobile-menu-toggle:focus-visible { outline: 3px solid #6558e8; outline-offset: 3px; }
+
+  .has-mobile-menu .header-menu {
+    position: absolute;
+    top: calc(100% + 12px);
+    right: 0;
+    left: 0;
+    display: none;
+    max-height: calc(100dvh - 110px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 12px;
+    gap: 12px;
+    align-items: stretch;
+    border: 2px solid var(--line);
+    border-radius: 18px;
+    background: #fff;
+    box-shadow: 0 16px 36px rgba(69, 56, 139, 0.16);
+  }
+
+  .has-mobile-menu.menu-open .header-menu { display: flex; flex-direction: column; }
+
+  .has-mobile-menu .header-menu nav {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    overflow: visible;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .has-mobile-menu .header-menu nav a[href] {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+
+  .has-mobile-menu .header-menu .lang-toggle { align-self: flex-start; }
+  .has-mobile-menu .header-menu .auth-chip {
+    justify-content: space-between;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding: 12px 0 0;
+    font-size: 14px;
+  }
+  .has-mobile-menu .header-menu .header-login { border-left: 0; font-size: 14px; }
+}
+
+@media (max-width: 380px) {
+  .has-mobile-menu .brand > span:last-child { display: none; }
+}

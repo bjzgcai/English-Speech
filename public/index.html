@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/queue.css" />
     <link rel="stylesheet" href="/i18n.css" />
+  <link rel="stylesheet" href="/mobile-nav.css" />
   </head>
   <body>
     <a class="skip-link" href="#mainContent">Skip to content</a>
@@ -66,16 +67,19 @@
               <select id="leaderboardWeek" aria-label="Choose a challenge week"></select>
             </label>
           </div>
-          <section class="leaderboard-identity-settings" id="leaderboardIdentitySettings" aria-live="polite">
-            <p>Loading your leaderboard name…</p>
-          </section>
+          <a class="leaderboard-cta leaderboard-cta-top" href="/game" data-route="/game">
+            <span>Join to PK!</span>
+            <span class="leaderboard-cta-arrow" aria-hidden="true">→</span>
+          </a>
           <div class="leaderboard-summary" id="leaderboardSummary" aria-live="polite"></div>
           <ol class="leaderboard-list" id="leaderboardList" role="list" aria-live="polite">
             <li class="leaderboard-loading">Loading leaderboard...</li>
           </ol>
+          <section class="leaderboard-identity-settings" id="leaderboardIdentitySettings" aria-live="polite">
+            <p>Loading your leaderboard name…</p>
+          </section>
           <footer class="leaderboard-footer">
             <p>Your highest completed score is the one that counts.</p>
-            <a href="/game" data-route="/game">Ready for another round? <span aria-hidden="true">→</span></a>
           </footer>
         </section>
       </section>
@@ -130,11 +134,16 @@
           </label>
 
           <button type="submit" class="primary-button" id="generateButton">
-            Check camera &amp; generate question
+            Generate question
           </button>
+          <label class="camera-option"><input type="checkbox" id="useCamera" checked> <span>Use camera (visual delivery)</span></label>
+          <p id="audioOnlyHint" class="camera-purpose" hidden>Audio only: visual delivery will not be scored.</p>
+          <p class="camera-purpose">
+            Your camera helps us assess posture, eye contact, and on-camera presence.
+          </p>
           <p class="privacy-note">
             Generating a question and recording an answer are subject to our
-            <a href="/privacy" target="_blank" rel="noreferrer">隐私政策</a>.
+            <a href="/privacy" target="_blank" rel="noreferrer">Privacy policy</a>.
           </p>
         </form>
 
@@ -148,7 +157,7 @@
           <div class="video-frame">
             <video id="preview" autoplay muted playsinline></video>
             <div class="video-placeholder" id="videoPlaceholder">
-              <span>Camera preview</span>
+              <span id="previewLabel">Camera preview</span>
               <small>Your browser will ask before anything turns on.</small>
             </div>
             <div class="framing-guide" aria-hidden="true">
@@ -158,7 +167,7 @@
                 <path d="M213 105v17c39 9 61 37 64 88"></path>
                 <path d="M123 210c24-18 50-27 77-27s53 9 77 27"></path>
               </svg>
-              <span>Align head and shoulders</span>
+                  <span aria-label="Shiba Inu mascot"><svg class="shiba-mascot" viewBox="0 0 120 90" role="img"><path fill="#D77A3D" d="M18 35 10 8l25 12c12-8 38-8 50 0L110 8l-8 28c4 24-12 40-42 40S14 59 18 35Z"/><path fill="#FFF4DF" d="M38 48c8-7 36-7 44 0v14c-10 10-34 10-44 0Z"/><circle cx="43" cy="40" r="4" fill="#24243F"/><circle cx="77" cy="40" r="4" fill="#24243F"/><path d="M56 52q4 5 8 0" fill="none" stroke="#24243F" stroke-width="3" stroke-linecap="round"/></svg></span>
             </div>
             <div class="recording-hud" id="recordingBadge" role="timer" aria-live="off">
               <div class="recording-state">
@@ -364,7 +373,7 @@
       >
         <div class="privacy-consent-dialog">
           <p class="muted-label">Before your first evaluation</p>
-          <h2 id="privacyConsentTitle">请先阅读并确认隐私授权</h2>
+            <h2 id="privacyConsentTitle">Please review the privacy policy</h2>
           <p id="privacyConsentSummary" class="privacy-consent-summary">
             为生成题目、录制回答并完成英语口语评估，我们需要处理您的候选人资料、摄像头视频、麦克风音频，以及由此生成的转写文本、抽帧画面和评分结果。
           </p>
@@ -376,7 +385,7 @@
 
           <label class="consent-check">
             <input type="checkbox" id="privacyPolicyAgree" checked />
-            <span>我已阅读并同意 <a href="/privacy" target="_blank" rel="noreferrer">《OScanner-Eng 隐私政策》</a>。</span>
+            <span>I have read and agree to the <a href="/privacy" target="_blank" rel="noreferrer">OScanner-Eng privacy policy</a>.</span>
           </label>
           <label class="consent-check">
             <input type="checkbox" id="sensitiveInfoAgree" checked />
@@ -392,6 +401,7 @@
       </div>
     </main>
 
+    <script src="/mobile-nav.js"></script>
     <script src="/i18n.js"></script>
     <script src="https://g.alicdn.com/dingding/dingtalk-jsapi/2.14.1/dingtalk.open.js"></script>
     <script src="/visitor-session.js"></script>

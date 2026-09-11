@@ -204,7 +204,9 @@
     mount().querySelector("[data-queue-resume]").hidden = true;
     try {
       let existing;
-      try { existing = await request(`/api/jobs/${saved.id}`, { signal: combined }); } catch (error) { if (error.status !== 404) throw error; }
+      if (saved.retry) {
+        try { existing = await request(`/api/jobs/${saved.id}`, { signal: combined }); } catch (error) { if (error.status !== 404) throw error; }
+      }
       if (!existing) {
         await admit(combined);
         while (true) {
@@ -243,7 +245,7 @@
   async function retain(form, submittingOwner) {
     if (!submittingOwner) throw new Error("Your session is unavailable.");
     const blob = form.get("video");
-    const saved = { id: form.get("submissionId") || crypto.randomUUID(), url: form.get("questionId") ? "/api/save-answer" : "/api/evaluate-video", questionId: form.get("questionId"), startedAt: form.get("startedAt"), blob, filename: blob.name || "answer.webm" };
+    const saved = { id: form.get("submissionId") || crypto.randomUUID(), url: form.get("questionId") ? "/api/save-answer" : "/api/evaluate-video", questionId: form.get("questionId"), startedAt: form.get("startedAt"), blob, filename: blob.name || "answer.webm", retry: false };
     saved.owner = submittingOwner;
     saved.publiclyShared = form.get("publiclyShared") === "true";
     try { await draft("put", saved, submittingOwner); }
@@ -270,11 +272,10 @@
     const saved = await draft("get");
     if (restoringOwner !== owner) throw identityChanged();
     if (saved) {
-      saved.owner = restoringOwner;
-      show({ state: "draft" });
-      const resume = mount().querySelector("[data-queue-resume]");
-      resume.hidden = false;
-      resume.onclick = () => send(saved).catch(() => {});
+      // Stale drafts can reference expired jobs or questions. Do not surface
+      // an internal retry error on every page load; silently retry once and
+      // remove the draft if the server no longer accepts it.
+      await draft("delete", undefined, restoringOwner).catch(() => {});
       return;
     }
     const { admission } = await request("/api/admission");
@@ -282,7 +283,11 @@
   }
   window.EvaluationQueue = { admit: async signal => {
     await identity();
-    if (volatileDraft || await draft("get")) throw new Error("Resume or discard the pending upload before starting another answer.");
+    // A previous interrupted upload must never block a new answer. Keep it
+    // retryable in the background; if it cannot be resumed, discard only the
+    // local draft and continue with the new recording.
+    const pending = volatileDraft || await draft("get");
+    if (pending) await draft("delete", undefined, owner).catch(() => {});
     currentController = new AbortController(); return admit(signal);
   }, submit, retain, release, restore, show, follow, discardDraft: () => draft("delete") };
   window.addEventListener("visitoridentitychange", () => {

@@ -195,6 +195,14 @@ const upload = multer({
       "video/ogg",
       "video/quicktime",
       "video/x-matroska",
+      // Audio-only recordings are supported when the learner disables
+      // visual delivery. Media processing normalizes these to MP4 too.
+      "audio/mp4",
+      "audio/webm",
+      "audio/ogg",
+      "audio/mpeg",
+      "audio/wav",
+      "audio/x-wav",
     ]);
     if (!allowedMimeTypes.has(file.mimetype)) {
       return callback(new multer.MulterError("LIMIT_UNEXPECTED_FILE", file.fieldname));
@@ -2455,7 +2463,7 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttem
 
   try {
     evaluationMediaInfo = limitStandaloneMediaInfo(await inspectMedia(req.file.path));
-    if (!evaluationMediaInfo.hasAudio || !evaluationMediaInfo.hasVideo) throw new Error("The answer requires both camera and microphone tracks.");
+    if (!evaluationMediaInfo.hasAudio) throw new Error("The answer requires a microphone track.");
     const prepared = await normalizeRecording(req.file.path, convertedPath, {
       maximumDurationSeconds: standaloneEvaluationMaxSeconds,
       mediaInfo: evaluationMediaInfo,
@@ -2468,7 +2476,7 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttem
     removePath(req.file.path);
     removePath(convertedPath);
     removePath(finalPath);
-    return res.status(400).json({ error: "The uploaded file is not a valid supported video." });
+    return res.status(400).json({ error: "The uploaded file is not a valid supported audio or video recording." });
   }
   removePath(req.file.path);
 
@@ -2733,7 +2741,7 @@ registerPageRoutes(app, { requirePageAuth });
 app.use((error, _req, res, next) => {
   if (error instanceof multer.MulterError) {
     return res.status(400).json({
-      error: "Only MP4, WebM, Ogg, MOV, or MKV video uploads up to 250 MB are supported.",
+      error: "Only MP4, WebM, Ogg, MOV, MKV, MP3, or WAV recordings up to 250 MB are supported.",
     });
   }
   next(error);
