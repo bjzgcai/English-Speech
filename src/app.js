@@ -2323,7 +2323,7 @@ app.post("/api/generate-question", requireVisitor, requirePrivacyConsent, requir
           {
             role: "system",
             content:
-              "You are an expert English speaking examiner. Produce concise, practical interview-style assessment prompts.",
+              "You are an expert English speaking examiner. Produce concise, practical interview prompts. Keep the question under 20 words.",
           },
           {
             role: "user",

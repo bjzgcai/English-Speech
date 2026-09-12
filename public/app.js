@@ -60,10 +60,10 @@ const useCameraInput = document.querySelector("#useCamera");
 const audioOnlyHint = document.querySelector("#audioOnlyHint");
 const previewLabel = document.querySelector("#previewLabel");
 try { state.useCamera = localStorage.getItem("oscanner-use-camera") !== "false"; if (useCameraInput) useCameraInput.checked = state.useCamera; if (audioOnlyHint) audioOnlyHint.hidden = state.useCamera; } catch {}
-useCameraInput?.addEventListener("change", () => { state.useCamera = useCameraInput.checked; try { localStorage.setItem("oscanner-use-camera", String(state.useCamera)); } catch {} if (audioOnlyHint) audioOnlyHint.hidden = state.useCamera; if (previewLabel) previewLabel.textContent = state.useCamera ? "Camera preview" : "Audio recording"; });
+useCameraInput?.addEventListener("change", () => { state.useCamera = useCameraInput.checked; try { localStorage.setItem("oscanner-use-camera", String(state.useCamera)); } catch {} if (audioOnlyHint) audioOnlyHint.hidden = state.useCamera; if (previewLabel) previewLabel.textContent = state.useCamera ? "Camera preview" : "Audio recording"; if (preparePreviewWrap) preparePreviewWrap.hidden = !state.useCamera; if (videoFrame) videoFrame.hidden = !state.useCamera; prepareDialog?.classList.toggle("audio-only", !state.useCamera); });
 const finishButton = document.querySelector("#finishButton");
 const discardButton = document.querySelector("#discardButton");
-const controlRow = document.querySelector(".control-row");
+const controlRow = document.querySelector(".recorder-actions");
 const recorderPanel = document.querySelector(".recorder-panel");
 const recorderPanelHome = recorderPanel.parentNode;
 const recorderPanelHomeNextSibling = recorderPanel.nextSibling;
@@ -71,6 +71,7 @@ const preview = document.querySelector("#preview");
 const preparePreview = document.querySelector("#preparePreview");
 const preparePreviewWrap = document.querySelector("#preparePreviewWrap");
 const videoFrame = document.querySelector(".video-frame");
+if (videoFrame) videoFrame.hidden = !state.useCamera;
 const videoPlaceholder = document.querySelector("#videoPlaceholder");
 const recordingBadge = document.querySelector("#recordingBadge");
 const recordingElapsed = document.querySelector("#recordingElapsed");
@@ -89,9 +90,7 @@ const submitExperienceRatingButton = document.querySelector("#submitExperienceRa
 const dismissExperienceRatingButton = document.querySelector("#dismissExperienceRating");
 const experienceRatingScoreButtons = document.querySelectorAll("[data-rating-score]");
 const connectionStatus = document.querySelector("#connectionStatus");
-const playEyebrow = document.querySelector("#playEyebrow");
 const playTitle = document.querySelector("#playTitle");
-const playSummary = document.querySelector("#playSummary");
 const gameOverview = document.querySelector("#gameOverview");
 const gameWeekLabel = document.querySelector("#gameWeekLabel");
 const gameTopicTitle = document.querySelector("#gameTopicTitle");
@@ -326,6 +325,7 @@ async function ensurePrivacyConsent() {
 }
 
 function updateDeviceStatus(status, message) {
+  if (!deviceStatus) return;
   deviceStatus.dataset.status = status;
   deviceStatus.querySelectorAll("span").forEach((item) => {
     item.classList.toggle("is-ready", status === "ready");
@@ -369,7 +369,7 @@ function getMediaErrorMessage(error) {
 }
 
 function setStatus(message) {
-  connectionStatus.textContent = message;
+  if (connectionStatus) connectionStatus.textContent = message;
 }
 
 function setVideoLoading(isLoading) {
@@ -592,6 +592,8 @@ function stopPrepareCountdown() {
 }
 
 function restoreRecorderPanel() {
+  videoFrame.hidden = true;
+  controlRow.hidden = true;
   if (recorderPanel.parentNode === recorderPanelHome) return;
 
   recorderPanelHome.insertBefore(recorderPanel, recorderPanelHomeNextSibling);
@@ -625,7 +627,7 @@ function showGeneratingModal() {
   prepareModalTitle.textContent = "Preparing your question...";
   prepareModalMessage.textContent = "Please wait while the assessment question is generated.";
   prepareSpinner.hidden = false;
-  preparePreviewWrap.hidden = !state.stream;
+  preparePreviewWrap.hidden = !state.useCamera || !state.stream;
   prepareCameraGuidance.hidden = true;
   countdownDisplay.hidden = true;
   prepareActions.hidden = true;
@@ -635,24 +637,16 @@ function showGeneratingModal() {
 }
 
 function showCountdownModal(question) {
+  prepareDialog.classList.toggle("audio-only", !state.useCamera);
   state.mediaRetryPending = false;
   state.mediaRetryAction = null;
   restoreRecorderPanel();
   prepareDialog.classList.add("is-countdown");
-  prepareModalKicker.textContent = "Question ready";
+  prepareModalKicker.textContent = "";
   prepareModalTitle.textContent = question.question;
   prepareModalMessage.replaceChildren();
-  const answerFlowLabel = document.createElement("strong");
-  answerFlowLabel.textContent = "Answer flow";
-  const answerFlowSteps = document.createElement("span");
-  answerFlowSteps.className = "answer-flow-steps";
-  answerFlowSteps.textContent = "Your point → Reasons → Example → Close ending";
-  const answerFlowNote = document.createElement("span");
-  answerFlowNote.className = "answer-flow-note";
-  answerFlowNote.textContent = "Recording starts when the timer reaches zero.";
-  prepareModalMessage.append(answerFlowLabel, answerFlowSteps, answerFlowNote);
   prepareSpinner.hidden = true;
-  preparePreviewWrap.hidden = !state.stream;
+  preparePreviewWrap.hidden = !state.useCamera || !state.stream;
   prepareCameraGuidance.hidden = false;
   countdownDisplay.hidden = false;
   prepareActions.hidden = false;
@@ -668,7 +662,10 @@ function showRecorderInPrepareModal() {
   prepareDialog.classList.remove("is-countdown");
   prepareDialog.classList.add("is-recording");
   recorderModalSlot.hidden = false;
+  recorderPanel.hidden = false;
   recorderModalSlot.append(recorderPanel);
+  videoFrame.hidden = !state.useCamera;
+  controlRow.hidden = false;
   prepareModal.setAttribute("aria-labelledby", "questionText");
   prepareModal.hidden = false;
   document.body.classList.add("modal-open");
@@ -833,15 +830,7 @@ function getSupportedMimeType() {
 function setQuestion(question) {
   state.question = question;
   questionText.textContent = question.question;
-  questionMeta.textContent = [
-    question.focus ? `Focus: ${question.focus}` : "",
-    question.expectedDurationSeconds
-      ? `Target: ${question.expectedDurationSeconds} seconds`
-      : "",
-    question.followUp ? `Follow-up: ${question.followUp}` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  questionMeta.textContent = "";
   saveResult.textContent = "";
   evaluationResult.innerHTML = "";
 }
@@ -929,7 +918,7 @@ function showGameChallenge(challenge) {
   gameTopicQuestion.textContent = challenge.question;
   if (!state.question && normalizeRoute(window.location.pathname) === "/game") {
     questionText.textContent = challenge.question;
-    questionMeta.textContent = `Fixed weekly topic. Target: ${challenge.expectedDurationSeconds} seconds.`;
+    questionMeta.textContent = `Target: within ${challenge.expectedDurationSeconds} seconds.`;
   }
 }
 
@@ -941,8 +930,8 @@ function leaderboardIdentityForm(identity, context = "leaderboard") {
       <div class="identity-copy">
         <span class="identity-icon" aria-hidden="true">✦</span>
         <div>
-          <h3>${context === "result" ? "Choose your leaderboard name" : "How you appear"}</h3>
-          <p>Your score always stays on the board. Switching names updates every challenge leaderboard.</p>
+          <h3 title="Your score always stays on the board. Switching names updates every challenge leaderboard.">${context === "result" ? "Choose your leaderboard name" : "How you appear"}</h3>
+          <p class="identity-detail">Your score always stays on the board. Switching names updates every challenge leaderboard.</p>
         </div>
       </div>
       <label class="identity-toggle" for="useLeaderboardAlias-${suffix}">
@@ -969,7 +958,6 @@ function leaderboardIdentityForm(identity, context = "leaderboard") {
           value="${escapeHtml(identity.alias)}"
           required
         />
-        <small>You can rename it anytime. Your current leaderboard name is <strong data-identity-display>${escapeHtml(identity.displayName)}</strong>.</small>
       </label>
       <button class="secondary-button identity-save" type="submit">Save leaderboard name</button>
       <span class="identity-feedback" role="status" aria-live="polite"></span>
@@ -1083,7 +1071,6 @@ function renderPrizeDraft(data) {
       <span class="prize-drop-sticker" aria-hidden="true">3<br /><small>PRIZES</small></span>
     </div>
     <div class="prize-draft-content">
-      <p class="prize-draft-kicker">✦ ${escapeHtml(draft.eyebrow)}</p>
       <h2 id="prizeDraftTitle">${escapeHtml(draft.title)}</h2>
       <p class="prize-draft-rule">${escapeHtml(draft.rule)}</p>
       <div class="prize-rewards" aria-label="Available prizes">
@@ -1103,9 +1090,11 @@ function renderPrizeDraft(data) {
 function renderLeaderboard(data) {
   renderPrizeDraft(data);
   leaderboardTopic.textContent = `${data.challenge.title}. ${formatChallengeRange(data.challenge)}.`;
-  leaderboardSummary.textContent = data.participantCount
+  const summary = data.participantCount
     ? `${data.participantCount} ${data.participantCount === 1 ? "player" : "players"}${data.viewerRank ? `. Your rank: ${data.viewerRank}.` : ". Complete an evaluated answer to join them."}`
     : "No completed answers yet. Record the first one for this topic.";
+  leaderboardSummary.textContent = summary;
+  leaderboardList.title = summary;
 
   if (!data.entries?.length) {
     leaderboardList.innerHTML = '<li class="leaderboard-empty">The board is ready for its first completed answer.</li>';
@@ -1120,9 +1109,8 @@ function renderLeaderboard(data) {
             <span aria-hidden="true">${entry.rank <= 3 ? "★" : "#"}</span>
             <strong>${entry.rank}</strong>
           </span>
-          <span class="leaderboard-person">
+          <span class="leaderboard-person" title="${entry.attempts} ${entry.attempts === 1 ? "attempt" : "attempts"} submitted">
             <strong>${escapeHtml(entry.name)}${entry.isViewer ? " (you)" : ""}</strong>
-            <span>${entry.attempts} ${entry.attempts === 1 ? "attempt" : "attempts"}</span>
           </span>
           <span class="leaderboard-score" aria-label="${entry.score} points">
             <strong>${entry.score}</strong>
@@ -1316,7 +1304,7 @@ function renderEvaluationContent(evaluation, shareId = "") {
     <section class="evaluation-card">
       <div class="evaluation-header">
         <div>
-          <span class="muted-label">Evaluation</span>
+          <span>Evaluation</span>
           <h3>${Math.round(evaluation.overallScore || 0)} / 100</h3>
         </div>
         <span class="status-pill compact">${escapeHtml(evaluation.model?.evaluate || "LLM")}</span>
@@ -1464,15 +1452,12 @@ function setPlayMode(route) {
   gameOverview.hidden = !isGame;
   roleField.hidden = isGame;
   nameField.hidden = isGame;
-  playEyebrow.textContent = isGame ? "Weekly speaking challenge" : "Live speaking evaluation";
   playTitle.textContent = isGame ? "The Weekly Game" : "Examine";
-  playSummary.textContent = isGame
-    ? "Answer one shared everyday topic. Your best evaluated score enters the weekly board."
-    : "Get one focused question, record your answer, and receive feedback across all six dimensions.";
   profileHeading.textContent = isGame ? "Enter this week's game" : "Candidate profile";
+  profileHeading.closest(".section-heading").hidden = isGame;
   profileSummary.textContent = isGame
-    ? "The topic is fixed for everyone. Check your devices, plan clearly, and record your answer."
-    : "Used by the LLM to generate one targeted speaking question.";
+    ? "The topic is fixed. Check your devices, plan, and answer."
+    : "Used to create one speaking question.";
   generateButton.textContent = isGame
     ? "Start challenge"
     : "Generate question";
@@ -1492,7 +1477,7 @@ function setPlayMode(route) {
       questionMeta.textContent = "Every player receives the same question for the week.";
     } else {
       questionText.textContent = "Enter a profile, then generate one question.";
-      questionMeta.textContent = "Recording starts automatically after the question is ready.";
+      questionMeta.textContent = "";
     }
   }
 }
@@ -1507,7 +1492,6 @@ function setRoute(pathname) {
   leaderboardView.hidden = !isLeaderboard;
   historyView.hidden = !isHistory;
   loginPanel.hidden = true;
-  connectionStatus.hidden = isHistory || isLeaderboard;
   if (!isHistory && !isLeaderboard) setPlayMode(route);
   document.title = isLeaderboard
     ? "Leaderboard | OScanner-Eng"
@@ -1634,7 +1618,7 @@ profileForm.addEventListener("submit", async (event) => {
     }
 
     setQuestion(data.question);
-    setStatus(isGame ? "Topic ready" : response.ok ? "Question ready" : "Fallback ready");
+    setStatus(isGame ? "Topic ready" : response.ok ? "" : "Fallback ready");
     if (data.error) {
       saveResult.textContent = `LLM fallback used: ${data.error}`;
     }
@@ -1718,7 +1702,6 @@ async function startRecording() {
     recordingBadge.classList.add("visible");
     startRecordingTimer();
     setStatus("Recording");
-    saveResult.textContent = "Recording in progress. Answer the question in English. Recording is limited to 2 minutes.";
     state.autoStopTimer = window.setTimeout(() => {
       finishRecording();
     }, MAX_RECORDING_MS);
@@ -1928,7 +1911,7 @@ async function discardCurrentAnswer() {
       showGameChallenge(state.gameChallenge);
     } else {
       questionText.textContent = "Enter a profile, then generate one question.";
-      questionMeta.textContent = "Recording starts automatically after the question is ready.";
+      questionMeta.textContent = "";
     }
     saveResult.textContent = "Answer discarded. No recording, evaluation, or score was saved.";
     await window.EvaluationQueue.discardDraft();
@@ -2185,7 +2168,7 @@ document.addEventListener("visibilitychange", () => {
   if (!state.recorder || state.recorder.state === "inactive") return;
   if (document.hidden) {
     setStatus("Keep page open");
-    saveResult.textContent = "Keep this page in the foreground. Mobile browsers may pause the camera when you switch apps or lock the screen.";
+    saveResult.textContent = "";
   } else if (!getUnavailableRequiredDevice()) {
     setStatus("Recording");
     requestWakeLock();

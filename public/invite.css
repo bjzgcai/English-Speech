@@ -29,13 +29,6 @@
   margin-bottom: 4px;
 }
 
-.invite-kicker {
-  color: var(--accent-strong);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
 
 .invite-card h1 {
   font-size: clamp(30px, 6vw, 42px);

@@ -258,7 +258,7 @@ button:disabled {
   letter-spacing: -0.045em;
 }
 
-.login-panel p:not(.eyebrow) {
+.login-panel p {
   max-width: 650px;
   margin-top: 18px;
   color: var(--muted);
@@ -322,8 +322,7 @@ button:disabled {
   display: none !important;
 }
 
-.eyebrow,
-.muted-label {
+.eyebrow {
   display: block;
   margin: 0 0 8px;
   color: var(--accent-dark);
@@ -651,13 +650,6 @@ h1 {
   animation: sparkle-float 3.4s ease-in-out infinite;
 }
 
-.prize-draft-kicker {
-  color: #bdf5d9;
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
 
 .prize-draft-content h2 {
   max-width: 520px;
@@ -787,14 +779,6 @@ h1 {
   border-bottom: 2px dashed #dbd7ef;
 }
 
-.leaderboard-kicker {
-  margin-bottom: 9px;
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 850;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
 
 .leaderboard-heading h2 {
   font-size: clamp(34px, 4vw, 52px);
@@ -802,7 +786,7 @@ h1 {
   letter-spacing: -0.04em;
 }
 
-.leaderboard-heading p:not(.leaderboard-kicker) {
+.leaderboard-heading p {
   max-width: 650px;
   margin-top: 10px;
   color: var(--muted);
@@ -1141,6 +1125,9 @@ h1 {
 
 .section-heading {
   margin-bottom: 30px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
 }
 
 .section-heading h2 {
@@ -1155,6 +1142,35 @@ h1 {
   margin-top: 8px;
   color: var(--muted);
   line-height: 1.5;
+}
+
+.section-heading > .tooltip-wrap {
+  flex: 0 0 auto;
+}
+
+.secondary-info-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.secondary-info-row .tooltip-trigger {
+  width: auto;
+  min-width: 22px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: .02em;
+}
+
+.info-chip-trigger {
+  gap: 6px;
+}
+
+.secondary-info-row .dimension-tooltip {
+  bottom: calc(100% + 8px);
+  font-weight: 600;
 }
 
 label {
@@ -1177,7 +1193,6 @@ label {
 .camera-option input { width:18px; height:18px; accent-color:var(--accent); }
 .camera-option:has(input:focus-visible) { outline:3px solid color-mix(in srgb, var(--accent) 35%, transparent); outline-offset:2px; }
 #audioOnlyHint { margin:6px 0 0; color:var(--muted); font-size:.9rem; }
-.shiba-mascot { width:72px; height:54px; display:block; margin:0 auto 4px; }
 
 .privacy-note a,
 .consent-check a {
@@ -1534,27 +1549,6 @@ video {
   50% { opacity: 0.48; }
 }
 
-.camera-guidance {
-  margin-top: 16px;
-  border: 1px solid #dcd8f4;
-  border-left: 4px solid var(--accent);
-  border-radius: var(--radius-small);
-  background: #f7f5ff;
-  padding: 13px 16px;
-  color: var(--ink);
-}
-
-.camera-guidance strong {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.camera-guidance p {
-  margin: 4px 0 0;
-  color: var(--muted);
-  line-height: 1.5;
-}
 
 .camera-purpose {
   margin: 8px 0 0;
@@ -1600,14 +1594,14 @@ video {
   }
 }
 
-.control-row {
+.recorder-actions {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(210px, 1fr);
   gap: 12px;
   margin-top: 16px;
 }
 
-.control-row:not(.has-discard) .finish-button {
+.recorder-actions:not(.has-discard) .finish-button {
   grid-column: 1 / -1;
 }
 
@@ -1640,7 +1634,6 @@ video {
   gap: 18px;
 }
 
-.experience-rating-header .muted-label,
 .experience-rating-header h3,
 .experience-rating-details p,
 .experience-rating-privacy,
@@ -2019,37 +2012,62 @@ video {
   border-top: 1px solid var(--line);
 }
 
+/* Post-evaluation identity card. The result column is much narrower than the
+   leaderboard page, so this form is a compact grid: the heading on its own line,
+   then one line of controls. `align-items: end` keeps the toggle box, the alias
+   input and the save button on a single band — the alias keeps its label above
+   the input, and the other two line up with that input rather than the label.
+   The status message rides in the heading row, so an empty one costs no height. */
 .post-evaluation-identity {
   margin-top: 16px;
 }
 
 .post-evaluation-identity .leaderboard-identity-form {
-  grid-template-columns: minmax(220px, 1.1fr) minmax(220px, 1fr) minmax(220px, 1fr);
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, auto);
+  align-items: end;
+  gap: 12px;
   border: 2px solid rgba(71, 59, 183, 0.25);
   background: var(--mint-soft);
+  padding: 14px 16px;
 }
 
 .post-evaluation-identity .identity-copy {
-  grid-row: 1 / span 2;
+  grid-area: 1 / 1 / 2 / -1;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+}
+
+.post-evaluation-identity .identity-copy h3 {
+  font-size: 15px;
+}
+
+.post-evaluation-identity .identity-icon {
+  width: 30px;
+  height: 30px;
+  font-size: 14px;
 }
 
 .post-evaluation-identity .identity-toggle {
-  grid-column: 2;
+  grid-area: 2 / 1 / 3 / 2;
+  margin-top: 0;
 }
 
 .post-evaluation-identity .identity-alias {
-  grid-column: 3;
+  grid-area: 2 / 2 / 3 / 3;
 }
 
 .post-evaluation-identity .identity-save {
-  grid-column: 3;
+  grid-area: 2 / 3 / 3 / 4;
   width: 100%;
   margin-top: 0;
 }
 
 .post-evaluation-identity .identity-feedback {
-  grid-column: 2;
+  grid-area: 1 / 2 / 2 / -1;
   align-self: center;
+  justify-self: end;
+  text-align: right;
 }
 
 .evaluation-share-actions {
@@ -2338,7 +2356,7 @@ video {
   letter-spacing: -0.04em;
 }
 
-.discard-dialog > p:not(.muted-label) {
+.discard-dialog > p {
   margin-top: 16px;
   color: var(--muted);
   line-height: 1.65;
@@ -2465,6 +2483,33 @@ video {
 .prepare-footer {
   display: contents;
 }
+.prepare-dialog.is-countdown.audio-only .prepare-footer { justify-content: center; position: relative; }
+.prepare-dialog.is-countdown.audio-only .prepare-actions { display: flex; align-items: center; gap: 12px; }
+.prepare-dialog.is-countdown.audio-only #prepareCameraGuidance { position: absolute; left: calc(50% - 260px); top: 50%; transform: translateY(-50%); }
+
+/* Audio-only preparation has no preview, so keep the countdown compact and
+   place the timed action beside it instead of retaining the camera grid. */
+.prepare-dialog.is-countdown.audio-only {
+  grid-template-areas:
+    "kicker kicker"
+    "question question"
+    "message message"
+    "countdown actions";
+  grid-template-columns: minmax(0, 1fr) 220px;
+  align-content: center;
+  min-height: 0;
+  padding: clamp(28px, 4vw, 42px);
+  gap: 16px 28px;
+}
+
+.prepare-dialog.is-countdown.audio-only #prepareCameraGuidance {
+  display: none;
+}
+
+.prepare-dialog.is-countdown.audio-only .countdown-display,
+.prepare-dialog.is-countdown.audio-only .prepare-actions {
+  align-self: center;
+}
 
 .prepare-dialog.is-recording {
   width: min(1040px, 100%);
@@ -2472,8 +2517,23 @@ video {
   text-align: left;
 }
 
-.prepare-dialog.is-recording > :not(.recorder-modal-slot) {
+.prepare-dialog.is-recording > .prepare-content,
+.prepare-dialog.is-recording > .prepare-footer {
   display: none !important;
+}
+
+.prepare-dialog.is-recording > .recorder-modal-slot {
+  display: block !important;
+  min-height: 1px;
+}
+
+.prepare-dialog.is-recording > .recorder-modal-slot {
+  height: auto !important;
+  min-height: 320px !important;
+}
+
+.prepare-dialog.is-recording > .recorder-modal-slot .recorder-panel {
+  min-height: 280px;
 }
 
 .recorder-modal-slot {
@@ -2492,6 +2552,36 @@ video {
   min-height: 0;
 }
 
+/* Once recording starts, audio-only mode must not keep an empty video track
+   in the recorder grid. Give the question and controls their own full-width
+   rows so the panel keeps its content height. */
+.prepare-dialog.is-recording.audio-only {
+  width: min(820px, 100%);
+}
+
+.prepare-dialog.is-recording.audio-only .recorder-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "hud"
+    "question"
+    "controls"
+    "status"
+    "evaluation";
+  gap: 16px;
+}
+
+.prepare-dialog.is-recording.audio-only .video-frame {
+  display: none;
+}
+
+.prepare-dialog.is-recording.audio-only .question-block,
+.prepare-dialog.is-recording.audio-only .recorder-actions,
+.prepare-dialog.is-recording.audio-only .save-result,
+.prepare-dialog.is-recording.audio-only .evaluation-result {
+  width: 100%;
+}
+
 .prepare-dialog.is-recording #questionText {
   font-size: clamp(26px, 3vw, 38px);
   line-height: 1.06;
@@ -2503,8 +2593,8 @@ video {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(250px, 0.38fr);
     grid-template-areas:
+      "hud hud"
       "question question"
-      "video guidance"
       "video controls"
       "video status"
       "evaluation evaluation";
@@ -2517,18 +2607,23 @@ video {
     padding-bottom: 16px;
   }
 
+  /* The timer bar belongs inside the dialog, as its first row — absolutely
+     positioned, its containing block is the page, so it used to detach and
+     float at the very top of the viewport. */
+  .prepare-dialog.is-recording .recording-hud {
+    grid-area: hud;
+    position: static;
+    inset: auto;
+    margin: 0;
+  }
+
   .prepare-dialog.is-recording .video-frame {
     grid-area: video;
     margin-top: 0;
   }
 
-  .prepare-dialog.is-recording .camera-guidance {
-    grid-area: guidance;
-    display: block;
-    margin-top: 0;
-  }
 
-  .prepare-dialog.is-recording .control-row {
+  .prepare-dialog.is-recording .recorder-actions {
     grid-area: controls;
     grid-template-columns: 1fr;
     margin-top: 0;
@@ -2545,7 +2640,7 @@ video {
   }
 }
 
-.prepare-dialog.is-countdown .muted-label {
+.prepare-dialog.is-countdown #prepareModalKicker {
   grid-area: kicker;
 }
 
@@ -2571,33 +2666,14 @@ video {
   max-width: none;
 }
 
-.prepare-dialog.is-countdown #prepareModalMessage strong {
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.answer-flow-steps {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.answer-flow-note {
-  flex-basis: 100%;
-  color: var(--muted);
-  font-size: 11px;
-}
-
 .prepare-dialog.is-countdown .prepare-preview {
   grid-area: preview;
   width: min(440px, 100%);
   margin-top: 2px;
 }
 
-.prepare-dialog.is-countdown .prepare-camera-guidance {
+.prepare-dialog.is-countdown #prepareCameraGuidance {
   grid-area: guidance;
-  width: min(520px, 100%);
-  margin-top: 0;
 }
 
 .prepare-dialog.is-countdown .countdown-display {
@@ -2624,7 +2700,7 @@ video {
   letter-spacing: 0;
 }
 
-.prepare-dialog p:not(.muted-label) {
+.prepare-dialog p {
   margin: 14px auto 0;
   max-width: 520px;
   color: var(--muted);
@@ -2694,28 +2770,38 @@ video {
   text-underline-offset: 3px;
 }
 
-.prepare-camera-guidance {
-  display: grid;
-  gap: 4px;
-  max-width: 520px;
-  margin: 20px auto 0;
-  border: 1px solid #dcd8f4;
-  border-left: 4px solid var(--accent);
-  border-radius: var(--radius-small);
-  background: #f7f5ff;
-  padding: 13px 16px;
+.prepare-guidance-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   color: var(--ink);
-  text-align: left;
-}
-
-.prepare-camera-guidance strong {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
-.prepare-camera-guidance span {
-  color: var(--muted);
-  line-height: 1.5;
+.prepare-guidance-help .tooltip-trigger {
+  flex: 0 0 auto;
+}
+
+.prepare-guidance-trigger {
+  width: auto;
+  min-width: 0;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.prepare-guidance-help .dimension-tooltip {
+  left: 0;
+  bottom: calc(100% + 12px);
+  transform: none;
+  width: min(360px, calc(100vw - 72px));
+}
+
+.prepare-guidance-help .dimension-tooltip::after {
+  left: 28px;
 }
 
 .prepare-spinner {
@@ -2755,28 +2841,14 @@ video {
   }
 
   .play-heading > div:first-child {
-    display: grid;
-    grid-template-columns: auto minmax(300px, 590px);
-    grid-template-areas:
-      "eyebrow summary"
-      "title summary";
-    column-gap: 32px;
-    align-items: center;
-  }
-
-  .play-heading .eyebrow {
-    grid-area: eyebrow;
-    margin-bottom: 4px;
-    font-size: 11px;
+    display: block;
   }
 
   .play-heading h1 {
-    grid-area: title;
     font-size: clamp(40px, 4vw, 54px);
   }
 
   .play-heading > div:first-child > p:last-child {
-    grid-area: summary;
     margin-top: 0;
     font-size: 14px;
     line-height: 1.45;
@@ -2860,34 +2932,6 @@ video {
     aspect-ratio: auto;
   }
 
-  /* Flex, not a 3-column grid: the device chips are bilingual in 中 mode and
-     measure ~515px together, far more than the free space left of a `1fr`
-     text column. As an `auto`/`1fr` grid track they could never shrink below
-     their content, so the row pushed the chips past the card border at every
-     desktop width. As a wrapping flex line the chip group drops to its own
-     line whenever it does not fit and never leaves the box. */
-  .camera-guidance {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 12px;
-    align-items: center;
-    margin-top: 12px;
-    padding: 8px 10px;
-  }
-
-  .camera-guidance strong {
-    flex: 0 0 auto;
-    white-space: nowrap;
-  }
-
-  .camera-guidance p {
-    flex: 1 1 220px;
-    min-width: 0;
-    margin: 0;
-    max-width: none;
-    font-size: 12px;
-    line-height: 1.3;
-  }
 
   .device-status {
     flex: 0 1 auto;
@@ -2905,7 +2949,7 @@ video {
        must be able to wrap its own label instead of sticking out of the card. */
   }
 
-  .control-row {
+  .recorder-actions {
     margin-top: 12px;
   }
 
@@ -2916,18 +2960,18 @@ video {
 }
 
 @media (min-width: 821px) and (max-width: 1100px) {
+  /* Keep the primary task routes legible on compact laptop/tablet widths.
+     The secondary reference pages remain available from the footer and direct
+     links, while the header gets enough room for the auth controls. */
+  .main-nav a[href="/methodology"],
+  .main-nav a[href="/prepare"],
+  .main-nav a[href="/intro"] {
+    display: none;
+  }
+
   .leaderboard-identity-form,
   .post-evaluation-identity .leaderboard-identity-form {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .post-evaluation-identity .identity-copy,
-  .post-evaluation-identity .identity-toggle,
-  .post-evaluation-identity .identity-alias,
-  .post-evaluation-identity .identity-save,
-  .post-evaluation-identity .identity-feedback {
-    grid-column: auto;
-    grid-row: auto;
   }
 
   .identity-copy,
@@ -2937,6 +2981,41 @@ video {
 
   .identity-save {
     margin-top: 0;
+  }
+}
+
+/* The result column is too narrow for one line of controls down here, so the
+   post-evaluation card becomes a 2x2 grid: heading + anonymous toggle on the
+   first line, alias + save on the second, with the status message below. */
+@media (min-width: 821px) and (max-width: 1280px) {
+  .post-evaluation-identity .leaderboard-identity-form {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .post-evaluation-identity .identity-copy {
+    grid-area: 1 / 1 / 2 / 2;
+    align-self: start;
+  }
+
+  .post-evaluation-identity .identity-toggle {
+    grid-area: 1 / 2 / 2 / 3;
+    align-self: start;
+  }
+
+  .post-evaluation-identity .identity-alias {
+    grid-area: 2 / 1 / 3 / 2;
+  }
+
+  .post-evaluation-identity .identity-save {
+    grid-area: 2 / 2 / 3 / 3;
+    align-self: end;
+  }
+
+  .post-evaluation-identity .identity-feedback {
+    grid-area: 3 / 1 / 4 / -1;
+    align-self: start;
+    justify-self: start;
+    text-align: left;
   }
 }
 
@@ -2953,10 +3032,6 @@ video {
 
   .prepare-dialog.is-countdown .prepare-preview {
     width: min(360px, 100%);
-  }
-
-  .prepare-dialog.is-countdown .prepare-camera-guidance {
-    padding: 10px 14px;
   }
 
   .prepare-dialog.is-countdown .countdown-display {
@@ -3024,13 +3099,24 @@ video {
     grid-template-columns: 1fr;
   }
 
+  /* One column here, so the compact post-evaluation grid above must not survive. */
+  .post-evaluation-identity .leaderboard-identity-form {
+    align-items: start;
+  }
+
+  /* Back to a single column: let auto-placement follow the DOM order. */
   .post-evaluation-identity .identity-copy,
   .post-evaluation-identity .identity-toggle,
   .post-evaluation-identity .identity-alias,
   .post-evaluation-identity .identity-save,
   .post-evaluation-identity .identity-feedback {
-    grid-column: 1;
-    grid-row: auto;
+    grid-area: auto;
+    align-self: auto;
+  }
+
+  .post-evaluation-identity .identity-feedback {
+    justify-self: start;
+    text-align: left;
   }
 
   .identity-feedback {
@@ -3115,7 +3201,7 @@ video {
   }
 
   .workspace,
-  .control-row {
+  .recorder-actions {
     grid-template-columns: 1fr;
   }
 
@@ -3172,7 +3258,7 @@ video {
     padding-bottom: 12px;
   }
 
-  .recorder-panel.is-recording .question-block .muted-label {
+  .recorder-panel.is-recording .question-block p:first-child {
     margin-bottom: 6px;
     font-size: 10px;
   }
@@ -3193,15 +3279,6 @@ video {
     margin-top: 12px;
   }
 
-  .recorder-panel.is-recording .camera-guidance {
-    margin-top: 10px;
-    padding: 8px 10px;
-  }
-
-  .recorder-panel.is-recording .camera-guidance > strong,
-  .recorder-panel.is-recording .camera-guidance > p {
-    display: none;
-  }
 
   .recorder-panel.is-recording .device-status {
     margin-top: 0;
@@ -3361,7 +3438,7 @@ video {
     justify-content: space-between;
   }
 
-  .recorder-panel.is-recording .control-row {
+  .recorder-panel.is-recording .recorder-actions {
     position: sticky;
     bottom: max(10px, env(safe-area-inset-bottom));
     z-index: 5;
@@ -3375,7 +3452,7 @@ video {
     box-shadow: 0 5px 0 var(--accent-dark), 0 10px 28px rgba(101, 88, 232, 0.2);
   }
 
-  .recorder-panel.is-recording .control-row {
+  .recorder-panel.is-recording .recorder-actions {
     bottom: 0;
     margin: 10px -4px 0;
     padding: 8px 4px max(8px, env(safe-area-inset-bottom));
@@ -3384,18 +3461,14 @@ video {
     backdrop-filter: blur(8px);
   }
 
-  .prepare-modal {
-    align-items: end;
-    padding: 10px 10px max(10px, env(safe-area-inset-bottom));
-  }
-
-  .privacy-consent-modal {
-    align-items: end;
-    padding: 10px 10px max(10px, env(safe-area-inset-bottom));
-  }
-
+  /* Every modal is vertically centred at every width. This block used to
+     bottom-anchor them (align-items: end), which stranded the dialog under the
+     viewport on phones. All three dialogs cap their height with a `dvh`-based
+     max-height, so centring can never clip one off the top edge. */
+  .prepare-modal,
+  .privacy-consent-modal,
   .discard-modal {
-    align-items: end;
+    align-items: center;
     padding: 10px 10px max(10px, env(safe-area-inset-bottom));
   }
 
@@ -3450,7 +3523,7 @@ video {
     margin-top: 0;
   }
 
-  .prepare-dialog.is-countdown .muted-label {
+  .prepare-dialog.is-countdown #prepareModalKicker {
     margin-bottom: 0;
     font-size: 10px;
   }
@@ -3482,21 +3555,6 @@ video {
     line-height: 0.82;
   }
 
-  .prepare-dialog.is-countdown .prepare-camera-guidance {
-    width: 100%;
-    margin-top: 0;
-    padding: 9px 12px;
-  }
-
-  .prepare-dialog.is-countdown .prepare-camera-guidance strong {
-    font-size: 12px;
-  }
-
-  .prepare-dialog.is-countdown .prepare-camera-guidance span {
-    font-size: 12px;
-    line-height: 1.35;
-  }
-
   .prepare-dialog.is-countdown .prepare-actions {
     align-self: stretch;
     margin-top: 0;
@@ -3509,8 +3567,7 @@ video {
   }
 
   .prepare-dialog h2,
-  .prepare-dialog p:not(.muted-label),
-  .prepare-camera-guidance,
+  .prepare-dialog p,
   .prepare-preview {
     margin-right: 0;
     margin-left: 0;
@@ -3599,12 +3656,6 @@ video {
     max-height: min(28dvh, 240px);
   }
 
-  .prepare-dialog.is-countdown .prepare-camera-guidance {
-    width: 100%;
-    max-width: none;
-    padding: 9px 12px;
-  }
-
   .prepare-footer {
     display: flex;
     flex: none;
@@ -3670,8 +3721,7 @@ video {
   }
 
   .prepare-dialog.is-recording #questionMeta,
-  .prepare-dialog.is-recording .camera-guidance > strong,
-  .prepare-dialog.is-recording .camera-guidance > p,
+
   .prepare-dialog.is-recording .save-result:empty,
   .prepare-dialog.is-recording .evaluation-result:empty {
     display: none;
@@ -3683,9 +3733,6 @@ video {
     aspect-ratio: auto;
   }
 
-  .prepare-dialog.is-recording .camera-guidance {
-    padding: 6px 8px;
-  }
 
   .prepare-dialog.is-recording .device-status {
     flex-wrap: wrap;
@@ -3700,7 +3747,7 @@ video {
     font-size: 11px;
   }
 
-  .prepare-dialog.is-recording .control-row {
+  .prepare-dialog.is-recording .recorder-actions {
     position: static;
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
@@ -3710,9 +3757,11 @@ video {
   }
 
   .prepare-dialog.is-recording .recording-hud {
+    position: static;
+    inset: auto;
+    order: -1;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 6px 12px;
-    inset: 8px 8px auto;
     padding: 8px 10px 10px;
   }
 
@@ -3779,8 +3828,7 @@ video {
   }
 
   .prepare-dialog.is-recording .question-block { grid-area: question; }
-  .prepare-dialog.is-recording .control-row { grid-area: controls; }
-  .prepare-dialog.is-recording .camera-guidance { grid-area: guidance; }
+  .prepare-dialog.is-recording .recorder-actions { grid-area: controls; }
   .prepare-dialog.is-recording .save-result { grid-area: status; }
 
   .discard-dialog {
@@ -3793,7 +3841,7 @@ video {
     letter-spacing: 0;
   }
 
-  .discard-dialog > p:not(.muted-label) {
+  .discard-dialog > p {
     margin-top: 8px;
     font-size: 14px;
     line-height: 1.45;
@@ -3810,4 +3858,61 @@ video {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Keep the standings focused on the three things users scan first.
+   Supporting context remains available through native tooltips. */
+.leaderboard-heading > div {
+  min-width: 0;
+}
+.leaderboard-heading > div > p {
+  overflow: hidden;
+  max-width: 1px;
+  max-height: 1px;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+}
+.leaderboard-summary,
+.leaderboard-footer {
+  display: none;
+}
+.leaderboard-row {
+  grid-template-columns: 54px minmax(0, 1fr) auto;
+  min-height: 68px;
+}
+.leaderboard-person strong {
+  font-size: 18px;
+}
+.identity-copy .identity-detail {
+  overflow: hidden;
+  max-width: 1px;
+  max-height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+/* Keep the live recorder dialog expanded while its panel is moved into the modal. */
+.prepare-dialog.is-recording {
+  height: auto !important;
+  min-height: 320px !important;
+}
+
+.prepare-dialog.is-recording.audio-only .recorder-panel > .recording-hud { grid-area: hud; position: static; inset: auto; }
+.prepare-dialog.is-recording.audio-only .recorder-panel > .question-block { grid-area: question; min-height: 96px; }
+.prepare-dialog.is-recording.audio-only .recorder-panel > .recorder-actions { grid-area: controls; min-height: 56px; }
+.prepare-dialog.is-recording.audio-only .recorder-panel > .device-status { grid-area: status; min-height: 28px; }
+.prepare-dialog.is-recording.audio-only .recorder-panel > .evaluation-result { grid-area: evaluation; }
+.prepare-dialog.is-recording .recorder-panel {
+  height: auto !important;
+  min-height: 280px !important;
+}
+/* The single-column flex layout lives in the (max-width: 820px), (max-height: 500px)
+   media query. Forcing it globally flattened the desktop two-column grid, which
+   collapsed .video-frame (align-items: start + shrink-to-fit) to an 8px sliver —
+   an invisible camera preview while recording. */
+.prepare-dialog.is-recording .recorder-panel > .question-block,
+.prepare-dialog.is-recording .recorder-panel > .recording-hud,
+.prepare-dialog.is-recording .recorder-panel > .recorder-actions {
+  min-height: 48px;
 }
