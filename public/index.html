@@ -45,7 +45,6 @@
 
       <section class="login-panel" id="loginPanel" hidden>
         <div>
-          <p class="eyebrow">DingTalk required</p>
           <h2>Sign in before using OScanner-Eng</h2>
           <p>Access to question generation, recording, and history is limited to authenticated DingTalk users.</p>
         </div>
@@ -58,7 +57,6 @@
         <section class="leaderboard-panel" id="leaderboardPanel" aria-labelledby="leaderboardTitle">
           <div class="leaderboard-heading">
             <div>
-              <p class="leaderboard-kicker">Live standings</p>
               <h2 id="leaderboardTitle">This week's leaderboard</h2>
               <p id="leaderboardTopic">Best completed score for this week's topic.</p>
             </div>
@@ -87,33 +85,28 @@
       <section class="workspace view" id="playView" data-view="/examine">
         <header class="view-heading play-heading">
           <div>
-            <p class="eyebrow" id="playEyebrow">Live speaking evaluation</p>
             <h1 id="playTitle">Examine</h1>
-            <p id="playSummary">Get one focused question, record your answer, and receive feedback across all six dimensions.</p>
           </div>
-          <div class="status-pill" id="connectionStatus" role="status" aria-live="polite">Idle</div>
         </header>
 
         <section class="game-overview" id="gameOverview" aria-labelledby="gameTopicTitle" hidden>
           <div class="game-week">
             <span id="gameWeekLabel">Jul 22 - Jul 29</span>
-            <strong>One topic. One week. Your clearest answer.</strong>
+            <strong>One topic. One week.</strong>
           </div>
           <div class="game-topic">
-            <p>Weekly topic</p>
             <h2 id="gameTopicTitle">Loading this week's topic...</h2>
-            <p id="gameTopicQuestion">The same everyday topic is used for every player this week.</p>
+            <p id="gameTopicQuestion" hidden>Everyone answers the same topic this week.</p>
           </div>
           <div class="game-rule">
-            <strong>Best score counts</strong>
-            <span>Try again during the week. Only your highest completed evaluation appears on the board.</span>
+            <strong>Best score counts <span class="tooltip-wrap"><button class="tooltip-trigger" type="button" aria-label="Best score details">?</button><span class="dimension-tooltip" role="tooltip">Try again; only your highest score appears.</span></span></strong>
           </div>
         </section>
 
         <form class="panel profile-panel" id="profileForm">
           <div class="section-heading">
             <h2 id="profileHeading">Candidate profile</h2>
-            <p id="profileSummary">Used by the LLM to generate one targeted speaking question.</p>
+            <span class="tooltip-wrap"><button class="tooltip-trigger" type="button" aria-label="Candidate profile details">?</button><span class="dimension-tooltip" role="tooltip" id="profileSummary">Used to create one speaking question.</span></span>
           </div>
 
           <label id="nameField">
@@ -138,23 +131,19 @@
           </button>
           <label class="camera-option"><input type="checkbox" id="useCamera" checked> <span>Use camera (visual delivery)</span></label>
           <p id="audioOnlyHint" class="camera-purpose" hidden>Audio only: visual delivery will not be scored.</p>
-          <p class="camera-purpose">
-            Your camera helps us assess posture, eye contact, and on-camera presence.
-          </p>
-          <p class="privacy-note">
-            Generating a question and recording an answer are subject to our
-            <a href="/privacy" target="_blank" rel="noreferrer">Privacy policy</a>.
-          </p>
+          <div class="secondary-info-row">
+            <span class="tooltip-wrap"><button class="tooltip-trigger info-chip-trigger" type="button" aria-label="Camera scoring details">Camera</button><span class="dimension-tooltip" role="tooltip">Your camera helps us assess posture, eye contact, and on-camera presence.</span></span>
+            <span class="tooltip-wrap"><button class="tooltip-trigger info-chip-trigger" type="button" aria-label="Privacy details">Privacy</button><span class="dimension-tooltip" role="tooltip">Generating a question and recording an answer are subject to our <a href="/privacy" target="_blank" rel="noreferrer">Privacy policy</a>.</span></span>
+          </div>
         </form>
 
         <section class="panel recorder-panel">
           <div class="question-block" id="questionBlock">
-            <span class="muted-label">Current question</span>
             <h2 id="questionText">Enter a profile, then generate one question.</h2>
-            <p id="questionMeta">Recording starts automatically after the question is ready.</p>
+            <p id="questionMeta"></p>
           </div>
 
-          <div class="video-frame">
+          <div class="video-frame" hidden>
             <video id="preview" autoplay muted playsinline></video>
             <div class="video-placeholder" id="videoPlaceholder">
               <span id="previewLabel">Camera preview</span>
@@ -167,9 +156,9 @@
                 <path d="M213 105v17c39 9 61 37 64 88"></path>
                 <path d="M123 210c24-18 50-27 77-27s53 9 77 27"></path>
               </svg>
-                  <span aria-label="Shiba Inu mascot"><svg class="shiba-mascot" viewBox="0 0 120 90" role="img"><path fill="#D77A3D" d="M18 35 10 8l25 12c12-8 38-8 50 0L110 8l-8 28c4 24-12 40-42 40S14 59 18 35Z"/><path fill="#FFF4DF" d="M38 48c8-7 36-7 44 0v14c-10 10-34 10-44 0Z"/><circle cx="43" cy="40" r="4" fill="#24243F"/><circle cx="77" cy="40" r="4" fill="#24243F"/><path d="M56 52q4 5 8 0" fill="none" stroke="#24243F" stroke-width="3" stroke-linecap="round"/></svg></span>
             </div>
-            <div class="recording-hud" id="recordingBadge" role="timer" aria-live="off">
+          </div>
+          <div class="recording-hud" id="recordingBadge" role="timer" aria-live="off">
               <div class="recording-state">
                 <span class="recording-dot" aria-hidden="true"></span>
                 <span>Recording started</span>
@@ -185,19 +174,9 @@
               <div class="recording-progress" aria-hidden="true">
                 <span id="recordingProgress"></span>
               </div>
-            </div>
           </div>
 
-          <aside class="camera-guidance" aria-label="Camera setup guidance">
-            <strong>Before you begin</strong>
-            <p>Allow camera and microphone access, then keep this page open while recording.</p>
-            <div class="device-status" id="deviceStatus" aria-live="polite">
-              <span data-device="camera">Camera not checked</span>
-              <span data-device="microphone">Microphone not checked</span>
-            </div>
-          </aside>
-
-          <div class="control-row">
+          <div class="recorder-actions" hidden>
             <button type="button" class="finish-button" id="finishButton" disabled>
               Finish and save
             </button>
@@ -217,7 +196,7 @@
             <div data-rating-form>
               <header class="experience-rating-header">
                 <div>
-                  <p class="muted-label">Evaluation complete</p>
+                  <p>Evaluation complete</p>
                   <h3 id="experienceRatingTitle">How was your OScanner-Eng experience?</h3>
                 </div>
                 <button
@@ -278,7 +257,6 @@
 
       <section class="history view" id="historyView" data-view="/history" hidden>
         <header class="view-heading history-heading">
-          <p class="eyebrow">Your progress</p>
           <h2>Evaluation history</h2>
           <p>Open an evaluation to review dimension scores, feedback, and the saved answer video.</p>
         </header>
@@ -304,7 +282,7 @@
         <div class="prepare-dialog">
           <div class="prepare-content">
             <div class="prepare-spinner" id="prepareSpinner" aria-hidden="true"></div>
-            <p class="muted-label" id="prepareModalKicker">Generating</p>
+            <p id="prepareModalKicker">Generating</p>
             <h2 id="prepareModalTitle">Preparing your question...</h2>
             <p id="prepareModalMessage">Please wait while the assessment question is generated.</p>
             <div class="prepare-preview" id="preparePreviewWrap" hidden>
@@ -320,12 +298,22 @@
               </div>
               <span class="preview-status">Live preview · not recording yet</span>
             </div>
-            <div class="prepare-camera-guidance" id="prepareCameraGuidance" hidden>
-              <strong id="prepareGuidanceTitle">Set up your camera and microphone</strong>
-              <span id="prepareGuidanceMessage">Both must stay on for the entire answer. Stand about one metre away and make sure your full upper body and posture are visible.</span>
             </div>
-          </div>
           <div class="prepare-footer">
+            <div id="prepareCameraGuidance" hidden>
+              <span class="prepare-guidance-help tooltip-wrap">
+                <button
+                  class="tooltip-trigger prepare-guidance-trigger"
+                  type="button"
+                  aria-label="Camera and microphone setup help"
+                  aria-describedby="prepareGuidanceTooltip"
+                >Help ?</button>
+                <span class="dimension-tooltip" id="prepareGuidanceTooltip" role="tooltip">
+                  <strong id="prepareGuidanceTitle">Set up your camera and microphone</strong>
+                  <span id="prepareGuidanceMessage">Both must stay on for the entire answer. Stand about one metre away and make sure your full upper body and posture are visible.</span>
+                </span>
+              </span>
+            </div>
             <div class="countdown-display" id="countdownDisplay" hidden>
               <span id="countdownSeconds">120</span>s
             </div>
@@ -349,7 +337,7 @@
         hidden
       >
         <div class="discard-dialog">
-          <p class="muted-label">Leave this attempt</p>
+          <p>Leave this attempt</p>
           <h2 id="discardModalTitle">Discard this answer?</h2>
           <p id="discardModalMessage">
             The recording, evaluation, and score for this attempt will not be saved. This cannot be undone.
@@ -372,7 +360,7 @@
         hidden
       >
         <div class="privacy-consent-dialog">
-          <p class="muted-label">Before your first evaluation</p>
+          <p>Before your first evaluation</p>
             <h2 id="privacyConsentTitle">Please review the privacy policy</h2>
           <p id="privacyConsentSummary" class="privacy-consent-summary">
             为生成题目、录制回答并完成英语口语评估，我们需要处理您的候选人资料、摄像头视频、麦克风音频，以及由此生成的转写文本、抽帧画面和评分结果。

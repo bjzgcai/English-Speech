@@ -181,7 +181,7 @@ main { overflow: hidden; }
 
 .evaluator-heading { position: sticky; top: 42px; }
 .evaluator-heading h1 { max-width: 700px; font-size: clamp(48px, 5.8vw, 84px); text-wrap: balance; }
-.evaluator-heading > p:not(.kicker) { max-width: 55ch; margin-top: 28px; color: var(--muted); font-size: 18px; line-height: 1.58; }
+.evaluator-heading > p { max-width: 55ch; margin-top: 28px; color: var(--muted); font-size: 18px; line-height: 1.58; }
 .evaluator-heading .speaker-assumption {
   padding: 20px 0 0 22px;
   border-left: 2px solid var(--accent);
@@ -549,7 +549,6 @@ main { overflow: hidden; }
   align-items: center;
 }
 
-.kicker,
 .section-index {
   margin: 0 0 22px;
   color: var(--accent-dark);

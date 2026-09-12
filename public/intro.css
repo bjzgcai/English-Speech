@@ -263,14 +263,6 @@ h3 {
   max-width: 600px;
 }
 
-.kicker {
-  margin-bottom: 16px;
-  color: var(--accent-strong);
-  font-size: 12px;
-  font-weight: 850;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
 
 .hero-copy h1 {
   max-width: 620px;

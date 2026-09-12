@@ -7,9 +7,10 @@ function createQuestionService({ safeText, recordOpenId }) {
     const name = safeText(profile.name, "Biao");
     const role = safeText(profile.role, "AI engeering");
     return [
-      "Create one English speaking assessment question based on this candidate profile.",
+      "Create one concise English speaking assessment question from this candidate profile.",
       "Return strict JSON only with keys: question, focus, expectedDurationSeconds, followUp.",
-      "The question should be specific, realistic, and answerable without outside research.",
+      "Use one clear sentence of 20 words or fewer; keep it specific and realistic, with no outside research.",
+      "Keep followUp to 10 words or fewer and focus to 8 words or fewer.",
       "Avoid asking multiple unrelated questions.",
       "The answer must fit within 2 minutes. Set expectedDurationSeconds to 120.",
       "",
@@ -22,7 +23,7 @@ function createQuestionService({ safeText, recordOpenId }) {
   function fallbackQuestion(profile) {
     const role = safeText(profile.role, "AI engeering");
     return {
-      question: `Tell me about a recent challenge in ${role}. What happened, what did you do, and what was the result?`,
+      question: `What recent challenge did you face in ${role}, and what did you do and learn?`,
       focus: "Fluency, organization, detail, and past-tense narration",
       expectedDurationSeconds: 120,
       followUp: "What would you do differently next time?",

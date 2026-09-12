@@ -5,72 +5,72 @@ const weeklyTopics = Object.freeze([
   {
     title: "A habit that makes your day easier",
     question:
-      "What is one small habit that makes your everyday life easier? Explain when you do it, why it helps, and give a recent example.",
+      "What small habit makes your day easier? Say when you do it, why it helps, and give one example.",
     focus: "Clear structure, reasons, and a specific everyday example",
-    followUp: "How could someone else start this habit?",
+    followUp: "How could someone else start it?",
   },
   {
     title: "Planning everyday meals",
     question:
-      "How do you usually decide what to eat on a normal day? Describe your routine, what influences your choice, and one meal you often enjoy.",
+      "How do you choose what to eat on a normal day? Describe your routine and one meal you enjoy.",
     focus: "Sequencing, everyday vocabulary, and supporting detail",
-    followUp: "What would you change about this routine?",
+    followUp: "What would you change?",
   },
   {
     title: "A place in your neighborhood",
     question:
-      "Tell us about a place in your neighborhood that you visit regularly. Describe it, explain why you go there, and share one memorable visit.",
+      "Describe a place in your neighborhood you visit often, why you go, and one memorable visit.",
     focus: "Description, personal relevance, and past-tense narration",
-    followUp: "What would make this place even better?",
+    followUp: "What would make it better?",
   },
   {
     title: "Keeping in touch",
     question:
-      "How do you stay in touch with people who matter to you? Explain your usual approach and describe a recent conversation you valued.",
+      "How do you stay in touch with people who matter to you? Describe one recent conversation you valued.",
     focus: "Comparison, personal reflection, and a concrete example",
-    followUp: "Has technology improved the way you communicate?",
+    followUp: "Has technology improved your communication?",
   },
   {
     title: "A useful recent purchase",
     question:
-      "Describe something you bought recently that is useful in daily life. Explain why you chose it, how you use it, and whether it met your expectations.",
+      "Describe a recent useful purchase, why you chose it, how you use it, and whether it met your expectations.",
     focus: "Description, reasons, and evaluation language",
-    followUp: "Would you recommend it to someone else?",
+    followUp: "Would you recommend it?",
   },
   {
     title: "Managing a busy morning",
     question:
-      "What helps you manage a busy morning? Walk through your routine, identify the hardest part, and explain one strategy that saves time.",
+      "How do you manage a busy morning? Describe the hardest part and one time-saving strategy.",
     focus: "Logical sequence, problem solving, and practical detail",
-    followUp: "What usually disrupts your morning plan?",
+    followUp: "What usually disrupts your plan?",
   },
   {
     title: "A simple way to stay healthy",
     question:
-      "What is one realistic thing you do to stay healthy? Explain how it fits into your life, what makes it difficult, and what keeps you consistent.",
+      "What is one realistic way you stay healthy? Explain what makes it difficult and what keeps you consistent.",
     focus: "Cause and effect, balanced reflection, and routine vocabulary",
     followUp: "What advice would you give a beginner?",
   },
   {
     title: "Sharing household chores",
     question:
-      "How are everyday chores handled where you live? Describe the usual arrangement, one chore you prefer or avoid, and how you keep things fair.",
+      "How are chores shared where you live? Describe the arrangement and how you keep it fair.",
     focus: "Explanation, preferences, and everyday household vocabulary",
-    followUp: "Which chore would you automate if you could?",
+    followUp: "Which chore would you automate?",
   },
   {
     title: "Your regular journey",
     question:
-      "Describe a journey you make regularly, such as going to work, school, or the shops. Explain the route, what you notice, and how the trip could improve.",
+      "Describe a journey you make regularly, what you notice, and how it could improve.",
     focus: "Sequencing, place vocabulary, and suggestions",
-    followUp: "How is the journey different at busy times?",
+    followUp: "How does it change at busy times?",
   },
   {
     title: "Relaxing after a full day",
     question:
-      "How do you relax after a busy day? Describe what you usually do, why it works for you, and a time when it helped you reset.",
+      "How do you relax after a busy day? Describe what works for you and one time it helped.",
     focus: "Routine language, reasons, and personal reflection",
-    followUp: "Do you prefer relaxing alone or with other people?",
+    followUp: "Do you prefer relaxing alone or with others?",
   },
 ]);
 
