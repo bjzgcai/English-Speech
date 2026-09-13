@@ -93,7 +93,7 @@ function registerQueueRoutes(app, deps) {
   });
   app.get("/api/health", (_req, res) => {
     const workerReady = Date.now() - Number(queue.setting("workerHeartbeat") || 0) < 30000;
-    res.status(workerReady ? 200 : 503).json({ ok: workerReady, workerReady });
+    res.status(workerReady ? 200 : 503).json({ ok: workerReady });
   });
   app.use("/api", (_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
   app.get("/api/admission", requireVisitor, wrap((req, res) => res.json({ admission: queue.admission(req.user.openId) })));

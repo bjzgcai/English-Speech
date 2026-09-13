@@ -207,6 +207,8 @@
           <p class="reply-context" data-reply-context hidden>Replying to <strong data-reply-name></strong><button type="button" data-cancel-reply>Cancel</button></p>
           <label for="prepareComment">Your comment</label>
           <textarea id="prepareComment" maxlength="1000" required data-comment-input></textarea>
+          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple data-comment-images aria-label="Attach images" />
+          <div class="comment-image-previews" data-comment-previews></div>
           <div class="comment-form-row"><p class="comment-feedback" role="status" data-comment-feedback></p><button class="comment-submit" type="submit" data-comment-submit>Comment</button></div>
         </form>
         <div class="comment-list" data-comment-list aria-live="polite"><p class="comments-empty">Loading comments...</p></div>

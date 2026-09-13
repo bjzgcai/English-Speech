@@ -34,12 +34,10 @@ function createVisitorAccess({ readSession, parseCookies, useSecureSessionCookie
     if (signedIn?.openId && !isGuest(signedIn)) {
       req.visitor = { ...signedIn, identityType: "dingtalk" };
     } else {
-      const id = readGuest(req) || `guest:${crypto.randomUUID()}`;
-      const payload = Buffer.from(JSON.stringify({ id, exp: Date.now() + guestTtlMs })).toString("base64url");
-      res.cookie(guestCookieName, `${payload}.${signature(payload)}`, {
-        httpOnly: true, sameSite: "lax", secure: useSecureSessionCookie(),
-        maxAge: guestTtlMs, path: "/",
-      });
+      const id = readGuest(req);
+      // Browsing is stateless. Only successful invitation redemption creates a
+      // guest; old unredeemed cookies must not become authenticated identities.
+      if (!id || !hasAccess(req, { openId: id })) return null;
       const displayName = guestName(id);
       req.visitor = {
         openId: id, identityType: "guest", name: displayName || `Guest ${id.slice(6, 14)}`,
@@ -64,6 +62,7 @@ function createVisitorAccess({ readSession, parseCookies, useSecureSessionCookie
   }
 
   function hasAccess(req, user) {
+    if (!user?.openId) return false;
     if (user?.identityType === "dingtalk") return true;
     const value = (parseCookies(req)[accessCookieName] || "").split(".");
     return value.length === 2 && value[0] === user?.openId && value[1] === signature(value[0]);
@@ -79,6 +78,7 @@ function createVisitorAccess({ readSession, parseCookies, useSecureSessionCookie
   function requireVisitor(req, res, next) {
     try { req.user = resolveVisitor(req, res); }
     catch { return res.status(503).json({ error: "Visitor sessions are not configured." }); }
+    if (!req.user) return res.status(401).json({ code: "AUTH_REQUIRED", error: "DingTalk sign-in or an invitation code is required.", loginUrl: "/auth/dingtalk", inviteUrl: "/invite" });
     const expected = req.get("X-Expected-Owner");
     const mutation = !["GET", "HEAD", "OPTIONS"].includes(req.method);
     if ((mutation || expected !== undefined) && expected !== req.user.openId) {

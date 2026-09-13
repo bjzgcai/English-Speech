@@ -5,6 +5,7 @@ const config = require("./src/config");
 const { Queue } = require("./src/queue");
 const { context, stage, resources } = require("./src/processing");
 const { mediaPipelineVersion, pipelineConcurrency } = require("./src/media-config");
+const { processOne: processCommentModeration } = require("./src/comment-moderation");
 process.env.QUEUE_WORKER = "true";
 const { testHelpers: evaluation } = require("./src/app");
 
@@ -86,6 +87,7 @@ function tick() {
     else queue.renew(id, task.token);
   }
   if (stopping || Number(queue.setting("circuitUntil") || 0) > Date.now()) return;
+  processCommentModeration().catch(() => {});
   while (active.size < pipelineLimit) {
     const job = queue.claim();
     if (!job) break;

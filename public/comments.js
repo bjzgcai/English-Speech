@@ -7,6 +7,8 @@
   const form = section.querySelector("[data-comment-form]");
   const textarea = section.querySelector("[data-comment-input]");
   const submitButton = section.querySelector("[data-comment-submit]");
+  const imageInput = section.querySelector("[data-comment-images]");
+  const previews = section.querySelector("[data-comment-previews]");
   const replyContext = section.querySelector("[data-reply-context]");
   const replyName = section.querySelector("[data-reply-name]");
   const cancelReply = section.querySelector("[data-cancel-reply]");
@@ -32,7 +34,7 @@
   function commentMarkup(comment, isReply = false) {
     return `<article class="comment-item${isReply ? " comment-reply" : ""}">
       <div class="comment-meta"><strong>${escapeHtml(comment.username)}</strong><time datetime="${escapeHtml(comment.createdAt)}">${escapeHtml(formatTimestamp(comment.createdAt))}</time></div>
-      <p>${escapeHtml(comment.content)}</p>
+      <p>${escapeHtml(comment.content)}</p>${(comment.images || []).length ? `<div class="comment-image-previews">${comment.images.map(image => `<img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.alt || "Comment image")}" loading="lazy">`).join("")}</div>` : ""}
       <button type="button" class="comment-reply-button" data-reply-id="${escapeHtml(comment.id)}" data-reply-name="${escapeHtml(comment.username)}">Reply</button>
     </article>`;
   }
@@ -107,15 +109,20 @@
     submitButton.disabled = true;
     feedback.textContent = "Posting...";
     try {
+      const body = new FormData(); body.append("page", page); body.append("content", content); if (parentId) body.append("parentId", parentId);
+      for (const file of imageInput?.files || []) body.append("images", file, file.name);
       const response = await window.VisitorSession.fetch("/api/comments", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ page, content, parentId }),
+        body,
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => {
+        throw new Error(`Unable to post comment (HTTP ${response.status}). Please try again later.`);
+      });
       if (!response.ok) throw new Error(data.error || "Unable to post comment.");
       comments.push(data.comment);
       textarea.value = "";
+      if (imageInput) imageInput.value = "";
+      if (previews) previews.innerHTML = "";
       clearReply();
       feedback.textContent = "Comment posted.";
       render();
@@ -124,6 +131,11 @@
     } finally {
       submitButton.disabled = false;
     }
+  });
+
+  imageInput?.addEventListener("change", () => {
+    const files = [...imageInput.files].slice(0, 4);
+    previews.innerHTML = files.map(file => `<img src="${escapeHtml(URL.createObjectURL(file))}" alt="Selected image preview">`).join("");
   });
 
   load();

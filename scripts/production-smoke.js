@@ -13,7 +13,7 @@ async function main() {
   const screenshots = [];
   const health = await fetch(base + "/api/health", { signal: AbortSignal.timeout(10000) });
   assert.equal(health.status, 200);
-  assert.equal((await health.json()).workerReady, true);
+  assert.deepEqual(await health.json(), { ok: true });
   const auth = await fetch(base + "/auth/dingtalk?redirect=%2Fhistory", { redirect: "manual", signal: AbortSignal.timeout(10000) });
   assert.equal(auth.status, 302);
   assert.equal(new URL(auth.headers.get("location")).hostname, "login.dingtalk.com");
