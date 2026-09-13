@@ -51,10 +51,11 @@
   }
 
   function update(data) {
+    const hadCurrent = current !== null;
     const previous = current?.user?.openId;
     const previousAccess = current?.hasAccess;
     current = data;
-    if (previous && (previous !== data.user?.openId || previousAccess !== data.hasAccess)) {
+    if (hadCurrent && (previous !== data.user?.openId || previousAccess !== data.hasAccess)) {
       window.dispatchEvent(new CustomEvent("visitoridentitychange", { detail: { previous, user: data.user, accessGranted: redeeming } }));
     }
     return data;
@@ -68,7 +69,7 @@
         if (!response.ok) throw new Error(data.error || "Unable to establish your session.");
         return update(data);
       };
-      // Serialize first-time cookie creation across tabs where Web Locks is available.
+      // Serialize identity refreshes across tabs where Web Locks is available.
       pending = (navigator.locks ? navigator.locks.request("englisheval-session", read) : read())
         .finally(() => { pending = null; });
     }
@@ -86,7 +87,7 @@
     const headers = new Headers(options.headers);
     if (learner) {
       if (!current) await refresh();
-      if (!headers.has("X-Expected-Owner")) headers.set("X-Expected-Owner", current.user.openId);
+      if (!headers.has("X-Expected-Owner") && current.user?.openId) headers.set("X-Expected-Owner", current.user.openId);
     }
     const response = await nativeFetch(url, { ...options, headers });
     if (learner && response.status === 401) {
@@ -100,7 +101,7 @@
       const body = await response.clone().json().catch(() => ({}));
       if (body.code === "IDENTITY_CHANGED") await refresh();
     }
-    if (learner && headers.get("X-Expected-Owner") !== current?.user?.openId) {
+    if (learner && (headers.get("X-Expected-Owner") || null) !== (current?.user?.openId || null)) {
       throw Object.assign(new Error("Your active identity changed. Please try again."), { code: "IDENTITY_CHANGED" });
     }
     return response;

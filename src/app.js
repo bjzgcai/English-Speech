@@ -3,6 +3,7 @@ const path = require("path");
 const crypto = require("crypto");
 const express = require("express");
 const multer = require("multer");
+const sharp = require("sharp");
 const QRCode = require("qrcode");
 const swaggerUiDistPath = require("swagger-ui-dist").getAbsoluteFSPath();
 const { parseTree } = require("jsonc-parser");
@@ -11,6 +12,7 @@ const processing = require("./processing");
 const { inspectMedia, convertToMp4, normalizeRecording, processMedia, audioMetrics: deriveAudioMetrics, preparedMediaExists } = require("./media");
 const { appendJsonLine, readJsonLines, updateJsonLines } = require("./storage");
 const { clientIp, createFailureLimiter } = require("./rate-limit");
+const { securityHeaders } = require("./security");
 const { createQuestionService } = require("./questions");
 const { registerPageRoutes } = require("./routes/pages");
 const { createVisitorAccess, isGuest } = require("./visitor");
@@ -23,6 +25,7 @@ const commentDingSender = new DingSender({
   robotCode: process.env.DINGTALK_ALERT_ROBOT_CODE,
   userId: process.env.DINGTALK_ALERT_USER_ID,
 });
+const { processOne: processCommentModeration } = require("./comment-moderation");
 const {
   ExperienceRatingValidationError,
   experienceRatingStatus,
@@ -47,6 +50,8 @@ const {
   leaderboardIdentitiesFile,
   questionsMetadataFile,
   commentsMetadataFile,
+  commentsMediaDir,
+  commentsModerationFile,
   consentsMetadataFile,
   ratingsMetadataFile,
   invitationsMetadataFile,
@@ -167,10 +172,8 @@ const evaluationRubricStandard = Object.freeze({
   ],
 });
 
-app.use((_req, res, next) => {
-  res.set("Permissions-Policy", "camera=(self), microphone=(self)");
-  next();
-});
+app.disable("x-powered-by");
+app.use(securityHeaders);
 app.use(express.json({ limit: "1mb" }));
 app.use(
   express.static(publicDir, {
@@ -211,8 +214,18 @@ const upload = multer({
   },
 });
 
+const commentUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 4, fields: 4, parts: 8, fieldSize: 16384 }, fileFilter: (_req, file, cb) => {
+  if (!new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]).has(file.mimetype)) return cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", file.fieldname));
+  cb(null, true);
+}});
+const commentUploadMiddleware = (req, res, next) => req.is("multipart/form-data") ? commentUpload.array("images", 4)(req, res, next) : next();
+
 function safeText(value, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
+}
+
+function sanitizeCommentText(value) {
+  return safeText(value).normalize("NFC").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069]/g, "");
 }
 
 function decodeUtf8UploadFilename(value) {
@@ -1970,19 +1983,29 @@ app.get("/api/v1/rubrics", requirePartnerApiKey, (_req, res) => {
   res.json({ rubric: evaluationRubricStandard });
 });
 
-app.get("/api/me", visitorAccess.requireVisitor, (req, res) => {
+// Native DingTalk must receive its public corpId before it can request an auth
+// code. Keep that bootstrap separate from routine identity/status queries.
+app.get("/auth/dingtalk/config", (_req, res) => {
+  res.json({
+    configured: isDingTalkInAppConfigured(),
+    corpId: isDingTalkInAppConfigured() ? safeText(process.env.DINGTALK_CORP_ID) : "",
+  });
+});
+
+app.get("/api/me", (req, res) => {
+  const user = visitorAccess.resolveVisitor(req, res);
+  const hasAccess = visitorAccess.hasAccess(req, user);
   res.set("Cache-Control", "no-store");
   res.json({
     configured: isDingTalkConfigured(),
-    hasAccess: visitorAccess.hasAccess(req, req.user),
+    hasAccess,
     inAppAuth: {
       configured: isDingTalkInAppConfigured(),
-      corpId: isDingTalkInAppConfigured() ? safeText(process.env.DINGTALK_CORP_ID) : "",
     },
-    user: req.user,
-    identityType: req.user.identityType,
-    isZgcMember: req.user.isZgcMember === true,
-    accessMode: visitorAccess.hasAccess(req, req.user) ? req.user.identityType === "dingtalk" ? "dingtalk" : "invitation" : null,
+    user,
+    identityType: user?.identityType || null,
+    isZgcMember: user?.isZgcMember === true,
+    accessMode: hasAccess ? user.identityType === "dingtalk" ? "dingtalk" : "invitation" : null,
   });
 });
 
@@ -2084,6 +2107,7 @@ function commentForClient(comment) {
     parentId: comment.parentId || null,
     username: comment.username,
     content: comment.content,
+    images: (comment.images || []).map((image) => ({ id: image.id, url: `/api/comments/${encodeURIComponent(comment.id)}/media/${encodeURIComponent(image.id)}`, alt: image.alt || "Comment image" })),
     createdAt: comment.createdAt,
   };
 }
@@ -2101,9 +2125,17 @@ app.get("/api/comments", (req, res) => {
   res.json({ comments });
 });
 
-app.post("/api/comments", requireVisitor, (req, res) => {
+app.get("/api/comments/:commentId/media/:mediaId", (req, res) => {
+  const comment = currentComments().find((item) => item.id === req.params.commentId && item.moderationStatus !== "blocked");
+  const image = comment?.images?.find((item) => item.id === req.params.mediaId);
+  if (!image || path.basename(image.filename) !== image.filename || !fs.existsSync(path.join(commentsMediaDir, image.filename))) return res.status(404).end();
+  res.set({ "Content-Type": image.mimeType, "X-Content-Type-Options": "nosniff", "Cache-Control": "public, max-age=3600" });
+  res.sendFile(path.join(commentsMediaDir, image.filename));
+});
+
+app.post("/api/comments", requireVisitor, commentUploadMiddleware, async (req, res) => {
   const page = safeText(req.body?.page).toLowerCase();
-  const content = safeText(req.body?.content);
+  const content = sanitizeCommentText(req.body?.content);
   const requestedParentId = safeText(req.body?.parentId);
 
   if (!commentPages.has(page)) {
@@ -2113,6 +2145,14 @@ app.post("/api/comments", requireVisitor, (req, res) => {
     return res.status(400).json({ error: "Comments must contain 1 to 1000 characters." });
   }
   if (/暴力|有害/.test(content)) return res.status(422).json({ code: "COMMENT_BLOCKED", error: "This comment cannot be published." });
+
+  // Check the queue before saving images or a comment. An earlier development
+  // version accidentally created moderation.jsonl as a directory.
+  try {
+    readJsonLines(commentsModerationFile);
+  } catch {
+    return res.status(503).json({ error: "Comments are temporarily unavailable. Please try again later." });
+  }
 
   let parentId = null;
   if (requestedParentId) {
@@ -2125,6 +2165,19 @@ app.post("/api/comments", requireVisitor, (req, res) => {
     parentId = requestedParent.parentId || requestedParent.id;
   }
 
+  const images = [];
+  try {
+    for (const file of req.files || []) {
+      const id = crypto.randomUUID();
+      const filename = `${id}.webp`;
+      const output = path.join(commentsMediaDir, filename);
+      const metadata = await sharp(file.buffer, { limitInputPixels: 40e6 }).rotate().webp({ quality: 84 }).toFile(output);
+      images.push({ id, filename, mimeType: "image/webp", width: metadata.width, height: metadata.height, bytes: metadata.size || fs.statSync(output).size, alt: "Comment image" });
+    }
+  } catch (error) {
+    for (const image of images) fs.rmSync(path.join(commentsMediaDir, image.filename), { force: true });
+    return res.status(400).json({ error: "Each uploaded image must be a valid supported image." });
+  }
   const comment = {
     id: crypto.randomUUID(),
     page,
@@ -2132,11 +2185,15 @@ app.post("/api/comments", requireVisitor, (req, res) => {
     openId: req.user.openId,
     username: safeText(req.user.name, "DingTalk user"),
     content,
+    images,
     createdAt: new Date().toISOString(),
     moderationStatus: "pending",
   };
   appendJsonLine(commentsMetadataFile, comment);
-  void moderateComment(comment);
+  appendJsonLine(commentsModerationFile, { id: crypto.randomUUID(), commentId: comment.id, state: "queued", attempts: 0, createdAt: new Date().toISOString() });
+  void processCommentModeration().catch(() => {
+    console.warn("Comment moderation queue is unavailable; the worker will retry.");
+  });
   res.status(201).json({ comment: commentForClient(comment) });
 });
 
@@ -2740,9 +2797,14 @@ registerPageRoutes(app, { requirePageAuth });
 
 app.use((error, _req, res, next) => {
   if (error instanceof multer.MulterError) {
+    if (_req.path === "/api/comments") return res.status(400).json({ error: "Use up to 4 JPEG, PNG, WebP, or GIF images up to 10 MB each." });
     return res.status(400).json({
       error: "Only MP4, WebM, Ogg, MOV, MKV, MP3, or WAV recordings up to 250 MB are supported.",
     });
+  }
+  if (_req.path === "/api/comments" && !res.headersSent) {
+    console.warn("Comment request failed", { code: error.code || "COMMENT_REQUEST_FAILED" });
+    return res.status(500).json({ error: "Unable to post comment. Please try again later." });
   }
   next(error);
 });

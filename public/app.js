@@ -533,14 +533,17 @@ function requestDingTalkInAppAuthCode(corpId) {
 }
 
 async function tryDingTalkInAppAuth(inAppAuth) {
-  if (state.inAppAuthAttempted || !inAppAuth?.configured || !inAppAuth.corpId) return false;
+  if (state.inAppAuthAttempted || !inAppAuth?.configured) return false;
   state.inAppAuthAttempted = true;
 
   const dd = window.dd;
   if (!dd || dd.env?.platform === "notInDingTalk") return false;
 
   try {
-    const authCode = await requestDingTalkInAppAuthCode(inAppAuth.corpId);
+    const bootstrap = await fetch("/auth/dingtalk/config", { cache: "no-store", signal: AbortSignal.timeout(4000) });
+    const nativeConfig = await bootstrap.json();
+    if (!bootstrap.ok || !nativeConfig.configured || !nativeConfig.corpId) return false;
+    const authCode = await requestDingTalkInAppAuthCode(nativeConfig.corpId);
     const response = await window.VisitorSession.fetch("/auth/dingtalk/in-app", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -569,13 +572,11 @@ async function checkAuth() {
     state.authUser = data.user || null;
     state.authReady = true;
     state.dingTalkConfigured = data.configured;
-    setStatus(state.authUser?.identityType === "guest" ? "Guest" : "Signed in");
+    setStatus(!state.authUser || state.authUser.identityType === "guest" ? "Guest" : "Signed in");
     updateAuthView();
-    if (state.authUser) {
-      setRoute(window.location.pathname);
-      if (window.VisitorSession.hasAccess) window.EvaluationQueue.restore().catch(() => {});
-    }
-    if (state.authUser?.identityType === "guest") void tryDingTalkInAppAuth(data.inAppAuth);
+    setRoute(window.location.pathname);
+    if (window.VisitorSession.hasAccess) window.EvaluationQueue.restore().catch(() => {});
+    if (!state.authUser || state.authUser.identityType === "guest") void tryDingTalkInAppAuth(data.inAppAuth);
   } catch {
     setStatus("Session unavailable");
     state.authReady = true;

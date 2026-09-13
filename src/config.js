@@ -30,6 +30,8 @@ const questionsDir = path.join(dataDir, "questions");
 const questionsMetadataFile = path.join(questionsDir, "metadata.jsonl");
 const commentsDir = path.join(dataDir, "comments");
 const commentsMetadataFile = path.join(commentsDir, "metadata.jsonl");
+const commentsMediaDir = path.join(commentsDir, "media");
+const commentsModerationFile = path.join(commentsDir, "moderation.jsonl");
 const consentsDir = path.join(dataDir, "consents");
 const consentsMetadataFile = path.join(consentsDir, "metadata.jsonl");
 const ratingsDir = path.join(dataDir, "ratings");
@@ -43,6 +45,7 @@ for (const directory of [
   recordingTmpDir,
   questionsDir,
   commentsDir,
+  commentsMediaDir,
   consentsDir,
   ratingsDir,
   invitationsDir,
@@ -50,7 +53,6 @@ for (const directory of [
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   fs.chmodSync(directory, 0o700);
 }
-
 module.exports = {
   port: Number(process.env.PORT || 3000),
   rootDir,
@@ -64,6 +66,8 @@ module.exports = {
   leaderboardIdentitiesFile,
   questionsMetadataFile,
   commentsMetadataFile,
+  commentsMediaDir,
+  commentsModerationFile,
   consentsMetadataFile,
   ratingsMetadataFile,
   invitationsMetadataFile,

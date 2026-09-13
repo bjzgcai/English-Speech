@@ -15,7 +15,6 @@ Object.assign(process.env, {
 const { app, testHelpers } = require("../src/app");
 const config = require("../src/config");
 const { appendJsonLine } = require("../src/storage");
-const { guestTtlMs } = require("../src/visitor");
 let server;
 let base;
 test.before(async () => {
@@ -38,7 +37,7 @@ async function guest(cookie = "") {
   return { ...data, cookie: [...cookies.values()].join("; "), setCookie: response.headers.get("set-cookie") };
 }
 function headers(person) {
-  return { Cookie: person.cookie, "X-Expected-Owner": person.user.openId, "Content-Type": "application/json" };
+  return { Cookie: person.cookie, ...(person.user ? { "X-Expected-Owner": person.user.openId } : {}), "Content-Type": "application/json" };
 }
 function call(person, route, body) {
   return fetch(base + route, { headers: headers(person), method: body === undefined ? "GET" : "POST", body: body === undefined ? undefined : JSON.stringify(body) });
@@ -63,36 +62,50 @@ async function invitedGuest() {
   return person;
 }
 
-test("guest sessions need no DingTalk, persist, renew, and do not merge browsers sharing an IP", async () => {
-  const first = await guest();
-  const second = await guest();
-  assert.equal(first.configured, false);
-  assert.equal(first.identityType, "guest");
-  assert.equal(first.user.identityType, "guest");
-  assert.match(first.user.openId, /^guest:/);
-  assert.notEqual(first.user.openId, second.user.openId);
-  assert.equal((await guest(first.cookie)).user.openId, first.user.openId);
-  assert.match(first.setCookie, /HttpOnly/);
-  assert.match(first.setCookie, /SameSite=Lax/);
-  assert.match(first.setCookie, new RegExp(`Max-Age=${guestTtlMs / 1000}`));
-  assert.equal(first.hasAccess, false);
-  assert.equal((await call(first, "/api/game/identity")).status, 401);
+test("anonymous identity queries are stateless and disclose no corpId", async () => {
+  for (let i = 0; i < 3; i++) {
+    const person = await guest();
+    assert.equal(person.configured, false);
+    assert.equal(person.identityType, null);
+    assert.equal(person.user, null);
+    assert.equal(person.hasAccess, false);
+    assert.equal(person.setCookie, null);
+    assert.equal(Object.hasOwn(person.inAppAuth, "corpId"), false);
+    assert.equal((await call(person, "/api/game/identity")).status, 401);
+  }
 });
 
-test("tampered, expired, malformed, and cross-purpose cookies cannot claim a guest identity", async () => {
-  const first = await guest();
-  assert.notEqual((await guest(first.cookie + "x")).user.openId, first.user.openId);
-  assert.notEqual((await guest("englisheval_guest=%invalid")).user.openId, first.user.openId);
-  const payload = Buffer.from(JSON.stringify({ id: first.user.openId, exp: Date.now() - 1 })).toString("base64url");
-  const signature = crypto.createHmac("sha256", process.env.SESSION_SECRET).update(`guest\0${payload}`).digest("base64url");
-  assert.notEqual((await guest(`englisheval_guest=${payload}.${signature}`)).user.openId, first.user.openId);
-  const forged = testHelpers.createSessionToken({ openId: first.user.openId, identityType: "guest" });
-  assert.notEqual((await guest(`englisheval_session=${forged}`)).user.openId, first.user.openId);
+test("invited identities persist without creating or renewing cookies on reads", async () => {
+  const first = await invitedGuest();
+  const second = await invitedGuest();
+  assert.notEqual(first.user.openId, second.user.openId);
+  assert.equal((await guest(first.cookie)).user.openId, first.user.openId);
+  assert.equal((await guest(first.cookie)).setCookie, null);
+});
+
+test("tampered, expired, malformed, and unredeemed cookies cannot claim an identity", async () => {
+  const first = await invitedGuest();
+  const id = first.user.openId;
+  const sign = payload => crypto.createHmac("sha256", process.env.SESSION_SECRET).update(`guest\0${payload}`).digest("base64url");
+  const payload = Buffer.from(JSON.stringify({ id, exp: Date.now() - 1 })).toString("base64url");
+  const forged = testHelpers.createSessionToken({ openId: id, identityType: "guest" });
+  for (const cookie of [
+    first.cookie + "x",
+    "englisheval_guest=%invalid",
+    `englisheval_guest=${payload}.${sign(payload)}; englisheval_access=${id}.${sign(id)}`,
+    `englisheval_session=${forged}`,
+    first.cookie.split("; ")[0],
+  ]) {
+    const person = await guest(cookie);
+    assert.equal(person.user, null);
+    assert.equal(person.hasAccess, false);
+    assert.equal(person.setCookie, null);
+  }
 });
 
 test("missing or stale expected-owner headers are rejected before mutation or upload", async () => {
-  const first = await guest();
-  const second = await guest();
+  const first = await invitedGuest();
+  const second = await invitedGuest();
   for (const expected of [undefined, second.user.openId]) {
     const h = { Cookie: first.cookie, ...(expected ? { "X-Expected-Owner": expected } : {}) };
     for (const route of ["/api/privacy-consent", "/api/save-answer", "/api/evaluate-video"]) {
@@ -194,7 +207,8 @@ test("an invited guest can sign out and loses access without losing the invitati
   const after = await guest("");
   assert.equal(after.hasAccess, false);
   assert.equal(after.accessMode, null);
-  assert.notEqual(after.user.openId, before.user.openId);
+  assert.equal(after.user, null);
+  assert.equal(after.setCookie, null);
   // The invitation keeps its owner, so the same name restores the same identity.
   const again = await fetch(base + "/api/invitation/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "ada lovelace" }) });
   assert.equal(again.status, 200);
