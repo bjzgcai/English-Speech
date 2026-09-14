@@ -229,6 +229,42 @@ async function run(browser, base, route, width, mode) {
   assert.equal(nesting.slot.parent, 'prepare-dialog',
     `#recorderModalSlot must be a direct child of .prepare-dialog, found ${nesting.slot.parent}`);
 
+  // The consent gate must describe the collection that is actually about to
+  // happen. Audio-only answers never upload video, so promising video there
+  // (and asking for facial images) claims more than we do. Toggling the real
+  // checkbox on purpose — it is the listener that repaints the copy — and the
+  // mode is restored afterwards, because the toggle also flips the dialog's
+  // `audio-only` class that later steps assert on.
+  const copy = await page.evaluate(() => {
+    const read = () => ({
+      summary: document.querySelector('#privacyConsentSummary').textContent,
+      highlight: document.querySelector('#privacyConsentHighlight').textContent,
+      consent: document.querySelector('#sensitiveInfoText').textContent,
+    });
+    const box = document.querySelector('#useCamera');
+    const original = box.checked;
+    const set = on => { box.checked = on; box.dispatchEvent(new Event('change', { bubbles: true })); };
+    const before = read();
+    set(false);
+    const audio = read();
+    set(true);
+    const camera = read();
+    set(original);
+    return { before, audio, camera };
+  });
+  const VIDEO_WORDS = /视频|面部|抽帧/;
+  for (const [name, variant] of [['summary', copy.camera.summary], ['highlight', copy.camera.highlight], ['consent', copy.camera.consent]]) {
+    assert.ok(VIDEO_WORDS.test(variant), `${label}: camera-mode ${name} lost its video wording: ${variant}`);
+  }
+  for (const [name, variant] of [['summary', copy.audio.summary], ['highlight', copy.audio.highlight], ['consent', copy.audio.consent]]) {
+    assert.ok(!VIDEO_WORDS.test(variant),
+      `${label}: audio-only ${name} still promises video: ${variant}`);
+  }
+  assert.ok(/麦克风音频/.test(copy.audio.summary) && /音频/.test(copy.audio.consent),
+    `${label}: audio-only consent copy dropped the microphone/audio wording`);
+  assert.deepEqual(copy.before, wantCamera ? copy.camera : copy.audio,
+    `${label}: the consent copy painted on load does not match the persisted mode`);
+
   // 1. Start challenge -> countdown modal with the question and "Start now".
   await page.locator('#generateButton').click();
   await page.waitForFunction(() => {

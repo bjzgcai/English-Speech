@@ -22,8 +22,8 @@ The app reads the internal OpenAI-compatible model gateway settings from `.env`:
 
 ```bash
 INTERNAL_LLM_API_KEY=...
-INTERNAL_LLM_CHAT_COMPLETIONS_URL=https://llm.zgci.org/hub/v1/chat/completions
-INTERNAL_LLM_TRANSCRIPTIONS_URL=https://llm.zgci.org/hub/v1/audio/transcriptions
+INTERNAL_LLM_CHAT_COMPLETIONS_URL=https://api.example.com/v1/chat/completions
+INTERNAL_LLM_TRANSCRIPTIONS_URL=https://api.example.com/v1/audio/transcriptions
 INTERNAL_LLM_QUESTION_MODEL=glm
 INTERNAL_LLM_TRANSCRIBE_MODEL=qwen-asr
 INTERNAL_LLM_EVAL_MODEL=qwen
@@ -442,7 +442,10 @@ For later code-only deployments:
 ./deploy.sh
 ```
 
-Defaults target `ubuntu@production-host.example` and installs under `/opt/englisheval`.
+The deployment script (`deploy.sh`), server configuration (`ops/`), and
+production validation scripts are private local files excluded from Git.
+Obtain them from your deployment administrator before using the commands above.
+Deployment destinations and paths are configured in those local files.
 The production `APP_BASE_URL` is read from the existing shared `.env.prod`.
 Plain HTTP deployments must set `COOKIE_SECURE=false`; HTTPS deployments should
 set it to `true`. Override `TARGET`, `REMOTE_ROOT`, `APP_PORT`, or

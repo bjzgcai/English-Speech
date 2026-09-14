@@ -1,5 +1,12 @@
 (() => {
   const nativeFetch = window.fetch.bind(window);
+  function track(event) {
+    if (!event) return;
+    nativeFetch("/api/analytics/events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ event, page: location.pathname }), keepalive: true }).catch(() => {});
+  }
+  window.EnglishEvalAnalytics = { track };
+  if (location.pathname === "/game") track("game_enter");
+  if (location.pathname === "/examine") track("examine_enter");
   let current = null;
   let pending = null;
   let accessPending = null;
@@ -90,6 +97,13 @@
       if (!headers.has("X-Expected-Owner") && current.user?.openId) headers.set("X-Expected-Owner", current.user.openId);
     }
     const response = await nativeFetch(url, { ...options, headers });
+    if (response.ok && window.EnglishEvalAnalytics) {
+      const p = target.pathname;
+      if (p === "/api/game/question") track("game_question");
+      else if (p === "/api/generate-question") track("examine_start");
+      else if (p === "/api/save-answer") track("examine_submit");
+      else if (p === "/api/evaluate-video") track("examine_complete");
+    }
     if (learner && response.status === 401) {
       const body = await response.clone().json().catch(() => ({}));
       if (body.code === "AUTH_REQUIRED") {

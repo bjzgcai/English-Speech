@@ -78,12 +78,38 @@
     if (!owner) throw new Error("Unable to establish your session.");
     return owner;
   }
-  async function consent() {
+  // Second consent surface, used when a queued submission runs without a stored
+  // consent. It must describe the same collection as the prepare-dialog gate, so
+  // it follows `options.collection` (the recorder sets it from the camera toggle).
+  // The video-upload path leaves it unset: an uploaded file always carries video.
+  async function consent(options = {}) {
     const started = generation;
     if ((await request("/api/privacy-consent")).agreed) return;
+    // "upload" is not a capture mode: a submitted file was recorded elsewhere.
+    const collectionMode = options.collection === "audio" || options.collection === "camera"
+      ? options.collection
+      : "upload";
+    const onlyAudio = collectionMode === "audio";
+    const detail = onlyAudio
+      ? "Evaluation processes your profile, audio recording, transcript, and feedback. Audio-only mode collects no video and samples no frames."
+      : "Evaluation processes your profile, recording, transcript, sampled frames, and feedback.";
+    const sensitive = onlyAudio
+      ? "I consent to processing sensitive personal information in my audio recording, including my voice and surroundings."
+      : "I consent to processing sensitive personal information in my audio and video.";
     const dialog = document.createElement("dialog");
     dialog.className = "queue-consent";
-    dialog.innerHTML = '<form method="dialog"><h2>Privacy consent</h2><p>Evaluation processes your profile, recording, transcript, sampled frames, and feedback.</p><label><input type="checkbox" required> I agree to the <a href="/privacy" target="_blank" rel="noreferrer">privacy policy</a>.</label><label><input type="checkbox" required> I consent to processing sensitive personal information in my audio and video.</label><div class="queue-actions"><button value="cancel" formnovalidate>Cancel</button><button value="accept">Accept and continue</button></div></form>';
+    // Each caption lives in its own <span>: the label lays out as a two-column
+    // grid (checkbox + caption), and a bare text run sharing the label with an
+    // inline <a> is split into two grid items — the link then dropped into the
+    // 20px checkbox column and broke apart there. `.consent-check` in
+    // index.html wraps its caption for the same reason.
+    dialog.innerHTML = [
+      '<form method="dialog"><h2>Privacy consent</h2>',
+      `<p>${detail}</p>`,
+      '<label><input type="checkbox" required><span>I agree to the <a href="/privacy" target="_blank" rel="noreferrer">privacy policy</a>.</span></label>',
+      `<label><input type="checkbox" required><span>${sensitive}</span></label>`,
+      '<div class="queue-actions"><button value="cancel" formnovalidate>Cancel</button><button value="accept">Accept and continue</button></div></form>',
+    ].join("");
     document.body.append(dialog);
     const accepted = new Promise(resolve => dialog.addEventListener("close", () => resolve(dialog.returnValue === "accept"), { once: true }));
     dialog.showModal();
@@ -91,7 +117,7 @@
     dialog.remove();
     if (!agreed) throw new DOMException("Consent required", "AbortError");
     if (started !== generation) throw identityChanged();
-    await request("/api/privacy-consent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ privacyAgreed: true, sensitiveInfoAgreed: true }) });
+    await request("/api/privacy-consent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ privacyAgreed: true, sensitiveInfoAgreed: true, collectionMode }) });
   }
   async function draft(operation, value, draftOwner = owner) {
     if (!draftOwner) return null;
@@ -262,7 +288,7 @@
     const saved = await retain(form, submittingOwner);
     await identity();
     if (submittingOwner !== owner) throw identityChanged();
-    await consent();
+    await consent(options);
     if (submittingOwner !== owner) throw identityChanged();
     return send(saved, options);
   }

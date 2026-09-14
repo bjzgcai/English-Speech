@@ -9,8 +9,8 @@ Configuration lives in `/opt/englisheval/shared/monitor.env`. Install from
 labeled smoke-test DINGs have valid receipts. The application credentials stay in
 the existing shared environment files; never copy development credentials.
 
-The recipient is Wu Yanbiao (`000000000`). The EnglishEval application and its
-configured robot code are `dingtalk-robot-code-placeholder`. Only in-app DING is used.
+The recipient is Wu Yanbiao (`<DINGTALK_USER_ID>`). The EnglishEval application and its
+configured robot code are `<DINGTALK_ROBOT_CODE>`. Only in-app DING is used.
 
 | Metric | Warning | Critical | Recovery |
 | --- | --- | --- | --- |

@@ -74,11 +74,11 @@ This batch does not establish real-model completion time for 20 submissions.
 Retained report: `/tmp/englisheval-load-8AzIPD/report.json` on the production host.
 
 ```sh
-TEST_ROOT=/opt/englisheval-validation-20260908 \
+TEST_ROOT=/tmp/englisheval-validation \
 BENCHMARK_CPU_QUOTA=400% BENCHMARK_MEMORY_MIB=4096 \
-bash /opt/englisheval-validation-20260908/scripts/production-load-check.sh \
+bash /tmp/englisheval-validation/scripts/production-load-check.sh \
   --users=20 --arrivals=20 --duration=120 --webm --capacity-profile \
-  --fixture=/opt/englisheval-validation-20260908/spoken-motion.webm \
+  --fixture=/tmp/englisheval-validation/spoken-motion.webm \
   --restart --repeat-json --timeout=1200 --keep-data
 ```
 
@@ -123,7 +123,7 @@ JavaScript errors. Server/script syntax, shell syntax, and whitespace checks pas
 ## Deployment Verification
 
 Activated release `20260908T032851Z-4a4f01a` at
-`https://app.example.com`, replacing `20260908T022042Z-4a4f01a`.
+`https://your-domain.example`, replacing `20260908T022042Z-4a4f01a`.
 The hash suffix identifies the base commit; the release contains the validated
 working-tree changes.
 

@@ -87,13 +87,13 @@ const sessionCookieName = "englisheval_session";
 const sessionTtlMs = 7 * 24 * 60 * 60 * 1000;
 const oauthNonceCookieName = "englisheval_oauth_nonce";
 const oauthStateTtlMs = 10 * 60 * 1000;
-const privacyPolicyVersion = "2026-09-07";
+const privacyPolicyVersion = "2026-09-14";
 const internalLlmChatCompletionsUrl =
   process.env.INTERNAL_LLM_CHAT_COMPLETIONS_URL ||
-  "https://llm.zgci.org/hub/v1/chat/completions";
+  "https://api.example.com/v1/chat/completions";
 const internalLlmTranscriptionsUrl =
   process.env.INTERNAL_LLM_TRANSCRIPTIONS_URL ||
-  "https://llm.zgci.org/hub/v1/audio/transcriptions";
+  "https://api.example.com/v1/audio/transcriptions";
 const internalLlmQuestionModel = process.env.INTERNAL_LLM_QUESTION_MODEL || "glm";
 const internalLlmTranscribeModel = process.env.INTERNAL_LLM_TRANSCRIBE_MODEL || "qwen-asr";
 const internalLlmEvalModel = process.env.INTERNAL_LLM_EVAL_MODEL || "qwen";
@@ -603,6 +603,20 @@ function requireAdminAccess(req, res, next) {
   }
 
   next();
+}
+
+// Consent is version-gated, not mode-gated: one accepted record unlocks every
+// later submission under that policy version. Which collection the user was
+// shown when they accepted is therefore only knowable from the record itself,
+// so it is stored alongside the booleans. "camera"/"audio" are the two in-page
+// capture modes; "upload" is a pre-recorded video file, from which no live
+// device capture happens at all. Anything else (including a legacy client that
+// sends nothing) is recorded as null — unknown, never guessed.
+const COLLECTION_MODES = new Set(["camera", "audio", "upload"]);
+
+function normalizeCollectionMode(value) {
+  const mode = safeText(value).toLowerCase();
+  return COLLECTION_MODES.has(mode) ? mode : null;
 }
 
 function findCurrentPrivacyConsent(openId) {
@@ -2032,6 +2046,9 @@ app.get("/api/privacy-consent", requireVisitor, (req, res) => {
   res.json({
     agreed: Boolean(consent),
     policyVersion: privacyPolicyVersion,
+    // The collection the user was shown when they accepted, so a caller can
+    // tell whether the stored agreement still covers what it is about to do.
+    collectionMode: consent?.collectionMode || null,
     acceptedAt: consent?.acceptedAt || null,
   });
 });
@@ -2043,11 +2060,13 @@ app.post("/api/privacy-consent", requireVisitor, (req, res) => {
     });
   }
 
+  const collectionMode = normalizeCollectionMode(req.body?.collectionMode);
   const existingConsent = findCurrentPrivacyConsent(req.user.openId);
   if (existingConsent) {
     return res.json({
       agreed: true,
       policyVersion: privacyPolicyVersion,
+      collectionMode: existingConsent.collectionMode || null,
       acceptedAt: existingConsent.acceptedAt,
     });
   }
@@ -2057,6 +2076,7 @@ app.post("/api/privacy-consent", requireVisitor, (req, res) => {
     openId: req.user.openId,
     userId: safeText(req.user.userId),
     policyVersion: privacyPolicyVersion,
+    collectionMode,
     privacyAgreed: true,
     sensitiveInfoAgreed: true,
     acceptedAt: new Date().toISOString(),
@@ -2065,6 +2085,7 @@ app.post("/api/privacy-consent", requireVisitor, (req, res) => {
   res.status(201).json({
     agreed: true,
     policyVersion: consent.policyVersion,
+    collectionMode: consent.collectionMode,
     acceptedAt: consent.acceptedAt,
   });
 });

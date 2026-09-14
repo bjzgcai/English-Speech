@@ -27,7 +27,7 @@ async function processOne() {
       const file = path.join(config.commentsMediaDir, image.filename);
       if (fs.existsSync(file)) content.push({ type: "image_url", image_url: { url: `data:image/webp;base64,${fs.readFileSync(file).toString("base64")}` } });
     }
-    const url = process.env.INTERNAL_LLM_CHAT_COMPLETIONS_URL || "https://llm.zgci.org/hub/v1/chat/completions";
+    const url = process.env.INTERNAL_LLM_CHAT_COMPLETIONS_URL || "https://api.example.com/v1/chat/completions";
     const response = await processing.modelFetch(url, { method: "POST", headers: { Authorization: `Bearer ${process.env.INTERNAL_LLM_API_KEY || ""}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: process.env.INTERNAL_LLM_MODERATION_MODEL || "glm", max_tokens: 1024, response_format: { type: "json_object" }, messages: [{ role: "system", content: 'Return JSON only: {"blocked":true|false}. Block violence, threats, hate, self-harm encouragement, sexual abuse, harmful instructions, and disallowed visual content.' }, { role: "user", content }] }) }, "question");
     const body = await response.json(); const verdict = JSON.parse((body?.choices?.[0]?.message?.content || "{}").match(/\{[\s\S]*\}/)?.[0] || "{}");
     if (verdict.blocked === true) appendJsonLine(config.commentsMetadataFile, { ...comment, moderationStatus: "blocked", blockedAt: new Date().toISOString() });

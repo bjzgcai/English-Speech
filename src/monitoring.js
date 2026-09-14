@@ -77,7 +77,7 @@ function rulesFor(sample, maintenance) {
   return rules;
 }
 
-function applySample(store, sample, { host = "production-host.example", adminUrl = "https://app.example.com/admin" } = {}) {
+function applySample(store, sample, { host = "production-host.example", adminUrl = "https://your-domain.example/admin" } = {}) {
   return store.transaction(() => {
     const previous = store.get("heartbeat");
     const maintenance = Number(store.get("maintenanceUntil") || 0) > sample.at;
