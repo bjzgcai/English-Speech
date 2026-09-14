@@ -16,6 +16,7 @@ const { securityHeaders } = require("./security");
 const { createQuestionService } = require("./questions");
 const { registerPageRoutes } = require("./routes/pages");
 const { createVisitorAccess, isGuest } = require("./visitor");
+const analytics = require("./analytics");
 const { buildMockPartnerUsers } = require("./mock-evaluations");
 const { buildAdminStatistics } = require("./admin-statistics");
 const { DingSender } = require("./ding-alerts");
@@ -55,8 +56,9 @@ const {
   consentsMetadataFile,
   ratingsMetadataFile,
   invitationsMetadataFile,
+  analyticsEventsFile,
 } = config;
-const ZGC_CORP_ID = "ding216d3a4e9fdd44cef5bf40eda33b7ba0";
+const ZGC_CORP_ID = "<DINGTALK_CORP_ID>";
 const MAX_OWNER_ATTEMPTS = 100;
 const MAX_OWNER_VIDEOS = 10;
 const INVITATION_NAME_MAX_LENGTH = 30;
@@ -559,6 +561,21 @@ const visitorAccess = createVisitorAccess({
 });
 // API services require DingTalk authentication or a redeemed invitation.
 const { requireAccess: requireVisitor } = visitorAccess;
+
+// Lightweight first-party analytics. Page views include anonymous visitors;
+// API and static-resource requests are intentionally excluded.
+app.use((req, res, next) => {
+  if (req.method === "GET" && analytics.pages.has(req.path)) {
+    try { analytics.track(analyticsEventsFile, req, res, "page_view", { page: req.path }); } catch { /* analytics must never block product traffic */ }
+  }
+  next();
+});
+app.post("/api/analytics/events", (req, res) => {
+  const allowed = new Set(["examine_enter", "examine_start", "examine_submit", "examine_complete", "examine_failed", "game_enter", "game_question", "game_submit", "game_complete", "game_failed", "privacy_accept", "invite_open", "invite_redeem_success", "invite_redeem_failed"]);
+  const items = Array.isArray(req.body?.events) ? req.body.events : [req.body];
+  try { items.slice(0, 20).forEach(item => { if (allowed.has(item?.event)) analytics.track(analyticsEventsFile, req, res, item.event, { page: String(item.page || req.path).slice(0, 100) }); }); } catch { /* best effort */ }
+  res.status(204).end();
+});
 
 function adminTokensMatch(receivedToken, configuredToken = process.env.ADMIN_ACCESS_TOKEN) {
   const received = safeText(receivedToken);
@@ -2319,6 +2336,7 @@ app.get("/api/admin/statistics", requireAuth, requireAdminAccess, (_req, res) =>
   });
   res.json({
     statistics,
+    analytics: analytics.daily(analytics.readEvents(analyticsEventsFile), new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date(Date.now() - 86400000))),
     ratings: listExperienceRatingsForAdmin(readJsonLines(ratingsMetadataFile)),
   });
 });
