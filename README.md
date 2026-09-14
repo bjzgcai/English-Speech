@@ -22,8 +22,8 @@ The app reads the internal OpenAI-compatible model gateway settings from `.env`:
 
 ```bash
 INTERNAL_LLM_API_KEY=...
-INTERNAL_LLM_CHAT_COMPLETIONS_URL=https://llm.zgci.org/hub/v1/chat/completions
-INTERNAL_LLM_TRANSCRIPTIONS_URL=https://llm.zgci.org/hub/v1/audio/transcriptions
+INTERNAL_LLM_CHAT_COMPLETIONS_URL=https://api.example.com/v1/chat/completions
+INTERNAL_LLM_TRANSCRIPTIONS_URL=https://api.example.com/v1/audio/transcriptions
 INTERNAL_LLM_QUESTION_MODEL=glm
 INTERNAL_LLM_TRANSCRIBE_MODEL=qwen-asr
 INTERNAL_LLM_EVAL_MODEL=qwen
@@ -343,7 +343,7 @@ transcript, and evaluation workflow above. The active rubric is:
 
 Generated questions are appended to `questions/metadata.jsonl` with the DingTalk OAuth `openId` and an organization user snapshot containing `userId`, `jobNumber`, `email`, and `orgEmail` when the organization contact API returns them. These fields are stored both at the record's top level and in its nested `user` object. Answer attempts are appended to `recordings/metadata.jsonl` with the same user fields plus the owned `questionId`. Attempts without a video are retained with `hasVideo: false` and a skipped evaluation; uploaded answer videos are stored in `recordings/` and use `hasVideo: true`.
 
-The JSONL files and the video/artifact directories live on the server filesystem, so they survive application restarts. Privacy acknowledgements are stored separately in `consents/metadata.jsonl` by DingTalk `openId` and policy version. Experience ratings are stored in `ratings/metadata.jsonl` with only the DingTalk user snapshot, 1–5 score, selected reason tags, outcome, and timestamp; they do not contain the user's question, answer, transcript, recording, or evaluation. The current per-user leaderboard alias and actual-name/alias choice are stored in `recordings/leaderboard-identities.jsonl`, so changing either updates all leaderboard views without rewriting answer records. In production, these records live in raw persistent directories under `/opt/englisheval/shared`. If the app will run on multiple instances, migrate these records to a shared database/object store rather than relying on instance-local files.
+The JSONL files and the video/artifact directories live on the server filesystem, so they survive application restarts. Privacy acknowledgements are stored separately in `consents/metadata.jsonl` by DingTalk `openId` and policy version. Experience ratings are stored in `ratings/metadata.jsonl` with only the DingTalk user snapshot, 1–5 score, selected reason tags, outcome, and timestamp; they do not contain the user's question, answer, transcript, recording, or evaluation. The current per-user leaderboard alias and actual-name/alias choice are stored in `recordings/leaderboard-identities.jsonl`, so changing either updates all leaderboard views without rewriting answer records. In production, these records live in raw persistent directories under `/srv/englisheval/shared`. If the app will run on multiple instances, migrate these records to a shared database/object store rather than relying on instance-local files.
 
 History and private video endpoints always filter by the effective DingTalk or guest ownership key. Guest videos are excluded from the public standalone gallery and its video/poster endpoints. The recordings directory is not publicly served. Application startup never deletes or migrates persistent records; any future migration must be run explicitly with a verified backup.
 
@@ -393,13 +393,13 @@ age-keygen -o englisheval-backup-identity.txt
 
 Keep that identity file offline and outside this repository. Copy only the
 printed public recipient into production's original
-`/opt/englisheval/shared/.env` as `BACKUP_AGE_RECIPIENT`. Never copy the identity
+`/srv/englisheval/shared/.env` as `BACKUP_AGE_RECIPIENT`. Never copy the identity
 file or a local `.env` to production.
 
 Production must have the `age` command installed. Deployment refuses to proceed
 without `age`, an explicit non-negative retention setting, and a native age recipient. The
 maintenance timer runs daily around 03:15 and writes encrypted snapshots to
-`/opt/englisheval/backups`. It never creates a plaintext archive.
+`/srv/englisheval/backups`. It never creates a plaintext archive.
 
 To test recovery, restore into a new empty staging directory rather than over
 the live persistent data:
@@ -415,7 +415,7 @@ Verify the restored metadata and videos before considering any manual recovery.
 The restore script deliberately refuses to write into a non-empty directory.
 
 Live recordings are stored as raw files in
-`/opt/englisheval/shared/recordings`. They are protected by service-account
+`/srv/englisheval/shared/recordings`. They are protected by service-account
 ownership and restrictive filesystem permissions, but they are not encrypted
 at rest. The encrypted backup archives remain the recovery mechanism for this
 directory.
@@ -442,7 +442,10 @@ For later code-only deployments:
 ./deploy.sh
 ```
 
-Defaults target `ubuntu@10.1.130.9` and installs under `/opt/englisheval`.
+The deployment script (`deploy.sh`), server configuration (`ops/`), and
+production validation scripts are private local files excluded from Git.
+Obtain them from your deployment administrator before using the commands above.
+Deployment destinations and paths are configured in those local files.
 The production `APP_BASE_URL` is read from the existing shared `.env.prod`.
 Plain HTTP deployments must set `COOKIE_SECURE=false`; HTTPS deployments should
 set it to `true`. Override `TARGET`, `REMOTE_ROOT`, `APP_PORT`, or

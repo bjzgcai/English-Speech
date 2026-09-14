@@ -60,7 +60,7 @@ const useCameraInput = document.querySelector("#useCamera");
 const audioOnlyHint = document.querySelector("#audioOnlyHint");
 const previewLabel = document.querySelector("#previewLabel");
 try { state.useCamera = localStorage.getItem("oscanner-use-camera") !== "false"; if (useCameraInput) useCameraInput.checked = state.useCamera; if (audioOnlyHint) audioOnlyHint.hidden = state.useCamera; } catch {}
-useCameraInput?.addEventListener("change", () => { state.useCamera = useCameraInput.checked; try { localStorage.setItem("oscanner-use-camera", String(state.useCamera)); } catch {} if (audioOnlyHint) audioOnlyHint.hidden = state.useCamera; if (previewLabel) previewLabel.textContent = state.useCamera ? "Camera preview" : "Audio recording"; if (preparePreviewWrap) preparePreviewWrap.hidden = !state.useCamera; if (videoFrame) videoFrame.hidden = !state.useCamera; prepareDialog?.classList.toggle("audio-only", !state.useCamera); });
+useCameraInput?.addEventListener("change", () => { state.useCamera = useCameraInput.checked; try { localStorage.setItem("oscanner-use-camera", String(state.useCamera)); } catch {} if (audioOnlyHint) audioOnlyHint.hidden = state.useCamera; if (previewLabel) previewLabel.textContent = state.useCamera ? "Camera preview" : "Audio recording"; if (preparePreviewWrap) preparePreviewWrap.hidden = !state.useCamera; if (videoFrame) videoFrame.hidden = !state.useCamera; prepareDialog?.classList.toggle("audio-only", !state.useCamera); updatePrivacyConsentCopy(); });
 const finishButton = document.querySelector("#finishButton");
 const discardButton = document.querySelector("#discardButton");
 const controlRow = document.querySelector(".recorder-actions");
@@ -139,6 +139,9 @@ const deviceStatus = document.querySelector("#deviceStatus");
 const privacyConsentModal = document.querySelector("#privacyConsentModal");
 const privacyPolicyAgree = document.querySelector("#privacyPolicyAgree");
 const sensitiveInfoAgree = document.querySelector("#sensitiveInfoAgree");
+const privacyConsentSummary = document.querySelector("#privacyConsentSummary");
+const privacyConsentHighlight = document.querySelector("#privacyConsentHighlight");
+const sensitiveInfoText = document.querySelector("#sensitiveInfoText");
 const privacyConsentError = document.querySelector("#privacyConsentError");
 const declinePrivacyButton = document.querySelector("#declinePrivacyButton");
 const acceptPrivacyButton = document.querySelector("#acceptPrivacyButton");
@@ -277,6 +280,42 @@ async function submitExperienceRating(outcome) {
   }
 }
 
+// The consent gate has to describe the collection that is actually about to
+// happen: in audio-only mode no video is captured, so no frame is sampled and
+// no facial image is processed. Asking for consent to video there would be
+// broader than what we do — keep each variant in step with the recorder.
+const PRIVACY_CONSENT_COPY = {
+  camera: {
+    summary:
+      "为生成题目、录制回答并完成英语口语评估，我们需要处理您的候选人资料、摄像头视频、麦克风音频，以及由此生成的转写文本、抽帧画面和评分结果。",
+    highlight:
+      "音视频可能包含您的声音、面部形象和周围环境，泄露或不当使用可能对您的个人权益产生影响。相关内容将由内部部署的模型服务完成题目生成、转写与评估；具体处理方式和保存规则请查看完整政策。",
+    consent:
+      "我单独同意为英语评估处理我的音频、视频及其中的声音和面部画面，并由内部部署的模型服务完成转写与评估。",
+  },
+  audio: {
+    summary:
+      "为生成题目、录制回答并完成英语口语评估，我们需要处理您的候选人资料、麦克风音频，以及由此生成的转写文本和评分结果。",
+    highlight:
+      "音频可能包含您的声音和周围环境，泄露或不当使用可能对您的个人权益产生影响。相关内容将由内部部署的模型服务完成题目生成、转写与评估；具体处理方式和保存规则请查看完整政策。",
+    consent:
+      "我单独同意为英语评估处理我的音频及其中的声音，并由内部部署的模型服务完成转写与评估。",
+  },
+};
+
+function updatePrivacyConsentCopy() {
+  const copy = state.useCamera ? PRIVACY_CONSENT_COPY.camera : PRIVACY_CONSENT_COPY.audio;
+  if (privacyConsentSummary) privacyConsentSummary.textContent = copy.summary;
+  if (privacyConsentHighlight) privacyConsentHighlight.textContent = copy.highlight;
+  if (sensitiveInfoText) sensitiveInfoText.textContent = copy.consent;
+}
+
+// Paint the copy on load too, so the DOM already matches the persisted mode;
+// requestPrivacyConsent() refreshes it again right before the gate is revealed.
+// (Must sit after `PRIVACY_CONSENT_COPY` — calling it earlier throws a TDZ
+// ReferenceError that aborts the rest of this script.)
+updatePrivacyConsentCopy();
+
 function updatePrivacyAcceptButton() {
   acceptPrivacyButton.disabled = !(privacyPolicyAgree.checked && sensitiveInfoAgree.checked);
 }
@@ -298,6 +337,7 @@ function requestPrivacyConsent() {
   privacyPolicyAgree.checked = true;
   sensitiveInfoAgree.checked = true;
   updatePrivacyAcceptButton();
+  updatePrivacyConsentCopy();
   privacyConsentError.hidden = true;
   privacyConsentError.textContent = "";
   privacyConsentModal.hidden = false;
@@ -1807,6 +1847,8 @@ async function finishRecording() {
   try {
     const data = await window.EvaluationQueue.submit(formData, {
       owner: recordingOwner,
+      // Tells the queue's consent gate which collection this answer really is.
+      collection: state.useCamera ? "camera" : "audio",
       signal: state.saveAbortController.signal,
       onAccepted: () => {
         state.activeSaveId = null;
@@ -2027,7 +2069,13 @@ acceptPrivacyButton.addEventListener("click", async () => {
     const response = await window.VisitorSession.fetch("/api/privacy-consent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ privacyAgreed: true, sensitiveInfoAgreed: true }),
+      // Recorded so the consent trail shows which copy was on screen at the
+      // moment of acceptance — the gate's wording follows the camera toggle.
+      body: JSON.stringify({
+        privacyAgreed: true,
+        sensitiveInfoAgreed: true,
+        collectionMode: state.useCamera ? "camera" : "audio",
+      }),
     });
     const data = await response.json();
     if (!response.ok || data.agreed !== true) {

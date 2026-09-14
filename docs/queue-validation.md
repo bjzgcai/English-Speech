@@ -2,7 +2,7 @@
 
 ## Server and Limits
 
-Validated on `10.1.130.9`: two AMD EPYC virtual CPU cores, 3.7 GiB RAM,
+Validated on `production-host.example`: two AMD EPYC virtual CPU cores, 3.7 GiB RAM,
 approximately 2.2 GiB available RAM, and approximately 65 GiB free disk before
 testing. Other applications share this server. Tests used temporary directories,
 synthetic identities, isolated web/worker processes, and systemd resource limits.
@@ -79,7 +79,7 @@ Nightly encrypted maintenance stops and restarts both services, and includes the
 queue, its WAL files, and pending originals. Existing recording retention remains
 disabled unless the production environment explicitly enables it.
 
-Production activation completed at `https://eng.lab.bza.edu.cn` using release
+Production activation completed at `https://your-domain.example` using release
 `20260907T091851Z-cca2577`. Admissions are enabled and both services are healthy.
 The tested queue-compatible rollback release is `20260907T091618Z-cca2577`.
 Production encrypted maintenance succeeded both before deployment and with the

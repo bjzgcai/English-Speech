@@ -2,11 +2,11 @@
 
 ## Production safety
 
-- `10.1.130.9` is the production server.
-- Production runs from `/opt/englisheval` and uses the original production environment stored in `/opt/englisheval/shared/.env`.
+- Production deployment details are maintained outside this public repository.
+- Obtain production paths and environment locations from the private local deployment configuration. Preserve the original production environment.
 - Never copy `.env.local` or local DingTalk credentials to production.
 - Treat `recordings/` and `questions/` as persistent user data. Do not delete, replace, or migrate them unless the user explicitly requests it.
-- Review `deploy.sh` before deployment. Its default SSH target is `ubuntu@10.1.130.9` and its default public URL is `http://10.1.130.9:3199`.
+- Review the private local `deploy.sh` before deployment. Deployment scripts and `ops/` are excluded from Git; keep server-specific details there.
 
 ## Local development
 

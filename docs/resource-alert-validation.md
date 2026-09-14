@@ -4,8 +4,8 @@ Verified on 2026-09-07, Asia/Shanghai.
 
 ## Deployment
 
-- Production host: `10.1.130.9`.
-- Active release: `/opt/englisheval/releases/20260907T095732Z-local`.
+- Production host: `production-host.example`.
+- Active release: `/srv/englisheval/releases/20260907T095732Z-local`.
 - Source package: `/tmp/englisheval-alert-release.ioME3A` on the development Mac.
 - The package was built from production release `20260907T091851Z-cca2577`,
   adding only monitoring changes. Concurrent guest-login changes in the shared
@@ -66,7 +66,7 @@ were inactive, the monitor remained active. Services restarted automatically,
 the maintenance marker cleared, and no DING was generated for planned downtime.
 
 Production backup:
-`/opt/englisheval/backups/recordings-20260907T095803Z.tar.gz.age`
+`/srv/englisheval/backups/recordings-20260907T095803Z.tar.gz.age`
 
 The encrypted archive checksum passed. The real production archive was not
 decrypted on the production server; its private age identity stays offline.

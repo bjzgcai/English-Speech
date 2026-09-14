@@ -3,7 +3,7 @@
 ## Live storage
 
 Production stores recordings as raw files under
-`/opt/englisheval/shared/recordings`. The directory persists across versioned
+`/srv/englisheval/shared/recordings`. The directory persists across versioned
 deployments and application restarts.
 
 The production service uses a `0077` umask. Persistent directories use mode

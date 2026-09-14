@@ -14,7 +14,7 @@
  * the DOM instead of signing in. Everything it checks is pure CSS layout.
  *
  * Usage:
- *   AUDIT_BASE_URL=http://10.1.130.9:3199 node scripts/layout-overflow-audit.js
+ *   AUDIT_BASE_URL=http://localhost:3199 node scripts/layout-overflow-audit.js
  *   node scripts/layout-overflow-audit.js                 # localhost:3199
  *
  * Exits non-zero when anything overflows, so it can gate a release.

@@ -512,7 +512,7 @@ test("sends evaluations through the internal gateway with Qwen, frames, and JSON
   });
 
   const body = JSON.parse(capturedOptions.body);
-  assert.equal(capturedUrl, "https://llm.zgci.org/hub/v1/chat/completions");
+  assert.equal(capturedUrl, "https://api.example.com/v1/chat/completions");
   assert.equal(capturedOptions.headers.Authorization, "Bearer test-internal-key");
   assert.equal(capturedOptions.headers["X-OpenRouter-Title"], undefined);
   assert.equal(body.model, "qwen");

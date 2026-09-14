@@ -21,7 +21,7 @@ async function tick() {
   try {
     const sample = await collector.sample(store.get("sample"));
     store.set("notificationsEnabled", process.env.DINGTALK_ALERTS_ENABLED === "true");
-    applySample(store, sample, { host: process.env.MONITOR_HOST || "10.1.130.9", adminUrl: `${process.env.APP_BASE_URL || "http://10.1.130.9:3199"}/admin` });
+    applySample(store, sample, { host: process.env.MONITOR_HOST || "production-host.example", adminUrl: `${process.env.APP_BASE_URL || "http://localhost:3199"}/admin` });
     if (!delivering && process.env.DINGTALK_ALERTS_ENABLED === "true") {
       delivering = true;
       deliverPending(store, sender).catch(() => console.error("Alert delivery state failure")).finally(() => { delivering = false; finish(); });

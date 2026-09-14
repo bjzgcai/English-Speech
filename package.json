@@ -9,7 +9,8 @@
     "worker": "node worker.js",
     "test": "node --test test/*.test.js",
     "test:browser": "node scripts/full-browser-check.js",
-    "test:game-modal": "node scripts/game-modal-check.js"
+    "test:game-modal": "node scripts/game-modal-check.js",
+    "test:queue-consent": "node scripts/queue-consent-check.js"
   },
   "keywords": [],
   "author": "",

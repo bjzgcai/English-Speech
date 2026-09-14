@@ -23,7 +23,7 @@ remains an indirect inference; this change does not add acoustic scoring.
 
 ## Production-Host Performance
 
-Tests ran on `10.1.130.9` in `/opt/englisheval-validation-20260908`, with isolated
+Tests ran on `production-host.example` in `/tmp/englisheval-validation`, with isolated
 temporary datasets, synthetic identities, and synthetic media. The test process
 group was limited to one CPU and 1400 MiB. Live application health, available
 memory, disk space, and live queued work were checked throughout guarded runs.
@@ -86,10 +86,10 @@ health stayed ready. Report: `/tmp/englisheval-load-DiHb6J/report.json`.
 Reproduce on the production host from the validated candidate:
 
 ```sh
-TEST_ROOT=/opt/englisheval-validation-20260908 \
-  bash /opt/englisheval-validation-20260908/scripts/production-load-check.sh \
+TEST_ROOT=/tmp/englisheval-validation \
+  bash /tmp/englisheval-validation/scripts/production-load-check.sh \
   --users=50 --arrivals=100 --duration=120 \
-  --fixture=/opt/englisheval-validation-20260908/spoken-fixture.mp4 \
+  --fixture=/tmp/englisheval-validation/spoken-fixture.mp4 \
   --ffmpeg-concurrency=1 --restart --repeat-json --timeout=1800 --keep-data
 ```
 
@@ -135,7 +135,7 @@ Read current live aggregates without modifying the database:
 
 ```sh
 node scripts/stage-report.js \
-  --database=/opt/englisheval/shared/recordings/queue.sqlite --hours=168
+  --database=/srv/englisheval/shared/recordings/queue.sqlite --hours=168
 ```
 
 ## Functional Verification
@@ -179,7 +179,7 @@ node scripts/full-browser-check.js --full-duration
 node scripts/browser-check.js
 node scripts/guest-browser-check.js
 node scripts/monitor-browser-check.js
-node scripts/production-smoke.js --base=https://eng.lab.bza.edu.cn
+node scripts/production-smoke.js --base=https://your-domain.example
 ```
 
 ## Defects Fixed During Validation
@@ -203,8 +203,8 @@ node scripts/production-smoke.js --base=https://eng.lab.bza.edu.cn
 
 ## Deployment and Final Checks
 
-Deployed to `https://eng.lab.bza.edu.cn` as release
-`/opt/englisheval/releases/20260908T022042Z-4a4f01a`. The package includes the
+Deployed to `https://your-domain.example` as release
+`/srv/englisheval/releases/20260908T022042Z-4a4f01a`. The package includes the
 validated working-tree changes; the hash suffix identifies its base commit.
 The previous release was `20260907T143438Z-4a4f01a`.
 

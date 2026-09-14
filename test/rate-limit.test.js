@@ -72,13 +72,13 @@ test('only a loopback peer may supply the client address', () => {
   assert.equal(clientIp(request('::ffff:127.0.0.1')), '203.0.113.5');
   assert.equal(clientIp(request('::1')), '203.0.113.5');
   // A direct caller cannot spoof its way around the throttle with headers.
-  assert.equal(clientIp(request('10.1.130.9')), '10.1.130.9');
+  assert.equal(clientIp(request('production-host.example')), 'production-host.example');
   assert.equal(clientIp(request('203.0.113.9')), '203.0.113.9');
   assert.equal(clientIp({ socket: {} }), 'unknown');
   assert.equal(isLoopback('::1'), true);
   assert.equal(isLoopback('::ffff:127.0.0.1'), true);
   assert.equal(isLoopback('127.0.0.1'), true);
-  assert.equal(isLoopback('10.1.130.9'), false);
+  assert.equal(isLoopback('production-host.example'), false);
   assert.equal(isLoopback(''), false);
 });
 

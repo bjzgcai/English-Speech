@@ -41,7 +41,7 @@ active counts and cooldowns; the admin page displays these alongside queue timin
 
 ## Edge traffic
 
-`ops/nginx-englisheval.conf` manages only `eng.lab.bza.edu.cn`. Node binds to
+`ops/nginx-englisheval.conf` manages only `your-domain.example`. Node binds to
 loopback through the production systemd unit. Port 3199 is consequently unavailable
 remotely, even with an old firewall allow rule. The public entry point is HTTPS.
 Do not override `HOST` in the production environment to a public address.

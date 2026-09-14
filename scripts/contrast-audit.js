@@ -14,7 +14,7 @@
  * Usage:
  *   node scripts/contrast-audit.js              # resting state, Eng + 中
  *   node scripts/contrast-audit.js --states     # + hover, focus and 390px
- *   AUDIT_BASE_URL=http://10.1.130.9:3199 node scripts/contrast-audit.js
+ *   AUDIT_BASE_URL=http://localhost:3199 node scripts/contrast-audit.js
  *
  * Exits non-zero when anything fails, so it can gate a release.
  */

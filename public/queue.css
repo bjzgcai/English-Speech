@@ -6,7 +6,107 @@
 .queue-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .queue-actions button { min-height: 40px; padding: 8px 12px; background: #fff; color: #25373c; border: 1px solid #aab9bc; border-radius: 4px; font: inherit; font-size: 14px; cursor: pointer; }
 @media (max-width: 600px) { .queue-progress { grid-template-columns: minmax(0, 1fr); } }
-.queue-consent { width: min(500px, calc(100% - 32px)); padding: 24px; border: 1px solid #aab9bc; border-radius: 8px; color: #25373c; }
-.queue-consent::backdrop { background: rgb(0 0 0 / 45%); }
-.queue-consent h2 { font-size: 22px; }
-.queue-consent label { display: block; margin: 16px 0; line-height: 1.5; }
+/* ---- Consent dialog (second surface, see queue-client.js) -----------------
+   This <dialog> is appended to <body>, i.e. outside the .workspace grid, so
+   nothing here may rely on page layout. On /game and /examine styles.css also
+   applies its form baseline to it — `label { display: grid }` plus
+   `input { width: 100%; border: 2px solid #dcd9ed; border-radius: 14px;
+   padding: 14px }` — which painted every checkbox as a full-width rounded text
+   field and pushed its caption onto the next line: an empty box floating above
+   each sentence. The resets below are load-bearing, not decoration. Anything
+   added here must keep the checkbox at its native 18px. */
+.queue-consent {
+  width: min(520px, calc(100% - 32px));
+  /* A centred dialog must own a height cap or it clips unreachably. */
+  max-height: min(760px, calc(100dvh - 24px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: auto;
+  padding: clamp(22px, 4vw, 32px);
+  border: 2px solid var(--line, #dedcf0);
+  border-radius: var(--radius-large, 30px);
+  background: var(--panel, #fff);
+  color: var(--ink, #24243f);
+  box-shadow: 0 8px 0 #dcd7f4, 0 30px 80px rgba(26, 23, 60, 0.3);
+}
+.queue-consent::backdrop { background: rgb(26 23 60 / 52%); }
+.queue-consent h2 { margin: 0; font-size: clamp(22px, 4.4vw, 28px); line-height: 1.15; }
+.queue-consent p { margin: 12px 0 0; color: var(--muted, #686984); font-size: 14px; line-height: 1.6; }
+
+/* One acknowledgement per row: 20px checkbox column + caption, mirroring
+   `.consent-check` in the prepare-dialog gate. */
+.queue-consent label {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin: 18px 0 0;
+  padding: 13px 0 0;
+  border-top: 1px solid var(--line, #dedcf0);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.55;
+}
+
+/* Undo the global text-input look: width, border, radius, padding, background. */
+.queue-consent input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-width: 0;
+  margin: 2px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  accent-color: var(--accent, #6558e8);
+  cursor: pointer;
+}
+.queue-consent input[type="checkbox"]:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent, #6558e8) 35%, transparent);
+  outline-offset: 2px;
+}
+
+/* auto-fit so the pair sits side by side while there is room and stacks on a
+   phone. The 200px floor is what keeps "Accept and continue" from wrapping: a
+   narrower column would break it onto a second line. */
+.queue-consent .queue-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: 10px;
+  margin-top: 24px;
+}
+.queue-consent .queue-actions button {
+  min-height: 46px;
+  border: 2px solid transparent;
+  border-radius: 14px;
+  padding: 0 16px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+/* Cancel is the quiet action, accept is the screen's primary one. Keyed off
+   [value] rather than source order so a reordered pair stays correct. */
+.queue-consent .queue-actions button[value="cancel"] {
+  border-color: var(--line, #dedcf0);
+  background: #fff;
+  color: var(--ink, #24243f);
+}
+.queue-consent .queue-actions button[value="cancel"]:hover { background: var(--soft, #efedff); }
+.queue-consent .queue-actions button[value="accept"] {
+  border-color: var(--accent-dark, #473bb7);
+  background: var(--accent, #6558e8);
+  box-shadow: 0 5px 0 var(--accent-dark, #473bb7);
+  color: #fff;
+}
+.queue-consent .queue-actions button[value="accept"]:hover { background: #6a5de8; }
+/* Muted fill + readable label, never `opacity` (white on a dimmed --accent
+   cannot reach AA). Same treatment as the page's other disabled buttons. */
+.queue-consent .queue-actions button:disabled {
+  border-color: #cfcbe8;
+  background: #e7e5f5;
+  box-shadow: none;
+  color: #55536d;
+  cursor: not-allowed;
+}

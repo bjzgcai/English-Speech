@@ -23,7 +23,7 @@ ELEVATOR_OUTPUT = POSTER_OUTPUT / "weekly-game-elevator-1080x1920.png"
 PRINT_PNG = POSTER_OUTPUT / "weekly-game-print-790x590mm-300dpi.png"
 PRINT_PDF = PDF_OUTPUT / "weekly-game-print-790x590mm.pdf"
 
-GAME_URL = "http://10.1.130.9:3199/game"
+GAME_URL = "http://localhost:3199/game"
 
 PURPLE = "#6558E8"
 PURPLE_DARK = "#473BB7"
@@ -455,7 +455,7 @@ def draw_print_master() -> Image.Image:
     )
     draw.text(
         (round(2050 * scale), round(5500 * scale)),
-        "http://10.1.130.9:3199/game",
+        "http://localhost:3199/game",
         font=font_latin(round(76 * scale), "demi"),
         fill=WHITE,
     )
