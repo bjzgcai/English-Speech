@@ -19,3 +19,9 @@ npm-debug.log*
 
 # Generated artifacts: verification screenshots, posters, print PDFs, plan exports.
 output/
+
+# Private deployment tooling and server-specific configuration (local only).
+/deploy.sh
+/ops/
+/scripts/production-load-check.sh
+/scripts/production-smoke.js
