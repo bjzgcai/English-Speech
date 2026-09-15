@@ -11,7 +11,7 @@ function isGuest(user) {
 
 function createVisitorAccess({ readSession, parseCookies, useSecureSessionCookie, guestName = () => "" }) {
   const signature = payload => {
-    const secret = process.env.SESSION_SECRET || process.env.DINGTALK_APP_SECRET;
+    const secret = process.env.SESSION_SECRET || process.env.DINGTALK_CLIENT_SECRET;
     if (!secret) throw new Error("SESSION_SECRET is required when DingTalk credentials are absent.");
     return crypto.createHmac("sha256", secret).update(`guest\0${payload}`).digest("base64url");
   };

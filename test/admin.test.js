@@ -4,8 +4,8 @@ const test = require("node:test");
 
 process.env.NODE_ENV = "test";
 process.env.SESSION_SECRET = "admin-test-session-secret";
-process.env.DINGTALK_APP_KEY = "admin-test-app-key";
-process.env.DINGTALK_APP_SECRET = "admin-test-app-secret";
+process.env.DINGTALK_CLIENT_ID = "admin-test-app-key";
+process.env.DINGTALK_CLIENT_SECRET = "admin-test-app-secret";
 process.env.ADMIN_ACCESS_TOKEN = "admin-test-access-token-with-sufficient-entropy";
 
 const { buildAdminStatistics } = require("../src/admin-statistics");

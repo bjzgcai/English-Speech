@@ -28,8 +28,8 @@ Object.assign(process.env, {
   QUEUE_ENABLED: 'false',
   SESSION_SECRET: 'queue-consent-secret',
   COOKIE_SECURE: 'false',
-  DINGTALK_APP_KEY: 'test',
-  DINGTALK_APP_SECRET: 'test',
+  DINGTALK_CLIENT_ID: 'test',
+  DINGTALK_CLIENT_SECRET: 'test',
   DINGTALK_CORP_ID: 'test',
   APP_BASE_URL: '',
 });

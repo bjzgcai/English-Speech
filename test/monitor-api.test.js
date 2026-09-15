@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const data = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-monitor-api-"));
 Object.assign(process.env, { NODE_ENV: "test", DATA_DIR: data, QUEUE_ENABLED: "true", SESSION_SECRET: "monitor-test-session",
-  DINGTALK_APP_KEY: "synthetic-app", DINGTALK_APP_SECRET: "synthetic-secret", ADMIN_ACCESS_TOKEN: "synthetic-admin-token" });
+  DINGTALK_CLIENT_ID: "synthetic-app", DINGTALK_CLIENT_SECRET: "synthetic-secret", ADMIN_ACCESS_TOKEN: "synthetic-admin-token" });
 const { app, testHelpers } = require("../src/app");
 const { AlertStore, monitorFile } = require("../src/monitoring");
 test("monitor metrics require both DingTalk authentication and administrator token", async t => {

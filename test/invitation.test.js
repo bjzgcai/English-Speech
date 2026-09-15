@@ -9,7 +9,7 @@ const data = fs.mkdtempSync(path.join(os.tmpdir(), 'invitation-test-'));
 // The redeem throttle budgets are widened here: these tests exercise claim
 // semantics from a single address and would otherwise trip the limiter
 // mid-suite. test/invitation-throttle.test.js covers the limiter itself.
-Object.assign(process.env, { NODE_ENV: 'test', DATA_DIR: data, QUEUE_ENABLED: 'false', DINGTALK_APP_KEY: 'test', DINGTALK_APP_SECRET: 'test', DINGTALK_CORP_ID: 'test', SESSION_SECRET: 'invitation-test-secret', COOKIE_SECURE: 'false', APP_BASE_URL: 'https://english.example.test/service/', INVITATION_REDEEM_IP_LIMIT: '10000', INVITATION_REDEEM_NAME_LIMIT: '10000' });
+Object.assign(process.env, { NODE_ENV: 'test', DATA_DIR: data, QUEUE_ENABLED: 'false', DINGTALK_CLIENT_ID: 'test', DINGTALK_CLIENT_SECRET: 'test', DINGTALK_CORP_ID: 'test', SESSION_SECRET: 'invitation-test-secret', COOKIE_SECURE: 'false', APP_BASE_URL: 'https://english.example.test/service/', INVITATION_REDEEM_IP_LIMIT: '10000', INVITATION_REDEEM_NAME_LIMIT: '10000' });
 const { app, testHelpers } = require('../src/app');
 const { invitationsMetadataFile } = require('../src/config');
 const { readJsonLines } = require('../src/storage');

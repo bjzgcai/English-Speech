@@ -15,7 +15,7 @@ async function main() {
   const base = `http://127.0.0.1:${port}`;
   const service = spawn("npm", ["run", "dev"], {
     detached: true, stdio: "ignore",
-    env: { ...process.env, NODE_ENV: "test", DATA_DIR: data, PORT: String(port), SESSION_SECRET: "access-browser-test", DINGTALK_APP_KEY: "", DINGTALK_APP_SECRET: "", DINGTALK_CORP_ID: "", COOKIE_SECURE: "false", QUEUE_ENABLED: "false" },
+    env: { ...process.env, NODE_ENV: "test", DATA_DIR: data, PORT: String(port), SESSION_SECRET: "access-browser-test", DINGTALK_CLIENT_ID: "", DINGTALK_CLIENT_SECRET: "", DINGTALK_CORP_ID: "", COOKIE_SECURE: "false", QUEUE_ENABLED: "false" },
   });
   let browser;
   const issue = () => {

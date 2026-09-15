@@ -30,7 +30,7 @@ async function main() {
   const port = probe.address().port;
   await new Promise(resolve => probe.close(resolve));
   const base = `http://127.0.0.1:${port}`;
-  const env = { ...process.env, NODE_ENV: "test", DATA_DIR: data, PORT: String(port), SESSION_SECRET: "mobile-browser-test", DINGTALK_APP_KEY: "", DINGTALK_APP_SECRET: "", DINGTALK_CORP_ID: "", COOKIE_SECURE: "false", QUEUE_ENABLED: "true", QUEUE_START_PAUSED: "false", INTERNAL_LLM_API_KEY: "test", OPENROUTER_API_KEY: "test", INTERNAL_LLM_CHAT_COMPLETIONS_URL: `${upstreamUrl}/question`, INTERNAL_LLM_TRANSCRIPTIONS_URL: `${upstreamUrl}/asr`, OPENROUTER_CHAT_COMPLETIONS_URL: `${upstreamUrl}/score`, NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${path.join(__dirname, "../test/fixtures/guest-browser-runtime.cjs")}` };
+  const env = { ...process.env, NODE_ENV: "test", DATA_DIR: data, PORT: String(port), SESSION_SECRET: "mobile-browser-test", DINGTALK_CLIENT_ID: "", DINGTALK_CLIENT_SECRET: "", DINGTALK_CORP_ID: "", COOKIE_SECURE: "false", QUEUE_ENABLED: "true", QUEUE_START_PAUSED: "false", INTERNAL_LLM_API_KEY: "test", OPENROUTER_API_KEY: "test", INTERNAL_LLM_CHAT_COMPLETIONS_URL: `${upstreamUrl}/question`, INTERNAL_LLM_TRANSCRIPTIONS_URL: `${upstreamUrl}/asr`, OPENROUTER_CHAT_COMPLETIONS_URL: `${upstreamUrl}/score`, NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${path.join(__dirname, "../test/fixtures/guest-browser-runtime.cjs")}` };
   const service = spawn("npm", ["run", "dev"], { cwd: path.resolve(__dirname, ".."), env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
   let diagnostics = "";
   service.stdout.on("data", value => { diagnostics = (diagnostics + value).slice(-4000); });

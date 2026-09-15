@@ -55,4 +55,38 @@ function daily(events, date) {
     dataIntegrity: events.length > 0 ? "ok" : "missing",
   };
 }
-module.exports = { cookieName, pages, track, daily, localDay, previousDay, readEvents: readJsonLines };
+// Evaluations that actually finished, attributed to the page that ran them.
+// /game and /examine record and save through the same pipeline, so the page is
+// not on the saved answer: the recorded question carries `challengeId` only for
+// the weekly game topic, and that marker is what separates the two. Every other
+// saved answer is an examine run.
+const EVALUATION_PAGES = ["/game", "/examine"];
+const evaluationPage = record => (record?.question?.challengeId ? "/game" : "/examine");
+
+// A saved answer counts once its evaluation reached `completed`. A run that
+// ended in `failed` or `skipped` did not finish an evaluation, and a missing
+// `finishedAt` cannot be attributed to a day at all. `people` counts distinct
+// owners, so someone who answers three times counts once.
+function evaluations(records, date) {
+  const buckets = new Map(EVALUATION_PAGES.map(page => [page, { count: 0, owners: new Set() }]));
+  const owners = new Set();
+  records.forEach(record => {
+    if (record?.evaluation?.status !== "completed" || localDay(record.finishedAt) !== date) return;
+    const bucket = buckets.get(evaluationPage(record));
+    bucket.count += 1;
+    if (record.openId) {
+      bucket.owners.add(record.openId);
+      owners.add(record.openId);
+    }
+  });
+  return {
+    pages: Object.fromEntries(EVALUATION_PAGES.map(page => [page, { count: buckets.get(page).count, people: buckets.get(page).owners.size }])),
+    count: EVALUATION_PAGES.reduce((sum, page) => sum + buckets.get(page).count, 0),
+    people: owners.size,
+    // The file is created on boot, so an empty read means the collector never
+    // wrote — not that nobody answered.
+    dataIntegrity: records.length > 0 ? "ok" : "missing",
+  };
+}
+
+module.exports = { cookieName, pages, track, daily, evaluations, EVALUATION_PAGES, localDay, previousDay, readEvents: readJsonLines };

@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { daily, localDay, previousDay } = require("../src/analytics");
+const { daily, evaluations, localDay, previousDay } = require("../src/analytics");
 const { buildDigest, MAX_CONTENT_CHARS } = require("../src/daily-digest");
 
 const event = (ts, name, visitorId, page) => ({ ts, event: name, visitorId, page });
@@ -96,4 +96,83 @@ test("a busy day degrades within the DING character budget", () => {
   // The headline figures survive degradation; the tail is what gets folded away.
   assert.match(content, /页面浏览 PV：120/);
   assert.match(content, /其余 \d+ 个页面合计 \d+/);
+});
+
+// The saved answer does not carry the page; only the weekly game records a
+// `challengeId` on its question, so that marker is the whole attribution rule.
+const answer = (finishedAt, { openId = "u1", status = "completed", challengeId = "" } = {}) => ({
+  finishedAt,
+  openId,
+  evaluation: { status },
+  question: challengeId ? { challengeId, challengeTitle: "Sharing household chores" } : { question: "Tell me about your week." },
+});
+
+test("evaluations() splits the weekly game from examine runs", () => {
+  const summary = evaluations([
+    answer("2026-09-13T02:00:00Z", { openId: "u1", challengeId: "weekly-1" }),
+    answer("2026-09-13T03:00:00Z", { openId: "u2", challengeId: "weekly-1" }),
+    answer("2026-09-13T04:00:00Z", { openId: "u1" }),
+    answer("2026-09-12T04:00:00Z", { openId: "u9", challengeId: "weekly-1" }), // previous local day
+  ], "2026-09-13");
+  assert.deepEqual(summary.pages["/game"], { count: 2, people: 2 });
+  assert.deepEqual(summary.pages["/examine"], { count: 1, people: 1 });
+  assert.equal(summary.count, 3);
+  assert.equal(summary.dataIntegrity, "ok");
+});
+
+test("evaluations() counts people once and ignores runs that never finished", () => {
+  const summary = evaluations([
+    answer("2026-09-13T02:00:00Z", { openId: "u1", challengeId: "weekly-1" }),
+    answer("2026-09-13T03:00:00Z", { openId: "u1", challengeId: "weekly-1" }),
+    answer("2026-09-13T04:00:00Z", { openId: "u1", challengeId: "weekly-1" }),
+    answer("2026-09-13T05:00:00Z", { openId: "u2", status: "failed", challengeId: "weekly-1" }),
+    answer("2026-09-13T06:00:00Z", { openId: "u3", status: "skipped" }),
+    answer("", { openId: "u4", challengeId: "weekly-1" }), // no timestamp -> no day
+  ], "2026-09-13");
+  assert.deepEqual(summary.pages["/game"], { count: 3, people: 1 });
+  assert.deepEqual(summary.pages["/examine"], { count: 0, people: 0 });
+  assert.equal(summary.count, 3);
+  assert.equal(summary.people, 1);
+});
+
+test("an empty recordings file is flagged rather than reported as a quiet day", () => {
+  const summary = evaluations([], "2026-09-13");
+  assert.equal(summary.dataIntegrity, "missing");
+  assert.equal(summary.count, 0);
+});
+
+test("the digest reports finished evaluations per page, in times and in people", () => {
+  const summary = daily([
+    pageView("2026-09-13T02:00:00Z", "a", "/game"),
+    pageView("2026-09-13T02:05:00Z", "b", "/examine"),
+  ], "2026-09-13");
+  summary.evaluations = evaluations([
+    answer("2026-09-13T02:30:00Z", { openId: "a", challengeId: "weekly-1" }),
+    answer("2026-09-13T04:30:00Z", { openId: "a" }),
+  ], "2026-09-13");
+  const content = buildDigest(summary);
+  assert.match(content, /评价完成：/);
+  assert.match(content, /\/game 1 次 \/ 1 人/);
+  assert.match(content, /\/examine 1 次 \/ 1 人/);
+  assert.ok(content.length <= MAX_CONTENT_CHARS);
+});
+
+test("the evaluation section survives a busy day's degradation", () => {
+  const events = [];
+  for (let page = 0; page < 40; page += 1) {
+    for (let hit = 0; hit < 3; hit += 1) events.push(pageView("2026-09-13T02:00:00Z", `v${page}`, `/very-long-page-name-${page}`));
+  }
+  for (let kind = 0; kind < 30; kind += 1) events.push(event("2026-09-13T03:00:00Z", `event_kind_number_${kind}`, "v0", "/game"));
+  const summary = daily(events, "2026-09-13");
+  summary.evaluations = evaluations([answer("2026-09-13T02:30:00Z", { openId: "a", challengeId: "weekly-1" })], "2026-09-13");
+  const content = buildDigest(summary);
+  assert.ok(content.length <= MAX_CONTENT_CHARS, `digest was ${content.length} characters`);
+  assert.match(content, /\/game 1 次 \/ 1 人/);
+  assert.match(content, /\/examine 0 次 \/ 0 人/);
+});
+
+test("a day without an evaluations summary omits the section entirely", () => {
+  const content = buildDigest(daily([pageView("2026-09-13T02:00:00Z", "a", "/game")], "2026-09-13"));
+  assert.doesNotMatch(content, /评价完成/);
+  assert.doesNotMatch(content, /无评价记录数据/);
 });
