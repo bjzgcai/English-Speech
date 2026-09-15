@@ -120,8 +120,8 @@ async function main() {
       const dotenv = require("dotenv");
       for (const file of [".env", ".env.prod"]) if (fs.existsSync(path.join(root, file))) Object.assign(upstreamEnv, dotenv.parse(fs.readFileSync(path.join(root, file))));
     }
-    const env = { ...process.env, ...upstreamEnv, ...capacity, NODE_ENV: "test", DATA_DIR: data, HOST: "127.0.0.1", PORT: String(port), FFMPEG_CONCURRENCY: String(concurrency), QUEUE_ENABLED: "true", QUEUE_START_PAUSED: "false", SESSION_SECRET: "isolated-load-test-secret", DINGTALK_APP_KEY: "test", DINGTALK_APP_SECRET: "test", DINGTALK_CORP_ID: "test", COOKIE_SECURE: "false", ...(real ? {} : { INTERNAL_LLM_API_KEY: "test", INTERNAL_LLM_QUESTION_MODEL: "test-question", INTERNAL_LLM_EVAL_MODEL: "test-scoring", INTERNAL_LLM_TRANSCRIPTIONS_URL: `${upstreamUrl}/asr`, INTERNAL_LLM_CHAT_COMPLETIONS_URL: `${upstreamUrl}/chat` }) };
-    if (guests) Object.assign(env, { DINGTALK_APP_KEY: "", DINGTALK_APP_SECRET: "", DINGTALK_CORP_ID: "" });
+    const env = { ...process.env, ...upstreamEnv, ...capacity, NODE_ENV: "test", DATA_DIR: data, HOST: "127.0.0.1", PORT: String(port), FFMPEG_CONCURRENCY: String(concurrency), QUEUE_ENABLED: "true", QUEUE_START_PAUSED: "false", SESSION_SECRET: "isolated-load-test-secret", DINGTALK_CLIENT_ID: "test", DINGTALK_CLIENT_SECRET: "test", DINGTALK_CORP_ID: "test", COOKIE_SECURE: "false", ...(real ? {} : { INTERNAL_LLM_API_KEY: "test", INTERNAL_LLM_QUESTION_MODEL: "test-question", INTERNAL_LLM_EVAL_MODEL: "test-scoring", INTERNAL_LLM_TRANSCRIPTIONS_URL: `${upstreamUrl}/asr`, INTERNAL_LLM_CHAT_COMPLETIONS_URL: `${upstreamUrl}/chat` }) };
+    if (guests) Object.assign(env, { DINGTALK_CLIENT_ID: "", DINGTALK_CLIENT_SECRET: "", DINGTALK_CORP_ID: "" });
     const launch = name => {
       const child = spawn(process.execPath, [path.join(root, name)], { cwd: root, env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
       child.diagnostics = "";

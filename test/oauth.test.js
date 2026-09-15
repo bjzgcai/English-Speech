@@ -4,8 +4,8 @@ const test = require("node:test");
 
 process.env.NODE_ENV = "test";
 process.env.SESSION_SECRET = "test-session-secret";
-process.env.DINGTALK_APP_KEY = "test-app-key";
-process.env.DINGTALK_APP_SECRET = "test-app-secret";
+process.env.DINGTALK_CLIENT_ID = "test-app-key";
+process.env.DINGTALK_CLIENT_SECRET = "test-app-secret";
 process.env.DINGTALK_CORP_ID = "test-corp-id";
 
 const { app, testHelpers } = require("../src/app");

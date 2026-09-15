@@ -6,7 +6,7 @@ const path = require("node:path");
 const assert = require("node:assert/strict");
 const data = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-monitor-browser-"));
 Object.assign(process.env, { NODE_ENV: "test", DATA_DIR: data, QUEUE_ENABLED: "true", SESSION_SECRET: "monitor-browser-test",
-  DINGTALK_APP_KEY: "synthetic-app", DINGTALK_APP_SECRET: "synthetic-secret", ADMIN_ACCESS_TOKEN: "synthetic-admin-token" });
+  DINGTALK_CLIENT_ID: "synthetic-app", DINGTALK_CLIENT_SECRET: "synthetic-secret", ADMIN_ACCESS_TOKEN: "synthetic-admin-token" });
 const { app, testHelpers } = require("../src/app");
 const { AlertStore, applySample, monitorFile, MiB } = require("../src/monitoring");
 const { Queue } = require("../src/queue");

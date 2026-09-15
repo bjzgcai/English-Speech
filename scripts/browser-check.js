@@ -13,7 +13,7 @@ async function main() {
   const probe = await listenForTest();
   const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
   const base = `http://127.0.0.1:${port}`;
-  const env = { ...process.env, NODE_ENV: "test", DATA_DIR: data, PORT: String(port), QUEUE_ENABLED: "true", SESSION_SECRET: "browser-test", DINGTALK_APP_KEY: "test", DINGTALK_APP_SECRET: "test", DINGTALK_CORP_ID: "test", COOKIE_SECURE: "false", QUEUE_START_PAUSED: "false" };
+  const env = { ...process.env, NODE_ENV: "test", DATA_DIR: data, PORT: String(port), QUEUE_ENABLED: "true", SESSION_SECRET: "browser-test", DINGTALK_CLIENT_ID: "test", DINGTALK_CLIENT_SECRET: "test", DINGTALK_CORP_ID: "test", COOKIE_SECURE: "false", QUEUE_START_PAUSED: "false" };
   const services = ["server.js", "worker.js"].map(file => spawn(process.execPath, [file], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] }));
   let diagnostics = "";
   for (const service of services) { service.stdout.on("data", data => { diagnostics += data; }); service.stderr.on("data", data => { diagnostics += data; }); }

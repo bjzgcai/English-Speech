@@ -7,7 +7,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const data = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-review-"));
 Object.assign(process.env, { NODE_ENV: "test", DATA_DIR: data, QUEUE_ENABLED: "true",
-  SESSION_SECRET: "review-test-session", DINGTALK_APP_KEY: "test", DINGTALK_APP_SECRET: "test",
+  SESSION_SECRET: "review-test-session", DINGTALK_CLIENT_ID: "test", DINGTALK_CLIENT_SECRET: "test",
   DINGTALK_CORP_ID: "test", DINGTALK_ALERT_ROBOT_CODE: "", DINGTALK_ALERT_USER_ID: "" });
 const { app, testHelpers } = require("../src/app");
 const config = require("../src/config");

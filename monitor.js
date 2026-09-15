@@ -9,7 +9,7 @@ store.recoverDelivery();
 const collector = new ResourceCollector({ queueFile: config.queueFile, recordingsDir: config.recordingsDir,
   backupDir: process.env.BACKUP_DIR || path.resolve(config.recordingsDir, "../../backups"),
   serviceName: process.env.MONITOR_SERVICE_NAME || "englisheval", healthUrl: `http://127.0.0.1:${config.port}/api/health` });
-const sender = new DingSender({ clientId: process.env.DINGTALK_APP_KEY, clientSecret: process.env.DINGTALK_APP_SECRET,
+const sender = new DingSender({ clientId: process.env.DINGTALK_CLIENT_ID, clientSecret: process.env.DINGTALK_CLIENT_SECRET,
   robotCode: process.env.DINGTALK_ALERT_ROBOT_CODE, userId: process.env.DINGTALK_ALERT_USER_ID });
 let stopping = false;
 let collecting = false;

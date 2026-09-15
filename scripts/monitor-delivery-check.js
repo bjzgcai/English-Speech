@@ -17,7 +17,7 @@ async function main() {
         health: { ok: true, latencyMs: 20 }, queue: { outstanding: 0, waiting: 0, reservedBytes: 0, workerHeartbeat: at, circuitUntil: 0 } },
       { host: "production-host.example（测试消息：模拟异常与恢复，不代表实际资源不足）", adminUrl: `${process.env.APP_BASE_URL}/admin` });
     }
-    const sender = new DingSender({ clientId: process.env.DINGTALK_APP_KEY, clientSecret: process.env.DINGTALK_APP_SECRET,
+    const sender = new DingSender({ clientId: process.env.DINGTALK_CLIENT_ID, clientSecret: process.env.DINGTALK_CLIENT_SECRET,
       robotCode: process.env.DINGTALK_ALERT_ROBOT_CODE, userId: process.env.DINGTALK_ALERT_USER_ID });
     await deliverPending(store, sender);
     await deliverPending(store, sender);

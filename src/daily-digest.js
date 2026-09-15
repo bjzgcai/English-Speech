@@ -3,6 +3,8 @@
 // assembled against an explicit budget and degrades from the least important
 // section down (full page list -> fewer pages -> event breakdown dropped)
 // instead of being cut mid-line by the platform.
+const { EVALUATION_PAGES } = require("./analytics");
+
 const MAX_CONTENT_CHARS = 500;
 const DEFAULT_LABEL = "EnglishEval 页面访问统计";
 
@@ -20,6 +22,15 @@ function render(summary, head, pageEntries, eventEntries, pageLimit, eventLimit)
   } else {
     parts.push("", "页面 PV：无记录");
   }
+  // Finished evaluations are the section the digest exists for, so it keeps its
+  // place and the page/event breakdowns degrade around it.
+  if (summary.evaluations) {
+    parts.push("", "评价完成：");
+    EVALUATION_PAGES.forEach(page => {
+      const item = summary.evaluations.pages?.[page] || { count: 0, people: 0 };
+      parts.push(`${page} ${item.count} 次 / ${item.people} 人`);
+    });
+  }
   if (eventEntries.length && eventLimit > 0) {
     parts.push("", "关键事件：");
     eventEntries.slice(0, eventLimit).forEach(([event, count]) => parts.push(`${event} ${count}`));
@@ -27,6 +38,9 @@ function render(summary, head, pageEntries, eventEntries, pageLimit, eventLimit)
     if (rest.length) parts.push(`其余 ${rest.length} 类事件合计 ${total(rest)}`);
   }
   if (summary.dataIntegrity !== "ok") parts.push("", "注意：当日埋点无数据，请检查 analytics/events.jsonl。");
+  if (summary.evaluations && summary.evaluations.dataIntegrity !== "ok") {
+    parts.push("", "注意：无评价记录数据，请检查 recordings/metadata.jsonl。");
+  }
   return parts.join("\n");
 }
 

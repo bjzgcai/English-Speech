@@ -9,7 +9,7 @@ const crypto = require("node:crypto");
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-guests-"));
 Object.assign(process.env, {
   NODE_ENV: "test", DATA_DIR: dataDir, SESSION_SECRET: "guest-test-secret",
-  DINGTALK_APP_KEY: "", DINGTALK_APP_SECRET: "", DINGTALK_CORP_ID: "",
+  DINGTALK_CLIENT_ID: "", DINGTALK_CLIENT_SECRET: "", DINGTALK_CORP_ID: "",
   COOKIE_SECURE: "false", QUEUE_ENABLED: "false", PARTNER_API_KEY: "guest-test-partner",
 });
 const { app, testHelpers } = require("../src/app");
