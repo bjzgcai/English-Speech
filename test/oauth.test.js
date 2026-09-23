@@ -106,6 +106,41 @@ test("DingTalk login sets a nonce cookie and rejects tampered callback state", a
   assert.match(await callbackResponse.text(), /Invalid or expired/);
 });
 
+test("mobile browser sign-in offers to open DingTalk and keeps a browser fallback", async (context) => {
+  const server = await listenForTest(app);
+  context.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  const response = await fetch(`${baseUrl}/auth/dingtalk?redirect=%2Fgame`, {
+    redirect: "manual",
+    headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) CriOS/120 Mobile/15E148 Safari/604.1" },
+  });
+  const body = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("set-cookie"), null);
+  const launchUrl = new URL(body.match(/data-dingtalk-url="([^"]+)"/)[1].replaceAll("&amp;", "&"));
+  assert.equal(launchUrl.protocol, "dingtalk:");
+  const startUrl = new URL(launchUrl.searchParams.get("url"));
+  assert.equal(startUrl.pathname, "/auth/dingtalk");
+  assert.equal(startUrl.searchParams.get("in_app"), "1");
+  assert.equal(startUrl.searchParams.get("redirect"), "/game");
+  assert.match(body, /\/auth\/dingtalk\?browser=1&amp;redirect=%2Fgame/);
+
+  const inAppStart = await fetch(startUrl, { redirect: "manual", headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) DingTalk/7.0" } });
+  assert.equal(inAppStart.status, 302);
+  assert.match(inAppStart.headers.get("set-cookie"), /^englisheval_oauth_nonce=/);
+  const inAppAuthUrl = new URL(inAppStart.headers.get("location"));
+  const inAppNonce = inAppStart.headers.get("set-cookie").match(/^englisheval_oauth_nonce=([^;]+)/)[1];
+  assert.deepEqual(testHelpers.parseOAuthState(inAppAuthUrl.searchParams.get("state"), inAppNonce), { redirectPath: "/game" });
+
+  const browserFallback = await fetch(`${baseUrl}/auth/dingtalk?browser=1&redirect=%2Fgame`, {
+    redirect: "manual",
+    headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) CriOS/120 Mobile/15E148 Safari/604.1" },
+  });
+  assert.equal(browserFallback.status, 302);
+  assert.match(browserFallback.headers.get("location"), /^https:\/\/login\.dingtalk\.com\/oauth2\/auth\?/);
+});
+
 test("question generation is blocked until the current privacy policy is accepted", async (context) => {
   const server = await listenForTest(app);
   context.after(() => new Promise((resolve) => server.close(resolve)));
