@@ -226,6 +226,14 @@ function safeText(value, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
 }
 
+function escapeHtmlAttribute(value) {
+  return safeText(value)
+    .replace(/&/g, "&amp;")
+    .replace(/\"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function sanitizeCommentText(value) {
   return safeText(value).normalize("NFC").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069]/g, "");
 }
@@ -1058,6 +1066,27 @@ function buildDingTalkAuthUrl(req, nonce, redirectPath = "/") {
   return `https://login.dingtalk.com/oauth2/auth?${params.toString()}`;
 }
 
+function isMobileBrowser(req) {
+  const userAgent = safeText(req.get("user-agent"));
+  // DingTalk's own webview already has access to the native JSAPI flow. The
+  // launcher is for mobile Safari/Chrome, where the web OAuth page cannot
+  // switch to the installed DingTalk app by itself.
+  return /Android|iPhone|iPad|iPod/i.test(userAgent) && !/DingTalk/i.test(userAgent);
+}
+
+function buildDingTalkMobileLaunchUrl(startUrl) {
+  const params = new URLSearchParams({
+    url: startUrl,
+    dd_mode: "present",
+  });
+  return `dingtalk://dingtalkclient/page/link?${params.toString()}`;
+}
+
+function sendDingTalkMobileLauncher(res, startUrl, browserFallbackUrl) {
+  const launchUrl = buildDingTalkMobileLaunchUrl(startUrl);
+  res.type("html").send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open DingTalk</title><meta http-equiv="refresh" content="0;url=${escapeHtmlAttribute(launchUrl)}"><script src="/dingtalk-launcher.js" defer></script></head><body data-dingtalk-url="${escapeHtmlAttribute(launchUrl)}"><main><h1>Opening DingTalk…</h1><p>If DingTalk does not open, continue in this browser.</p><a href="${escapeHtmlAttribute(browserFallbackUrl)}">Continue in browser</a></main></body></html>`);
+}
+
 function parseOAuthState(value, expectedNonce, now = Date.now()) {
   if (!value || !expectedNonce) return null;
   try {
@@ -1783,9 +1812,17 @@ app.get("/auth/dingtalk", (req, res) => {
     return res.status(503).send("DingTalk authentication is not configured.");
   }
 
+  const redirectPath = normalizeRedirectPath(req.query.redirect);
+  if (isMobileBrowser(req) && req.query.browser !== "1" && req.query.in_app !== "1") {
+    // Begin OAuth only after DingTalk opens our site. A nonce cookie created
+    // here belongs to Chrome and is unavailable to DingTalk's own webview.
+    const startUrl = `${getBaseUrl(req)}/auth/dingtalk?in_app=1&redirect=${encodeURIComponent(redirectPath)}`;
+    const browserFallbackUrl = `/auth/dingtalk?browser=1&redirect=${encodeURIComponent(redirectPath)}`;
+    return sendDingTalkMobileLauncher(res, startUrl, browserFallbackUrl);
+  }
   const nonce = crypto.randomBytes(24).toString("base64url");
   setOAuthNonceCookie(res, nonce);
-  res.redirect(buildDingTalkAuthUrl(req, nonce, req.query.redirect));
+  res.redirect(buildDingTalkAuthUrl(req, nonce, redirectPath));
 });
 
 app.get("/auth/dingtalk/callback", async (req, res) => {
