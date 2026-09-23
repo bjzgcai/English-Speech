@@ -21,8 +21,8 @@ const { buildMockPartnerUsers } = require("./mock-evaluations");
 const { buildAdminStatistics } = require("./admin-statistics");
 const { DingSender } = require("./ding-alerts");
 const commentDingSender = new DingSender({
-  clientId: process.env.DINGTALK_CLIENT_ID,
-  clientSecret: process.env.DINGTALK_CLIENT_SECRET,
+  clientId: process.env.DINGTALK_CLIENT_ID || process.env.DINGTALK_APP_KEY,
+  clientSecret: process.env.DINGTALK_CLIENT_SECRET || process.env.DINGTALK_APP_SECRET,
   robotCode: process.env.DINGTALK_ALERT_ROBOT_CODE,
   userId: process.env.DINGTALK_ALERT_USER_ID,
 });
@@ -374,7 +374,10 @@ function getBaseUrl(req) {
 }
 
 function isDingTalkConfigured() {
-  return Boolean(process.env.DINGTALK_CLIENT_ID && process.env.DINGTALK_CLIENT_SECRET);
+  return Boolean(
+    (process.env.DINGTALK_CLIENT_ID || process.env.DINGTALK_APP_KEY) &&
+    (process.env.DINGTALK_CLIENT_SECRET || process.env.DINGTALK_APP_SECRET),
+  );
 }
 
 function isDingTalkInAppConfigured() {
@@ -431,7 +434,7 @@ function base64UrlDecode(value) {
 }
 
 function signSessionPayload(payload) {
-  const secret = process.env.SESSION_SECRET || process.env.DINGTALK_CLIENT_SECRET;
+  const secret = process.env.SESSION_SECRET || process.env.DINGTALK_CLIENT_SECRET || process.env.DINGTALK_APP_SECRET;
   if (!secret) return "";
   return crypto.createHmac("sha256", secret).update(payload).digest("base64url");
 }
@@ -562,18 +565,36 @@ const visitorAccess = createVisitorAccess({
 // API services require DingTalk authentication or a redeemed invitation.
 const { requireAccess: requireVisitor } = visitorAccess;
 
+// Which identity a page view or browser beacon used, so the digest can report
+// logged-in PV/UV split by DingTalk sign-in and redeemed invitation code. It
+// reads the same signed cookies the visitor middleware reads, but deliberately
+// sets no response headers: a tracked page view must not change what the
+// browser caches or disclose the owner to the page.
+function analyticsIdentity(req) {
+  try {
+    const signedIn = readSession(req);
+    if (signedIn?.openId) return { type: "dingtalk", owner: signedIn.openId };
+    const guestId = visitorAccess.readGuest(req);
+    if (guestId && visitorAccess.hasAccess(req, { openId: guestId })) return { type: "guest", owner: guestId };
+  } catch { /* analytics must never block product traffic */ }
+  return null;
+}
+
 // Lightweight first-party analytics. Page views include anonymous visitors;
 // API and static-resource requests are intentionally excluded.
 app.use((req, res, next) => {
   if (req.method === "GET" && analytics.pages.has(req.path)) {
-    try { analytics.track(analyticsEventsFile, req, res, "page_view", { page: req.path }); } catch { /* analytics must never block product traffic */ }
+    try { analytics.track(analyticsEventsFile, req, res, "page_view", { page: req.path }, analyticsIdentity(req)); } catch { /* analytics must never block product traffic */ }
   }
   next();
 });
 app.post("/api/analytics/events", (req, res) => {
   const allowed = new Set(["examine_enter", "examine_start", "examine_submit", "examine_complete", "examine_failed", "game_enter", "game_question", "game_submit", "game_complete", "game_failed", "privacy_accept", "invite_open", "invite_redeem_success", "invite_redeem_failed"]);
   const items = Array.isArray(req.body?.events) ? req.body.events : [req.body];
-  try { items.slice(0, 20).forEach(item => { if (allowed.has(item?.event)) analytics.track(analyticsEventsFile, req, res, item.event, { page: String(item.page || req.path).slice(0, 100) }); }); } catch { /* best effort */ }
+  try {
+    const identity = analyticsIdentity(req);
+    items.slice(0, 20).forEach(item => { if (allowed.has(item?.event)) analytics.track(analyticsEventsFile, req, res, item.event, { page: String(item.page || req.path).slice(0, 100) }, identity); });
+  } catch { /* best effort */ }
   res.status(204).end();
 });
 
@@ -1028,7 +1049,7 @@ function buildDingTalkAuthUrl(req, nonce, redirectPath = "/") {
   const params = new URLSearchParams({
     redirect_uri: redirectUri,
     response_type: "code",
-    client_id: process.env.DINGTALK_CLIENT_ID,
+    client_id: process.env.DINGTALK_CLIENT_ID || process.env.DINGTALK_APP_KEY,
     scope: "openid",
     state,
     prompt: "consent",
@@ -1068,8 +1089,8 @@ async function requestDingTalkUserAccessToken(code) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      clientId: process.env.DINGTALK_CLIENT_ID,
-      clientSecret: process.env.DINGTALK_CLIENT_SECRET,
+      clientId: process.env.DINGTALK_CLIENT_ID || process.env.DINGTALK_APP_KEY,
+      clientSecret: process.env.DINGTALK_CLIENT_SECRET || process.env.DINGTALK_APP_SECRET,
       code,
       grantType: "authorization_code",
     }),
@@ -1105,8 +1126,8 @@ async function requestDingTalkAppAccessToken() {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      appKey: process.env.DINGTALK_CLIENT_ID,
-      appSecret: process.env.DINGTALK_CLIENT_SECRET,
+      appKey: process.env.DINGTALK_CLIENT_ID || process.env.DINGTALK_APP_KEY,
+      appSecret: process.env.DINGTALK_CLIENT_SECRET || process.env.DINGTALK_APP_SECRET,
     }),
   });
 
@@ -2849,7 +2870,7 @@ app.use((error, _req, res, next) => {
 });
 
 function startServer() {
-  if (!process.env.SESSION_SECRET && !process.env.DINGTALK_CLIENT_SECRET) {
+  if (!process.env.SESSION_SECRET && !process.env.DINGTALK_CLIENT_SECRET && !process.env.DINGTALK_APP_SECRET) {
     throw new Error("SESSION_SECRET is required when DingTalk credentials are absent.");
   }
   const timer = queueApi ? setInterval(() => {
