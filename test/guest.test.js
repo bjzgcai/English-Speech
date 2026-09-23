@@ -15,6 +15,7 @@ Object.assign(process.env, {
 const { app, testHelpers } = require("../src/app");
 const config = require("../src/config");
 const { appendJsonLine } = require("../src/storage");
+const analytics = require("../src/analytics");
 let server;
 let base;
 test.before(async () => {
@@ -81,6 +82,33 @@ test("invited identities persist without creating or renewing cookies on reads",
   assert.notEqual(first.user.openId, second.user.openId);
   assert.equal((await guest(first.cookie)).user.openId, first.user.openId);
   assert.equal((await guest(first.cookie)).setCookie, null);
+});
+
+// The weekly digest splits logged-in page views by sign-in method, which only
+// works if the tracked page view records how the visitor signed in. Page views
+// are tracked before any route resolves the session, so this pins the resolution
+// in the analytics middleware itself.
+test("tracked page views record the sign-in method that made them", async () => {
+  const before = analytics.readEvents(config.analyticsEventsFile).length;
+  const dingOwner = `page-view-dingtalk-${Date.now()}`;
+  const invited = await invitedGuest();
+
+  await fetch(base + "/game");
+  await fetch(base + "/game", { headers: { Cookie: invited.cookie } });
+  await fetch(base + "/game", {
+    headers: { Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId: dingOwner })}` },
+  });
+
+  const tracked = analytics.readEvents(config.analyticsEventsFile)
+    .slice(before)
+    .filter(item => item.event === "page_view")
+    .map(item => [item.identity, item.userHash]);
+  const hash = owner => crypto.createHash("sha256").update(owner).digest("hex");
+  assert.deepEqual(tracked, [
+    ["", ""],
+    ["guest", hash(invited.user.openId)],
+    ["dingtalk", hash(dingOwner)],
+  ]);
 });
 
 test("tampered, expired, malformed, and unredeemed cookies cannot claim an identity", async () => {

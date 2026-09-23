@@ -1,5 +1,5 @@
-// Renders one day of page-visit analytics as the body of an in-app DingTalk
-// DING. The DING API rejects content over 500 characters, so the message is
+// Renders one week of page-visit analytics for a DingTalk group webhook. The
+// webhook rejects content over 500 characters, so the message is
 // assembled against an explicit budget and degrades from the least important
 // section down (full page list -> fewer pages -> event breakdown dropped)
 // instead of being cut mid-line by the platform.
@@ -37,7 +37,7 @@ function render(summary, head, pageEntries, eventEntries, pageLimit, eventLimit)
     const rest = eventEntries.slice(eventLimit);
     if (rest.length) parts.push(`其余 ${rest.length} 类事件合计 ${total(rest)}`);
   }
-  if (summary.dataIntegrity !== "ok") parts.push("", "注意：当日埋点无数据，请检查 analytics/events.jsonl。");
+  if (summary.dataIntegrity !== "ok") parts.push("", "注意：统计周期内埋点无数据，请检查 analytics/events.jsonl。");
   if (summary.evaluations && summary.evaluations.dataIntegrity !== "ok") {
     parts.push("", "注意：无评价记录数据，请检查 recordings/metadata.jsonl。");
   }
@@ -45,13 +45,21 @@ function render(summary, head, pageEntries, eventEntries, pageLimit, eventLimit)
 }
 
 function buildDigest(summary, { label = DEFAULT_LABEL } = {}) {
+  // Logged-in visitors are reported apart from anonymous traffic, and split by
+  // how they signed in. The block is part of the fixed head so it survives the
+  // degradation ladder below.
+  const logins = summary.logins || { pv: 0, uv: 0, dingtalk: { pv: 0, uv: 0 }, guest: { pv: 0, uv: 0 } };
   const head = [
     label,
-    `统计日期：${summary.date}（北京时间 00:00-24:00）`,
+    `统计日期：${summary.startDate} 至 ${summary.endDate}（北京时间）`,
     "",
     `页面浏览 PV：${summary.pv}`,
     `独立访客 UV：${summary.uv}`,
     `其中新访客：${summary.newUsers}`,
+    "",
+    `登录用户：PV ${logins.pv} / UV ${logins.uv}`,
+    `钉钉登录：PV ${logins.dingtalk.pv} / UV ${logins.dingtalk.uv}`,
+    `邀请码登录：PV ${logins.guest.pv} / UV ${logins.guest.uv}`,
   ];
   const pageEntries = byCountThenName(Object.entries(summary.pageViews || {}));
   // `page_view` is already reported as PV; the breakdown covers everything else.

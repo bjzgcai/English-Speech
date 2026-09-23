@@ -1,10 +1,17 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { daily, evaluations, localDay, previousDay } = require("../src/analytics");
-const { buildDigest, MAX_CONTENT_CHARS } = require("../src/daily-digest");
+const crypto = require("node:crypto");
+const { daily, evaluations, rangeSummary, evaluationsInRange, identityOf, localDay, previousDay, previousWeek } = require("../src/analytics");
+const { buildDigest, MAX_CONTENT_CHARS } = require("../src/weekly-digest");
 
 const event = (ts, name, visitorId, page) => ({ ts, event: name, visitorId, page });
 const pageView = (ts, visitorId, page = "/game") => event(ts, "page_view", visitorId, page);
+const ownerHash = owner => crypto.createHash("sha256").update(owner).digest("hex");
+// A page view by a signed-in visitor: the tracked record carries how they signed
+// in plus a hash of the owner, never the openId itself.
+const loginView = (ts, owner, identity, page = "/game") => ({
+  ...pageView(ts, `cookie-${owner}`, page), identity, userHash: ownerHash(owner),
+});
 
 test("a China local day runs from 00:00 to 24:00 UTC+8, not the UTC day", () => {
   assert.equal(localDay("2026-09-13T00:00:00Z"), "2026-09-13"); // 08:00 CST
@@ -20,6 +27,140 @@ test("previousDay is the local day a morning digest reports", () => {
   assert.equal(previousDay(Date.parse("2026-09-13T16:00:00Z")), "2026-09-13");
   // 07:59 CST still reports the previous local day.
   assert.equal(previousDay(Date.parse("2026-09-13T23:59:00Z")), "2026-09-13");
+});
+
+test("previousWeek covers the seven local days ending Tuesday", () => {
+  // 09:30 CST on Wednesday, 23 September.
+  assert.deepEqual(previousWeek(Date.parse("2026-09-23T01:30:00Z")), {
+    startDate: "2026-09-16",
+    endDate: "2026-09-22",
+  });
+  // The function is anchored to the local previous day, not to the UTC date.
+  assert.deepEqual(previousWeek(Date.parse("2026-09-23T16:00:00Z")), {
+    startDate: "2026-09-17",
+    endDate: "2026-09-23",
+  });
+});
+
+test("weekly range uses China local boundaries and excludes adjacent days", () => {
+  const events = [
+    pageView("2026-09-15T15:59:59Z", "before"), // 23:59:59 CST on the 15th
+    pageView("2026-09-15T16:00:00Z", "start"), // 00:00 CST on the 16th
+    pageView("2026-09-22T15:59:59Z", "end"), // 23:59:59 CST on the 22nd
+    pageView("2026-09-22T16:00:00Z", "after"), // 00:00 CST on the 23rd
+    event("2026-09-16T00:30:00Z", "privacy_accept", "start", "/game"),
+  ];
+  const summary = rangeSummary(events, "2026-09-16", "2026-09-22");
+  assert.equal(summary.pv, 2);
+  assert.equal(summary.uv, 2);
+  assert.equal(summary.events.page_view, 2);
+  assert.equal(summary.events.privacy_accept, 1);
+  assert.deepEqual(summary.pageViews, { "/game": 2 });
+});
+
+test("weekly range deduplicates visitors and first-time visitors across days", () => {
+  const events = [
+    pageView("2026-09-14T02:00:00Z", "returning"), // before the range
+    pageView("2026-09-17T02:00:00Z", "returning"),
+    pageView("2026-09-16T03:00:00Z", "fresh"),
+    pageView("2026-09-21T04:00:00Z", "repeat"),
+    pageView("2026-09-22T05:00:00Z", "repeat"),
+  ];
+  const summary = rangeSummary(events, "2026-09-16", "2026-09-22");
+  assert.equal(summary.pv, 4);
+  assert.equal(summary.uv, 3);
+  assert.equal(summary.newUsers, 2);
+});
+
+test("identityOf separates DingTalk accounts from redeemed invitations", () => {
+  assert.equal(identityOf(null), null);
+  assert.equal(identityOf({ openId: "" }), null);
+  assert.deepEqual(identityOf({ openId: "dingtalk-open-id" }), { type: "dingtalk", owner: "dingtalk-open-id" });
+  // A guest is recognised by its identity type or by the `guest:` owner prefix.
+  assert.deepEqual(identityOf({ openId: "guest:11111111-1111-4111-8111-111111111111", identityType: "guest" }),
+    { type: "guest", owner: "guest:11111111-1111-4111-8111-111111111111" });
+  assert.equal(identityOf({ openId: "guest:11111111-1111-4111-8111-111111111111" }).type, "guest");
+});
+
+test("logged-in page views are split by sign-in method, anonymous ones excluded", () => {
+  const events = [
+    loginView("2026-09-17T02:00:00Z", "ding-1", "dingtalk"),
+    loginView("2026-09-17T03:00:00Z", "ding-1", "dingtalk", "/examine"),
+    loginView("2026-09-18T02:00:00Z", "ding-2", "dingtalk"),
+    loginView("2026-09-19T02:00:00Z", "guest:11111111-1111-4111-8111-111111111111", "guest"),
+    loginView("2026-09-19T03:00:00Z", "guest:11111111-1111-4111-8111-111111111111", "guest", "/leaderboard"),
+    pageView("2026-09-19T04:00:00Z", "anonymous"),
+    // The beacon events carry an identity too, but only page views are PV.
+    { ...event("2026-09-19T05:00:00Z", "game_enter", "cookie-ding-1", "/game"), identity: "dingtalk", userHash: ownerHash("ding-1") },
+  ];
+  const summary = rangeSummary(events, "2026-09-16", "2026-09-22");
+  assert.equal(summary.pv, 6);
+  assert.deepEqual(summary.logins, {
+    pv: 5,
+    uv: 3,
+    dingtalk: { pv: 3, uv: 2 },
+    guest: { pv: 2, uv: 1 },
+  });
+});
+
+test("a visitor counts once per sign-in method across the whole period", () => {
+  const events = [
+    loginView("2026-09-16T02:00:00Z", "ding-1", "dingtalk", "/game"),
+    loginView("2026-09-22T02:00:00Z", "ding-1", "dingtalk", "/history"),
+    loginView("2026-09-14T02:00:00Z", "ding-1", "dingtalk"), // before the period
+    loginView("2026-09-20T02:00:00Z", "guest:11111111-1111-4111-8111-111111111111", "guest", "/game"),
+    loginView("2026-09-20T03:00:00Z", "guest:11111111-1111-4111-8111-111111111111", "guest", "/game"),
+  ];
+  const summary = rangeSummary(events, "2026-09-16", "2026-09-22");
+  assert.deepEqual(summary.logins, {
+    pv: 4,
+    uv: 2,
+    dingtalk: { pv: 2, uv: 1 },
+    guest: { pv: 2, uv: 1 },
+  });
+});
+
+test("the digest reports logged-in PV/UV split by sign-in method", () => {
+  const summary = rangeSummary([
+    loginView("2026-09-17T02:00:00Z", "ding-1", "dingtalk"),
+    loginView("2026-09-18T02:00:00Z", "ding-1", "dingtalk", "/examine"),
+    loginView("2026-09-19T02:00:00Z", "guest:11111111-1111-4111-8111-111111111111", "guest"),
+    pageView("2026-09-19T04:00:00Z", "anonymous"),
+  ], "2026-09-16", "2026-09-22");
+  const content = buildDigest(summary);
+  assert.match(content, /登录用户：PV 3 \/ UV 2/);
+  assert.match(content, /钉钉登录：PV 2 \/ UV 1/);
+  assert.match(content, /邀请码登录：PV 1 \/ UV 1/);
+  // The headline still counts every page view, signed in or not.
+  assert.match(content, /页面浏览 PV：4/);
+  assert.ok(content.length <= MAX_CONTENT_CHARS);
+});
+
+test("weekly range aggregates evaluation counts and distinct people", () => {
+  const records = [
+    answer("2026-09-15T02:00:00Z", { openId: "before", challengeId: "weekly-1" }),
+    answer("2026-09-16T02:00:00Z", { openId: "u1", challengeId: "weekly-1" }),
+    answer("2026-09-17T03:00:00Z", { openId: "u1", challengeId: "weekly-1" }),
+    answer("2026-09-22T04:00:00Z", { openId: "u1" }),
+    answer("2026-09-21T05:00:00Z", { openId: "failed", status: "failed", challengeId: "weekly-1" }),
+    answer("2026-09-23T06:00:00Z", { openId: "after" }),
+  ];
+  const summary = evaluationsInRange(records, "2026-09-16", "2026-09-22");
+  assert.deepEqual(summary.pages["/game"], { count: 2, people: 1 });
+  assert.deepEqual(summary.pages["/examine"], { count: 1, people: 1 });
+  assert.equal(summary.count, 3);
+  assert.equal(summary.people, 1);
+});
+
+test("an empty weekly range reports missing analytics and recordings data", () => {
+  const analyticsSummary = rangeSummary([], "2026-09-16", "2026-09-22");
+  const evaluationSummary = evaluationsInRange([], "2026-09-16", "2026-09-22");
+  assert.equal(analyticsSummary.dataIntegrity, "missing");
+  assert.equal(analyticsSummary.pv, 0);
+  assert.equal(evaluationSummary.dataIntegrity, "missing");
+  const content = buildDigest({ ...analyticsSummary, evaluations: evaluationSummary });
+  assert.match(content, /统计周期内埋点无数据/);
+  assert.match(content, /无评价记录数据/);
 });
 
 test("daily() ignores the UTC day that shares the same digits", () => {
@@ -82,7 +223,17 @@ test("an empty day still produces a readable, flagged digest", () => {
   const content = buildDigest(daily([], "2026-09-13"));
   assert.match(content, /页面浏览 PV：0/);
   assert.match(content, /页面 PV：无记录/);
-  assert.match(content, /注意：当日埋点无数据/);
+  assert.match(content, /注意：统计周期内埋点无数据/);
+});
+
+test("the weekly digest displays the full reporting period", () => {
+  const summary = rangeSummary([
+    pageView("2026-09-16T02:00:00Z", "a"),
+    pageView("2026-09-22T03:00:00Z", "b"),
+  ], "2026-09-16", "2026-09-22");
+  const content = buildDigest(summary);
+  assert.match(content, /统计日期：2026-09-16 至 2026-09-22（北京时间）/);
+  assert.ok(content.length <= MAX_CONTENT_CHARS);
 });
 
 test("a busy day degrades within the DING character budget", () => {
@@ -91,11 +242,18 @@ test("a busy day degrades within the DING character budget", () => {
     for (let hit = 0; hit < 3; hit += 1) events.push(pageView("2026-09-13T02:00:00Z", `v${page}`, `/very-long-page-name-${page}`));
   }
   for (let kind = 0; kind < 30; kind += 1) events.push(event("2026-09-13T03:00:00Z", `event_kind_number_${kind}`, "v0", "/game"));
+  // One of the busy day's page views was made by a signed-in visitor; it still
+  // counts once in the headline PV.
+  events[0] = loginView("2026-09-13T02:00:00Z", "ding-1", "dingtalk", "/very-long-page-name-0");
   const content = buildDigest(daily(events, "2026-09-13"));
   assert.ok(content.length <= MAX_CONTENT_CHARS, `digest was ${content.length} characters`);
   // The headline figures survive degradation; the tail is what gets folded away.
   assert.match(content, /页面浏览 PV：120/);
   assert.match(content, /其余 \d+ 个页面合计 \d+/);
+  // The logged-in split is part of the fixed head, so it is never folded away.
+  assert.match(content, /登录用户：PV 1 \/ UV 1/);
+  assert.match(content, /钉钉登录：PV 1 \/ UV 1/);
+  assert.match(content, /邀请码登录：PV 0 \/ UV 0/);
 });
 
 // The saved answer does not carry the page; only the weekly game records a
