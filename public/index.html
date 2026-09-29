@@ -164,6 +164,11 @@
           <div class="question-block" id="questionBlock">
             <h2 id="questionText">Enter a profile, then generate one question.</h2>
             <p id="questionMeta"></p>
+            <figure class="task-figure" id="questionFigure" hidden>
+              <p class="task-figure-label" id="questionFigureLabel" hidden>Task figure</p>
+              <img id="questionFigureImage" alt="" loading="lazy" decoding="async">
+              <figcaption id="questionFigureCaption"></figcaption>
+            </figure>
           </div>
 
           <div class="video-frame" hidden>
@@ -190,7 +195,7 @@
                 <span>Elapsed</span>
                 <strong id="recordingElapsed">00:00</strong>
               </div>
-              <div class="recording-time">
+              <div class="recording-time recording-time-remaining">
                 <span>Remaining</span>
                 <strong id="recordingRemaining">02:00</strong>
               </div>
@@ -308,6 +313,11 @@
             <p id="prepareModalKicker">Generating</p>
             <h2 id="prepareModalTitle">Preparing your question...</h2>
             <p id="prepareModalMessage">Please wait while the assessment question is generated.</p>
+            <figure class="task-figure prepare-figure" id="prepareFigure" hidden>
+              <p class="task-figure-label" id="prepareFigureLabel" hidden>Task figure</p>
+              <img id="prepareFigureImage" alt="" loading="lazy" decoding="async">
+              <figcaption id="prepareFigureCaption"></figcaption>
+            </figure>
             <div class="prepare-preview" id="preparePreviewWrap" hidden>
               <video id="preparePreview" autoplay muted playsinline></video>
               <div class="framing-guide framing-guide-compact" aria-hidden="true">

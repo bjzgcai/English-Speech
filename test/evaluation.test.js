@@ -522,3 +522,144 @@ test("sends evaluations through the internal gateway with Qwen, frames, and JSON
   assert.equal(evaluation.overallScore, 80);
   assert.match(evaluation.improvedAnswer, /collaborate more effectively/);
 });
+
+test("figure guidance appears only when the task ships a reference figure", () => {
+  const base = {
+    profile: {},
+    question: { question: "Explain the figure." },
+    transcript: "The proposed method is higher than the baseline.",
+    audioMetrics: {},
+    frameCount: 0,
+    evaluationMode: "question-answer",
+  };
+
+  const withoutFigure = testHelpers.buildEvaluationPrompt(base);
+  assert.doesNotMatch(withoutFigure, /reference figure/);
+
+  const withFigure = testHelpers.buildEvaluationPrompt({
+    ...base,
+    figure: { alt: "Bar chart comparing proposed and baseline accuracy.", caption: "Illustrative figure — synthetic data" },
+  });
+  assert.match(withFigure, /reference figure, attached as the first image/);
+  assert.match(withFigure, /Never invent values, labels, trends, or findings/);
+  assert.match(withFigure, /Bar chart comparing proposed and baseline accuracy/);
+});
+
+test("only committed figure slugs resolve, and traversal paths are rejected", () => {
+  const valid = testHelpers.resolveFigureImage("/assets/figures/l07-experimental-figure.png");
+  assert.ok(valid, "a committed figure should resolve");
+  assert.match(valid.mimeType, /^image\//);
+
+  for (const hostile of [
+    "/assets/figures/../../.env",
+    "../../.env",
+    "/etc/passwd",
+    "/assets/figures/l07-experimental-figure.png/../../.env",
+    "/assets/figures/../source/l07-experimental-figure-base.png",
+  ]) {
+    assert.equal(testHelpers.resolveFigureImage(hostile), null, hostile);
+  }
+
+  assert.equal(testHelpers.resolveFigureImage("/assets/figures/does-not-exist.png"), null);
+  assert.equal(testHelpers.resolveFigureImage(undefined), null);
+});
+
+test("the reference figure is attached before the learner's frames", async (context) => {
+  const originalFetch = global.fetch;
+  const originalApiKey = process.env.INTERNAL_LLM_API_KEY;
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-figure-"));
+  const framePath = path.join(tempDir, "frame.jpg");
+  fs.writeFileSync(framePath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+  process.env.INTERNAL_LLM_API_KEY = "test-internal-key";
+
+  context.after(() => {
+    global.fetch = originalFetch;
+    if (originalApiKey === undefined) delete process.env.INTERNAL_LLM_API_KEY;
+    else process.env.INTERNAL_LLM_API_KEY = originalApiKey;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  let capturedOptions;
+  global.fetch = async (_url, options) => {
+    capturedOptions = options;
+    return new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                summary: "Described the figure accurately.",
+                transcript: "The proposed method reaches 84 percent.",
+                improvedAnswer: "The proposed method reaches 84 percent, above the baseline.",
+                rubric: { coherence: { score: 80, feedback: "Matched the figure." } },
+                strengths: ["Accurate reading"],
+                improvements: ["Name the anomaly"],
+              }),
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  };
+
+  await testHelpers.evaluateAnswer({
+    profile: {},
+    question: {
+      question: "Explain the figure.",
+      figure: {
+        src: "/assets/figures/l07-experimental-figure.png",
+        alt: "Bar chart comparing proposed and baseline accuracy.",
+        caption: "Illustrative figure — synthetic data",
+      },
+    },
+    transcript: "The proposed method reaches 84 percent.",
+    audioMetrics: { speakingRateWpm: 120 },
+    framePaths: [framePath],
+  });
+
+  const body = JSON.parse(capturedOptions.body);
+  const content = body.messages[1].content;
+  assert.equal(content[0].type, "text");
+  assert.match(content[0].text, /reference figure, attached as the first image/);
+  assert.match(content[0].text, /Sampled video frames: 1/);
+  assert.equal(content[1].type, "image_url");
+  assert.match(content[1].image_url.url, /^data:image\/png;base64,/);
+  assert.equal(content[2].type, "image_url");
+  assert.match(content[2].image_url.url, /^data:image\/jpeg;base64,/);
+  assert.equal(content.length, 3);
+});
+
+test("a hostile figure path degrades to a text-only evaluation", async (context) => {
+  const originalFetch = global.fetch;
+  const originalApiKey = process.env.INTERNAL_LLM_API_KEY;
+  process.env.INTERNAL_LLM_API_KEY = "test-internal-key";
+
+  context.after(() => {
+    global.fetch = originalFetch;
+    if (originalApiKey === undefined) delete process.env.INTERNAL_LLM_API_KEY;
+    else process.env.INTERNAL_LLM_API_KEY = originalApiKey;
+  });
+
+  let capturedOptions;
+  global.fetch = async (_url, options) => {
+    capturedOptions = options;
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: "ok", rubric: {} }) } }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  };
+
+  await testHelpers.evaluateAnswer({
+    profile: {},
+    question: { question: "Explain the figure.", figure: { src: "/assets/figures/../../.env" } },
+    transcript: "An answer without a readable figure.",
+    audioMetrics: {},
+    framePaths: [],
+  });
+
+  const body = JSON.parse(capturedOptions.body);
+  const content = body.messages[1].content;
+  assert.equal(content.filter((part) => part.type === "image_url").length, 0);
+  assert.doesNotMatch(content[0].text, /reference figure, attached as the first image/);
+});

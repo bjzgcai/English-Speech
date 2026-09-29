@@ -21,6 +21,10 @@ npm-debug.log*
 # Generated artifacts: verification screenshots, posters, print PDFs, plan exports.
 output/
 
+# Raw model backdrops for the weekly task figures; regenerate with
+# scripts/generate_weekly_figures.py. The finished figures are committed.
+/public/assets/figures/source/
+
 # Private deployment tooling and server-specific configuration (local only).
 /deploy.sh
 /ops/

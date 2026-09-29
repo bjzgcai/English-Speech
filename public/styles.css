@@ -519,6 +519,61 @@ h1 {
   text-transform: none;
 }
 
+/* Weekly task figures: optional per lesson, so the nine text-only lessons keep
+   their original layout. Constrained height keeps the camera preview visible. */
+.task-figure {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin: 6px 0 0;
+  max-width: 720px;
+}
+
+.task-figure[hidden] {
+  display: none;
+}
+
+.task-figure img {
+  display: block;
+  width: 100%;
+  max-height: 340px;
+  border: 2px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  object-fit: contain;
+}
+
+.task-figure figcaption {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+/* Marks the image as the task material, now that the question wording no longer
+   says so. Hidden together with the figure. */
+.task-figure-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.task-figure-label[hidden] {
+  display: none;
+}
+
+.history-figure {
+  margin: 0 0 14px;
+}
+
+.history-figure img {
+  max-height: 260px;
+}
+
 .game-rule {
   gap: 10px;
 }
@@ -1373,7 +1428,9 @@ video {
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.16);
   backdrop-filter: blur(10px);
   color: #fff;
-  padding: 9px 12px 11px;
+  /* Symmetric padding keeps the row optically centred; the 4px progress bar
+     sits inside the lower padding. */
+  padding: 10px 12px;
 }
 
 .recording-hud.visible {
@@ -1385,8 +1442,9 @@ video {
   min-width: 0;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -1404,19 +1462,43 @@ video {
   display: grid;
   grid-template-columns: auto auto;
   gap: 6px;
-  align-items: baseline;
-  color: rgba(255, 255, 255, 0.62);
-  font-size: 10px;
-  font-weight: 500;
+  /* Centre each label against its clock so "REMAINING 01:53" sits on one line
+     with the other HUD items instead of riding the large number's baseline. */
+  align-items: center;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
 .recording-time strong {
   color: #fff;
   font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-  font-size: 13px;
+  font-size: 16px;
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: -0.02em;
+  line-height: 1;
+  text-transform: none;
+}
+
+/* The remaining time is the one number a speaker glances at mid-answer, so it
+   is larger and brighter than the elapsed clock, and warms up near the end. */
+.recording-time-remaining span {
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 700;
+}
+
+.recording-time-remaining strong {
+  color: #FFD166;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.recording-hud.visible.is-urgent .recording-time-remaining strong {
+  color: #FF8D73;
 }
 
 .recording-progress {
@@ -2365,11 +2447,32 @@ video {
     "kicker kicker"
     "question question"
     "message message"
+    "figure figure"
     "preview countdown"
     "guidance actions";
   align-items: center;
   gap: 14px 28px;
   padding: clamp(22px, 3vw, 32px);
+}
+
+/* Text-only lessons keep the original grid, so no empty figure row is reserved. */
+.prepare-dialog.is-countdown.no-figure {
+  grid-template-areas:
+    "kicker kicker"
+    "question question"
+    "message message"
+    "preview countdown"
+    "guidance actions";
+}
+
+.prepare-dialog.is-countdown .prepare-figure {
+  grid-area: figure;
+  width: min(560px, 100%);
+  margin: 0 auto;
+}
+
+.prepare-dialog.is-countdown .prepare-figure img {
+  max-height: 240px;
 }
 
 .prepare-content,
@@ -2387,12 +2490,21 @@ video {
     "kicker kicker"
     "question question"
     "message message"
+    "figure figure"
     "countdown actions";
   grid-template-columns: minmax(0, 1fr) 220px;
   align-content: center;
   min-height: 0;
   padding: clamp(28px, 4vw, 42px);
   gap: 16px 28px;
+}
+
+.prepare-dialog.is-countdown.audio-only.no-figure {
+  grid-template-areas:
+    "kicker kicker"
+    "question question"
+    "message message"
+    "countdown actions";
 }
 
 .prepare-dialog.is-countdown.audio-only #prepareCameraGuidance {
@@ -2479,6 +2591,12 @@ video {
   font-size: clamp(26px, 3vw, 38px);
   line-height: 1.06;
   text-wrap: pretty;
+}
+
+/* Keep the task figure compact while answering so the camera preview and
+   controls stay on screen; it scrolls with the dialog rather than pushing them. */
+.prepare-dialog.is-recording .task-figure img {
+  max-height: 190px;
 }
 
 @media (min-width: 821px) {
@@ -3393,12 +3511,23 @@ video {
       "kicker kicker"
       "question question"
       "message message"
+      "figure figure"
       "preview preview"
       "guidance guidance"
       "countdown actions";
     gap: 10px 14px;
     align-items: center;
     padding: 18px;
+  }
+
+  .prepare-dialog.is-countdown.no-figure {
+    grid-template-areas:
+      "kicker kicker"
+      "question question"
+      "message message"
+      "preview preview"
+      "guidance guidance"
+      "countdown actions";
   }
 
   .prepare-dialog.is-countdown > * + * {
