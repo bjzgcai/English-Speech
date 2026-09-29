@@ -76,6 +76,9 @@
     "One task. One week.": "一个任务，一周时间。",
     "Best score counts": "以最高分为准",
     "Try again; only your highest score appears.": "可以重复尝试，排行榜只显示最高分。",
+    "Task figure": "任务配图",
+    "Illustrative figure — synthetic data": "示意图 — 合成数据",
+    "Illustrative figure - synthetic data": "示意图 - 合成数据",
     "Try again during the week. Only your highest completed evaluation appears on the board.":
       "本周内可重复尝试，排行榜仅显示您最高的完成评估。",
     "Candidate profile": "候选人资料",

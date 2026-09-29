@@ -1,13 +1,29 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const {
   availableChallenges,
   challengeForIndex,
+  challengeQuestion,
   currentChallenge,
   leaderboardForChallenge,
   normalizeGameGroup,
   weeklyTopics,
 } = require("../src/game");
+
+const publicDir = path.join(__dirname, "..", "public");
+
+// The lessons whose task material is a figure the learner must interpret.
+const FIGURE_LESSON_SLUGS = {
+  "Structuring an academic presentation": "l02-presentation-structure",
+  "Finding the main line of a talk": "l03-talk-mainline",
+  "Three-pass reading of an AI paper": "l05-paper-three-pass",
+  "Explaining an experimental figure": "l07-experimental-figure",
+  "Managing the boundaries of your results": "l10-results-boundaries",
+  "Title and abstract information structure": "l12-title-abstract",
+  "A research statement around one figure": "l13-research-statement-figure",
+};
 
 test("academic English course starts on 2026-09-28 with sixteen lessons", () => {
   assert.equal(weeklyTopics.length, 16);
@@ -238,4 +254,84 @@ test("available challenges and leaderboards stay inside one group", () => {
   assert.deepEqual(firstBoard.entries.map((entry) => entry.name), ["Group One"]);
   const secondBoard = leaderboardForChallenge(records, second, "group-two");
   assert.deepEqual(secondBoard.entries.map((entry) => entry.name), ["Group Two"]);
+});
+
+test("exactly the seven figure lessons carry an interpretable figure asset", () => {
+  const withFigure = weeklyTopics.filter((topic) => topic.figure);
+  assert.equal(withFigure.length, Object.keys(FIGURE_LESSON_SLUGS).length);
+  assert.deepEqual(
+    withFigure.map((topic) => topic.title).sort(),
+    Object.keys(FIGURE_LESSON_SLUGS).sort(),
+  );
+
+  for (const topic of withFigure) {
+    const slug = FIGURE_LESSON_SLUGS[topic.title];
+    assert.equal(topic.figure.src, `/assets/figures/${slug}.png`);
+    assert.match(topic.figure.src, /^\/assets\/figures\/[a-z0-9-]+\.png$/);
+    assert.ok(topic.figure.alt.length > 20, `${topic.title} needs descriptive alt text`);
+    assert.equal(topic.figure.caption, "Illustrative figure — synthetic data");
+    // Every referenced asset must ship with the repository.
+    assert.equal(
+      fs.existsSync(path.join(publicDir, topic.figure.src.replace(/^\//, ""))),
+      true,
+      `missing committed asset for ${topic.title}`,
+    );
+  }
+
+  // The nine remaining lessons stay text-only.
+  assert.equal(weeklyTopics.filter((topic) => !topic.figure).length, 9);
+});
+
+test("the figure follows the topic, so both class groups receive the right one", () => {
+  for (const group of ["g1", "g2"]) {
+    for (const slot of Array.from({ length: 16 }, (_, index) => index)) {
+      const challenge = challengeForIndex(slot, group);
+      const topic = weeklyTopics[challenge.topicIndex];
+      assert.deepEqual(
+        challenge.figure,
+        topic.figure || null,
+        `${group} slot ${slot} (${challenge.title}) figure`,
+      );
+    }
+  }
+
+  // Group 2 opens the course on a different topic and must receive its figure.
+  const launch = currentChallenge(new Date("2026-09-29T12:00:00+08:00"), "g2");
+  assert.equal(launch.title, "Explaining an experimental figure");
+  assert.equal(launch.figure.src, "/assets/figures/l07-experimental-figure.png");
+
+  const firstTopical = currentChallenge(new Date("2026-09-29T12:00:00+08:00"), "g1");
+  assert.equal(firstTopical.figure, null);
+});
+
+test("the persisted question carries the figure so history and scoring keep it", () => {
+  const lesson = challengeForIndex(6, "g1");
+  const question = challengeQuestion(lesson);
+  assert.equal(question.figure.src, lesson.figure.src);
+  assert.equal(question.figure.caption, lesson.figure.caption);
+  assert.equal(question.challengeId, lesson.id);
+
+  const textOnly = challengeQuestion(challengeForIndex(0, "g1"));
+  assert.equal(textOnly.figure, null);
+});
+
+test("figure lessons read as plain tasks without an 'use the figure' opener", () => {
+  const figureTopics = weeklyTopics.filter((topic) => topic.figure);
+  assert.equal(figureTopics.length, 7);
+
+  // The figure is the task material because it is shown beside the question and
+  // labelled "Task figure"; the prompt itself stays a plain task statement.
+  const stalePhrasing =
+    /not your own|your own work|from your own|choose one|your current work|you recently heard|you have read recently/i;
+
+  for (const topic of figureTopics) {
+    assert.doesNotMatch(topic.question, /^use the\b/i, `${topic.title} must not open with an imperative`);
+    assert.doesNotMatch(topic.question, /\bshown\b/i, `${topic.title} must not say "shown"`);
+    assert.doesNotMatch(topic.question, stalePhrasing, `${topic.title} must not ask for own material`);
+  }
+
+  // The nine text-only lessons must not acquire a figure reference either.
+  for (const topic of weeklyTopics.filter((topic) => !topic.figure)) {
+    assert.doesNotMatch(topic.question, /\bshown\b/i, `${topic.title} has no figure to point at`);
+  }
 });

@@ -107,6 +107,9 @@ const leaderboardSummary = document.querySelector("#leaderboardSummary");
 const leaderboardList = document.querySelector("#leaderboardList");
 const leaderboardIdentitySettings = document.querySelector("#leaderboardIdentitySettings");
 const gameLessonMeta = document.querySelector("#gameLessonMeta");
+const questionFigure = document.querySelector("#questionFigure");
+const questionFigureImage = document.querySelector("#questionFigureImage");
+const questionFigureCaption = document.querySelector("#questionFigureCaption");
 const historyList = document.querySelector("#historyList");
 const playView = document.querySelector("#playView");
 const leaderboardView = document.querySelector("#leaderboardView");
@@ -137,6 +140,9 @@ const prepareGuidanceTitle = document.querySelector("#prepareGuidanceTitle");
 const prepareGuidanceMessage = document.querySelector("#prepareGuidanceMessage");
 const prepareActions = document.querySelector("#prepareActions");
 const speakDirectlyButton = document.querySelector("#speakDirectlyButton");
+const prepareFigure = document.querySelector("#prepareFigure");
+const prepareFigureImage = document.querySelector("#prepareFigureImage");
+const prepareFigureCaption = document.querySelector("#prepareFigureCaption");
 const recorderModalSlot = document.querySelector("#recorderModalSlot");
 const deviceStatus = document.querySelector("#deviceStatus");
 const privacyConsentModal = document.querySelector("#privacyConsentModal");
@@ -496,6 +502,8 @@ function updateRecordingTimer() {
   recordingElapsed.textContent = elapsedLabel;
   recordingRemaining.textContent = remainingLabel;
   recordingProgress.style.transform = `scaleX(${elapsedMs / MAX_RECORDING_MS})`;
+  // The last half minute turns the remaining count into a clear warning.
+  recordingBadge.classList.toggle("is-urgent", remainingSeconds <= 30);
   recordingBadge.setAttribute(
     "aria-label",
     `Recording started. ${elapsedLabel} elapsed. ${remainingLabel} remaining.`,
@@ -667,6 +675,8 @@ function showGeneratingModal() {
   stopPrepareCountdown();
   restoreRecorderPanel();
   prepareDialog.classList.remove("is-countdown");
+  prepareDialog.classList.add("no-figure");
+  renderTaskFigure(prepareFigure, prepareFigureImage, prepareFigureCaption, null);
   prepareModalKicker.textContent = "Generating";
   prepareModalTitle.textContent = "Preparing your question...";
   prepareModalMessage.textContent = "Please wait while the assessment question is generated.";
@@ -682,6 +692,7 @@ function showGeneratingModal() {
 
 function showCountdownModal(question) {
   prepareDialog.classList.toggle("audio-only", !state.useCamera);
+  prepareDialog.classList.toggle("no-figure", !question?.figure?.src);
   state.mediaRetryPending = false;
   state.mediaRetryAction = null;
   restoreRecorderPanel();
@@ -689,6 +700,7 @@ function showCountdownModal(question) {
   prepareModalKicker.textContent = "";
   prepareModalTitle.textContent = question.question;
   prepareModalMessage.replaceChildren();
+  renderTaskFigure(prepareFigure, prepareFigureImage, prepareFigureCaption, question?.figure);
   prepareSpinner.hidden = true;
   preparePreviewWrap.hidden = !state.useCamera || !state.stream;
   prepareCameraGuidance.hidden = false;
@@ -722,6 +734,8 @@ function showMediaRequiredModal(error, retryAction = "record") {
   state.mediaRetryAction = retryAction;
   restoreRecorderPanel();
   prepareDialog.classList.remove("is-countdown");
+  prepareDialog.classList.add("no-figure");
+  renderTaskFigure(prepareFigure, prepareFigureImage, prepareFigureCaption, null);
   prepareModalKicker.textContent = "Devices required";
   prepareModalTitle.textContent = "Turn on your camera and microphone to continue";
   prepareModalMessage.textContent =
@@ -876,8 +890,35 @@ function setQuestion(question) {
   syncGroupPickers();
   questionText.textContent = question.question;
   questionMeta.textContent = "";
+  renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, question?.figure);
   saveResult.textContent = "";
   evaluationResult.innerHTML = "";
+}
+
+// Weekly task figures are optional: hide the slot (and its "Task figure" label,
+// which sits directly above it) whenever the challenge has no figure, so the
+// nine text-only lessons keep their current layout.
+function renderTaskFigure(figureEl, imageEl, captionEl, figure) {
+  if (!figureEl || !imageEl) return;
+  // The "Task figure" label lives inside the figure element.
+  const labelEl = figureEl.querySelector(".task-figure-label");
+  const toggleLabel = (visible) => {
+    if (labelEl) labelEl.hidden = !visible;
+  };
+  const src = typeof figure?.src === "string" ? figure.src.trim() : "";
+  if (!src) {
+    imageEl.removeAttribute("src");
+    imageEl.alt = "";
+    if (captionEl) captionEl.textContent = "";
+    toggleLabel(false);
+    figureEl.hidden = true;
+    return;
+  }
+  imageEl.src = src;
+  imageEl.alt = typeof figure.alt === "string" ? figure.alt : "";
+  if (captionEl) captionEl.textContent = typeof figure.caption === "string" ? figure.caption : "";
+  toggleLabel(true);
+  figureEl.hidden = false;
 }
 
 function stopStream() {
@@ -1028,6 +1069,7 @@ function showGameChallenge(challenge) {
   if (!state.question && normalizeRoute(window.location.pathname) === "/game") {
     questionText.textContent = challenge.question;
     questionMeta.textContent = `Target: within ${challenge.expectedDurationSeconds} seconds.`;
+    renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, challenge.figure);
   }
 }
 
@@ -1231,6 +1273,7 @@ async function loadGameChallenge() {
   } catch (error) {
     gameTopicTitle.textContent = "This week's task is unavailable";
     gameTopicQuestion.textContent = error.message;
+    renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, null);
   }
 }
 
@@ -1471,6 +1514,16 @@ function renderHistoryItem(item, index) {
   const videoPath = item.path || "";
   const shareId = item.evaluation?.status === "completed" ? `history-${item.id}` : "";
   if (shareId) window.EvaluationShare.register(shareId, item.evaluation);
+  const figure = item.question?.figure;
+  const figureMarkup =
+    figure && typeof figure.src === "string" && figure.src.trim()
+      ? `
+        <figure class="task-figure history-figure">
+          <img src="${escapeHtml(figure.src)}" alt="${escapeHtml(figure.alt || "")}" loading="lazy" decoding="async">
+          ${figure.caption ? `<figcaption>${escapeHtml(figure.caption)}</figcaption>` : ""}
+        </figure>
+      `
+      : "";
 
   return `
     <details class="history-collapse" ${index === 0 ? "open" : ""}>
@@ -1479,6 +1532,7 @@ function renderHistoryItem(item, index) {
         <span class="history-meta">${escapeHtml(name)} · ${escapeHtml(date)} · ${escapeHtml(score)}</span>
       </summary>
       <div class="history-detail">
+        ${figureMarkup}
         ${
           item.hasVideo !== false && videoPath
             ? `
@@ -1527,6 +1581,7 @@ function setPlayMode(route) {
     state.question = null;
     evaluationResult.innerHTML = "";
     saveResult.textContent = "";
+    renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, null);
   }
   syncGroupPickers();
 
@@ -1539,6 +1594,7 @@ function setPlayMode(route) {
     } else {
       questionText.textContent = "Enter a profile, then generate one question.";
       questionMeta.textContent = "";
+      renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, null);
     }
   }
 }

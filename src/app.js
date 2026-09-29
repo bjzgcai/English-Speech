@@ -964,6 +964,23 @@ function fileToDataUrl(filePath, mimeType) {
   return `data:${mimeType};base64,${fs.readFileSync(filePath).toString("base64")}`;
 }
 
+// Weekly task figures are static assets committed under public/assets/figures.
+// Only a flat slug path is accepted, and the resolved file must stay inside the
+// figures directory, so a stored question can never be used to read another file.
+const figuresDir = path.join(publicDir, "assets", "figures");
+const figureSrcPattern = /^\/assets\/figures\/([a-z0-9][a-z0-9-]*)\.(png|jpe?g|webp)$/;
+const figureMimeTypes = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp" };
+
+function resolveFigureImage(src) {
+  const match = figureSrcPattern.exec(safeText(src));
+  if (!match) return null;
+  const resolved = path.resolve(figuresDir, `${match[1]}.${match[2]}`);
+  if (resolved !== path.join(figuresDir, `${match[1]}.${match[2]}`)) return null;
+  if (!resolved.startsWith(`${figuresDir}${path.sep}`)) return null;
+  if (!fs.existsSync(resolved)) return null;
+  return { path: resolved, mimeType: figureMimeTypes[match[2].toLowerCase()] || "image/png" };
+}
+
 function extractJsonObject(value) {
   const text = safeText(value);
   const start = text.indexOf("{");
@@ -1584,7 +1601,7 @@ async function transcribeAudio(audioPath, { durationSeconds = null } = {}) {
   }
 }
 
-function buildEvaluationPrompt({ profile, question, transcript, audioMetrics, frameCount, evaluationMode }) {
+function buildEvaluationPrompt({ profile, question, transcript, audioMetrics, frameCount, evaluationMode, figure = null }) {
   const weights = evaluationRubricStandard.dimensions
     .map((dimension) => `${dimension.key} ${dimension.weight}`)
     .join(", ");
@@ -1594,6 +1611,7 @@ function buildEvaluationPrompt({ profile, question, transcript, audioMetrics, fr
       { score: 0, feedback: "" },
     ]),
   );
+  const hasFigure = Boolean(figure);
   return [
     "Evaluate this user's English speaking performance from the transcript and sampled video frames.",
     "Return strict JSON only. Do not include markdown.",
@@ -1614,6 +1632,12 @@ function buildEvaluationPrompt({ profile, question, transcript, audioMetrics, fr
     frameCount > 0
       ? "Use the sampled frames to score visual delivery."
       : "No visual frames are available. Do not infer visual delivery; return 0 for that dimension and explain that it was not assessed.",
+    ...(hasFigure
+      ? [
+          "The task includes a reference figure, attached as the first image. Judge whether the learner's spoken description matches the figure: the main trend or pattern, any anomaly, the baseline comparison, and what the axes, columns or labels mean. Reflect this in the coherence score and mention it in the feedback.",
+          "Base any figure feedback only on what the figure actually shows. Never invent values, labels, trends, or findings that are not visible in the figure.",
+        ]
+      : []),
     "Schema:",
     JSON.stringify({
       hasScorableEnglishSpeech: true,
@@ -1630,6 +1654,14 @@ function buildEvaluationPrompt({ profile, question, transcript, audioMetrics, fr
     `Question: ${JSON.stringify(question)}`,
     `Audio metrics: ${JSON.stringify(audioMetrics)}`,
     `Sampled video frames: ${frameCount}`,
+    ...(hasFigure
+      ? [
+          `Reference task figure (image 1): ${safeText(figure.alt) || "see attached image"}`,
+          ...(frameCount > 0
+            ? [`Image order: image 1 is the task reference figure; images 2-${frameCount + 1} are the learner's sampled video frames.`]
+            : []),
+        ]
+      : []),
     `Transcript: ${transcript || "[empty transcription]"}`,
   ].join("\n");
 }
@@ -1656,6 +1688,12 @@ async function evaluateAnswer({
 
   const apiKey = process.env.INTERNAL_LLM_API_KEY;
   const requestTimeoutMs = positiveInteger(Number(process.env.EVAL_REQUEST_TIMEOUT_MS), 600_000);
+  // A weekly task figure rides with the stored question so the evaluator can
+  // check whether the learner's description matches what the figure shows.
+  const figureImage = resolveFigureImage(question?.figure?.src);
+  const figurePrompt = figureImage
+    ? { alt: safeText(question?.figure?.alt), caption: safeText(question?.figure?.caption) }
+    : null;
   const content = [
     {
       type: "text",
@@ -1666,8 +1704,17 @@ async function evaluateAnswer({
         audioMetrics,
         frameCount: framePaths.length,
         evaluationMode,
+        figure: figurePrompt,
       }),
     },
+    ...(figureImage
+      ? [{
+          type: "image_url",
+          image_url: {
+            url: fileToDataUrl(figureImage.path, figureImage.mimeType),
+          },
+        }]
+      : []),
     ...framePaths.map((framePath) => ({
       type: "image_url",
       image_url: {
@@ -2319,6 +2366,7 @@ function gameChallengeForClient(challenge) {
     followUp: challenge.followUp,
     startsAt: challenge.startsAt,
     endsAt: challenge.endsAt,
+    figure: challenge.figure || null,
     structuralGuide: challenge.structuralGuide,
   };
 }
@@ -2964,6 +3012,7 @@ module.exports = {
     normalizeRedirectPath,
     parseOAuthState,
     publicEvaluationForClient,
+    resolveFigureImage,
     standaloneEvaluationTitle,
     transcribeAudio,
     useSecureSessionCookie,

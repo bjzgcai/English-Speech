@@ -43,9 +43,14 @@ const weeklyTopics = Object.freeze([
     instructor: "Liu Junli",
     title: "Structuring an academic presentation",
     question:
-      "Outline how you would structure a strong academic presentation, and explain one PPT-design or body-language technique you will adopt and why.",
+      "Walk through this talk outline's sections in order, then explain one design or body-language technique you would adopt, and why.",
     focus: "Logical talk structure plus one specific delivery technique",
     followUp: "How would you open your talk in one sentence?",
+    figure: {
+      src: "/assets/figures/l02-presentation-structure.png",
+      alt: "Annotated sample talk outline for an AI study: title slide, then motivation, method, results and conclusion sections, with design, delivery and timing cues.",
+      caption: "Illustrative figure — synthetic data",
+    },
   },
   // Unit 2 — Academic listening, notes & questions (Liu Junli)
   {
@@ -54,9 +59,14 @@ const weeklyTopics = Object.freeze([
     instructor: "Liu Junli",
     title: "Finding the main line of a talk",
     question:
-      "Describe how you identify the structure signposts and main line of a short academic talk, using a talk you recently heard as an example.",
+      "Name the signpost that introduces each stage of this road map, then state the talk's main line in one sentence.",
     focus: "Concrete signposts and one real example",
     followUp: "What was the speaker's key message?",
+    figure: {
+      src: "/assets/figures/l03-talk-mainline.png",
+      alt: "Road-map diagram for an AI talk, linking problem, method, result and limitation with the signpost phrase that introduces each stage.",
+      caption: "Illustrative figure — synthetic data",
+    },
   },
   {
     unitNumber: 2,
@@ -75,9 +85,14 @@ const weeklyTopics = Object.freeze([
     instructor: "He Yuan",
     title: "Three-pass reading of an AI paper",
     question:
-      "Explain the abstract-figures-conclusion three-pass reading method, and show how you would apply it to one AI paper you have read recently.",
+      "Explain what each of the three reading passes tells you about this paper, from the title and abstract to the figure and the conclusion.",
     focus: "Method explained plus one applied example",
     followUp: "What did the figures tell you before you read the text?",
+    figure: {
+      src: "/assets/figures/l05-paper-three-pass.png",
+      alt: "Front page of an AI paper on retrieval-augmented question answering, with title, abstract block, a Figure 1 bar-chart thumbnail and the conclusion, beside three numbered reading passes.",
+      caption: "Illustrative figure — synthetic data",
+    },
   },
   {
     unitNumber: 3,
@@ -96,9 +111,14 @@ const weeklyTopics = Object.freeze([
     instructor: "Wang Xudong",
     title: "Explaining an experimental figure",
     question:
-      "Choose one experimental figure from your own work. Explain it following conclusion-comparison-evidence-boundary, including one trend, anomaly, or uncertainty and a baseline comparison.",
+      "State the conclusion first, compare the proposed method with the baseline, cite the evidence, and name the boundary — including one trend or anomaly and one uncertainty.",
     focus: "Conclusion first, then comparison, evidence, and limits",
     followUp: "How does it compare with the baseline?",
+    figure: {
+      src: "/assets/figures/l07-experimental-figure.png",
+      alt: "Grouped bar chart of exact match with error bars, comparing Ours (RAG-8B) with a Baseline (Dense-8B) across four question-answering benchmarks, including one outlier run where the baseline wins.",
+      caption: "Illustrative figure — synthetic data",
+    },
   },
   {
     unitNumber: 4,
@@ -127,9 +147,14 @@ const weeklyTopics = Object.freeze([
     instructor: "Hu Chen",
     title: "Managing the boundaries of your results",
     question:
-      "Explain what your current results can and cannot support. Use hedging, contrast, and probability language to separate 'not yet known', 'cannot be inferred', and 'remains to be validated'.",
+      "Explain what these results can and cannot support, and hedge two rows deliberately with contrast and probability language — one significant, one not.",
     focus: "Hedged, well-bounded statements",
     followUp: "What evidence would strengthen your claim?",
+    figure: {
+      src: "/assets/figures/l10-results-boundaries.png",
+      alt: "Results table with exact-match means, confidence intervals and a mix of significant and clearly non-significant rows.",
+      caption: "Illustrative figure — synthetic data",
+    },
   },
   // Unit 6 — Group-meeting updates & core academic writing (Gao Kun)
   {
@@ -148,9 +173,14 @@ const weeklyTopics = Object.freeze([
     instructor: "Gao Kun",
     title: "Title and abstract information structure",
     question:
-      "Draft a title and abstract for your current work and read them aloud, explaining your information-structure and audience choices; finish with one line from an academic email asking for collaboration.",
+      "Read this title and abstract aloud, explain the information order of the numbered sentences, and finish with one line from an academic email asking for collaboration.",
     focus: "Audience-aware information order",
     followUp: "What would you cut for a general audience?",
+    figure: {
+      src: "/assets/figures/l12-title-abstract.png",
+      alt: "Title and abstract of an AI paper whose five abstract sentences are numbered to show information order, with callouts on order, title and audience.",
+      caption: "Illustrative figure — synthetic data",
+    },
   },
   // Unit 7 — Research statements & conference Q&A (Wang Xudong)
   {
@@ -159,9 +189,14 @@ const weeklyTopics = Object.freeze([
     instructor: "Wang Xudong",
     title: "A research statement around one figure",
     question:
-      "Deliver a two-minute research statement built around one key figure: the problem, your approach, the main result, and why it matters.",
+      "Deliver a two-minute research statement built around this figure: the problem, the approach, the main result it shows, and why it matters.",
     focus: "One figure, one story, clear significance",
     followUp: "What is the one sentence you want remembered?",
+    figure: {
+      src: "/assets/figures/l13-research-statement-figure.png",
+      alt: "Line chart of exact match against training steps, comparing Ours with a baseline and highlighting the twelve-point gap that closes at the last step.",
+      caption: "Illustrative figure — synthetic data",
+    },
   },
   {
     unitNumber: 7,
@@ -239,6 +274,7 @@ function challengeForIndex(index, group = DEFAULT_GAME_GROUP) {
     focus: topic.focus,
     expectedDurationSeconds: 120,
     followUp: topic.followUp,
+    figure: topic.figure || null,
     startsAt: new Date(startMs).toISOString(),
     endsAt: new Date(endMs).toISOString(),
     structuralGuide,
@@ -266,6 +302,7 @@ function challengeQuestion(challenge) {
     challengeTitle: challenge.title,
     challengeStartsAt: challenge.startsAt,
     challengeEndsAt: challenge.endsAt,
+    figure: challenge.figure || null,
   };
 }
 
