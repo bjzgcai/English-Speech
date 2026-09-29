@@ -58,10 +58,23 @@
               <h2 id="leaderboardTitle">This week's leaderboard</h2>
               <p id="leaderboardTopic">Best completed score for this week's task.</p>
             </div>
-            <label class="leaderboard-picker">
-              Challenge week
-              <select id="leaderboardWeek" aria-label="Choose a challenge week"></select>
-            </label>
+            <div class="leaderboard-controls">
+              <label class="leaderboard-picker">
+                Challenge week
+                <select id="leaderboardWeek" aria-label="Choose a challenge week"></select>
+              </label>
+              <fieldset class="group-picker" id="leaderboardGroupPicker">
+                <legend>Group</legend>
+                <label>
+                  <input type="radio" name="leaderboardGroup" value="g1" checked>
+                  <span>Group 1</span>
+                </label>
+                <label>
+                  <input type="radio" name="leaderboardGroup" value="g2">
+                  <span>Group 2</span>
+                </label>
+              </fieldset>
+            </div>
           </div>
           <a class="leaderboard-cta leaderboard-cta-top" href="/game" data-route="/game">
             <span>Join to PK!</span>
@@ -91,6 +104,17 @@
           <div class="game-week">
             <span id="gameWeekLabel">Sep 28 - Oct 12</span>
             <strong>One task. One week.</strong>
+            <fieldset class="group-picker" id="gameGroupPicker">
+              <legend>Group</legend>
+              <label>
+                <input type="radio" name="gameGroup" value="g1" checked>
+                <span>Group 1</span>
+              </label>
+              <label>
+                <input type="radio" name="gameGroup" value="g2">
+                <span>Group 2</span>
+              </label>
+            </fieldset>
           </div>
           <div class="game-topic">
             <span id="gameLessonMeta" class="game-lesson-meta" hidden></span>

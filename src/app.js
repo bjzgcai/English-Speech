@@ -38,6 +38,7 @@ const {
   challengeQuestion,
   currentChallenge,
   leaderboardForChallenge,
+  normalizeGameGroup,
 } = require("./game");
 
 const app = express();
@@ -2306,6 +2307,7 @@ async function moderateComment(comment) {
 function gameChallengeForClient(challenge) {
   return {
     id: challenge.id,
+    group: challenge.group,
     lessonNumber: challenge.lessonNumber,
     unitNumber: challenge.unitNumber,
     unitTitle: challenge.unitTitle,
@@ -2321,12 +2323,14 @@ function gameChallengeForClient(challenge) {
   };
 }
 
-app.get("/api/game/challenge", (_req, res) => {
-  const challenge = currentChallenge();
+app.get("/api/game/challenge", (req, res) => {
+  const group = normalizeGameGroup(safeText(req.query.group));
+  const challenge = currentChallenge(new Date(), group);
   res.set("Cache-Control", "no-store");
   res.json({
     challenge: gameChallengeForClient(challenge),
-    challenges: availableChallenges().map(gameChallengeForClient),
+    challenges: availableChallenges(new Date(), 10, group).map(gameChallengeForClient),
+    group,
   });
 });
 
@@ -2385,7 +2389,8 @@ app.get("/api/game/leaderboard", (req, res) => {
     const viewer = visitorAccess.resolveVisitor(req, res);
     if (visitorAccess.hasAccess(req, viewer)) viewerOpenId = viewer.openId;
   } catch { /* Public standings do not depend on session availability. */ }
-  const challenges = availableChallenges();
+  const group = normalizeGameGroup(safeText(req.query.group));
+  const challenges = availableChallenges(new Date(), 10, group);
   const requestedId = safeText(req.query.challengeId);
   const challenge = requestedId
     ? challenges.find((item) => item.id === requestedId)
@@ -2430,7 +2435,8 @@ const queueApi = config.queueEnabled && process.env.QUEUE_WORKER !== "true" ? re
 const requireAdmission = queueApi?.required || ((_req, _res, next) => next());
 
 app.post("/api/game/question", requireVisitor, requirePrivacyConsent, requireAttemptQuota, requireAdmission, (req, res) => {
-  const challenge = currentChallenge();
+  const group = normalizeGameGroup(safeText(req.body?.group));
+  const challenge = currentChallenge(new Date(), group);
   const profile = {
     name: safeText(req.user.name, "DingTalk user"),
     role: "Academic English weekly course task",

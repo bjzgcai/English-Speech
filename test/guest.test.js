@@ -16,6 +16,7 @@ const { app, testHelpers } = require("../src/app");
 const config = require("../src/config");
 const { appendJsonLine } = require("../src/storage");
 const analytics = require("../src/analytics");
+const game = require("../src/game");
 let server;
 let base;
 test.before(async () => {
@@ -244,4 +245,39 @@ test("an invited guest can sign out and loses access without losing the invitati
   const restored = await guest(again.headers.getSetCookie().map(value => value.split(";")[0]).join("; "));
   assert.equal(restored.hasAccess, true);
   assert.equal(restored.user.name, "Ada Lovelace");
+});
+
+test("the game challenge and leaderboard accept a parallel group selection", async () => {
+  const expectedSecond = game.currentChallenge(new Date(), "g2");
+
+  const defaultCatalog = await (await fetch(base + "/api/game/challenge")).json();
+  assert.equal(defaultCatalog.group, "g1");
+  assert.equal(defaultCatalog.challenge.group, "g1");
+  assert.ok(defaultCatalog.challenges.every((challenge) => challenge.group === "g1"));
+  assert.ok(defaultCatalog.challenges.every((challenge) => !challenge.id.endsWith("-g2")));
+
+  const secondCatalog = await (await fetch(base + "/api/game/challenge?group=g2")).json();
+  assert.equal(secondCatalog.group, "g2");
+  assert.equal(secondCatalog.challenge.group, "g2");
+  assert.equal(secondCatalog.challenge.id, expectedSecond.id);
+  assert.equal(secondCatalog.challenge.title, expectedSecond.title);
+  assert.equal(secondCatalog.challenge.unitNumber, expectedSecond.unitNumber);
+  assert.equal(secondCatalog.challenge.id, `${defaultCatalog.challenge.id}-g2`);
+  assert.notEqual(secondCatalog.challenge.title, defaultCatalog.challenge.title);
+  assert.ok(secondCatalog.challenges.every((challenge) => challenge.group === "g2"));
+
+  // An unrecognized group falls back to the default group instead of failing.
+  const invalid = await (await fetch(base + "/api/game/challenge?group=nope")).json();
+  assert.equal(invalid.group, "g1");
+  assert.equal(invalid.challenge.id, defaultCatalog.challenge.id);
+
+  const board = await (await fetch(base + "/api/game/leaderboard?group=g2")).json();
+  assert.equal(board.challenge.group, "g2");
+  assert.equal(board.challenge.id, secondCatalog.challenge.id);
+
+  // A group 2 challenge id is not resolvable through the group 1 board.
+  const mismatched = await fetch(
+    base + `/api/game/leaderboard?group=g1&challengeId=${encodeURIComponent(secondCatalog.challenge.id)}`,
+  );
+  assert.equal(mismatched.status, 400);
 });

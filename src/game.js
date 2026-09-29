@@ -6,6 +6,25 @@ const COURSE_ANCHOR_MS = Date.parse("2026-09-28T00:00:00+08:00");
 const LESSON_COUNT = 16;
 const LAUNCH_END_MS = COURSE_ANCHOR_MS + 2 * WEEK_MS;
 
+// The course runs two parallel class groups over the same weekly lesson slots.
+// Group 1 ("g1") keeps the original topic order; Group 2 ("g2") walks the same
+// sixteen-topic pool in the order the course schedule assigns to the second
+// parallel class. Every slot value is an index into `weeklyTopics`.
+const DEFAULT_GAME_GROUP = "g1";
+const GAME_GROUPS = Object.freeze({
+  g1: Object.freeze(Array.from({ length: LESSON_COUNT }, (_, index) => index)),
+  g2: Object.freeze([6, 7, 12, 13, 8, 9, 10, 11, 4, 5, 0, 1, 2, 3, 14, 15]),
+});
+
+function normalizeGameGroup(value) {
+  if (typeof value !== "string" && typeof value !== "number") return DEFAULT_GAME_GROUP;
+  // Accepts "g2", "2", "group 2", and "group-2" alike so hand-written or shared
+  // links keep working.
+  const token = String(value).trim().toLowerCase().replace(/^group[\s_-]*/, "");
+  const group = /^[1-9]$/.test(token) ? `g${token}` : token;
+  return Object.prototype.hasOwnProperty.call(GAME_GROUPS, group) ? group : DEFAULT_GAME_GROUP;
+}
+
 const weeklyTopics = Object.freeze([
   // Unit 1 — Course launch & research survival communication (Liu Junli)
   {
@@ -193,17 +212,25 @@ function challengeIndexAt(now = new Date()) {
   return 1 + Math.floor((t - LAUNCH_END_MS) / WEEK_MS);
 }
 
-function challengeForIndex(index) {
-  const topicIndex = ((index % LESSON_COUNT) + LESSON_COUNT) % LESSON_COUNT;
+function challengeForIndex(index, group = DEFAULT_GAME_GROUP) {
+  const normalizedGroup = normalizeGameGroup(group);
+  const slotIndex = ((index % LESSON_COUNT) + LESSON_COUNT) % LESSON_COUNT;
+  const topicIndex = GAME_GROUPS[normalizedGroup][slotIndex];
   const topic = weeklyTopics[topicIndex];
   const startMs = index === 0 ? COURSE_ANCHOR_MS : COURSE_ANCHOR_MS + (index + 1) * WEEK_MS;
   const endMs = index === 0 ? LAUNCH_END_MS : startMs + WEEK_MS;
   const dateKey = new Date(startMs).toLocaleDateString("en-CA", { timeZone: "Asia/Shanghai" });
+  // Group 1 keeps its historical identifier so existing answers, boards, and
+  // analytics remain valid; Group 2 gets its own identifier for a separate board.
+  const id = normalizedGroup === DEFAULT_GAME_GROUP
+    ? `weekly-${dateKey}`
+    : `weekly-${dateKey}-${normalizedGroup}`;
 
   return {
-    id: `weekly-${dateKey}`,
+    id,
+    group: normalizedGroup,
     topicIndex,
-    lessonNumber: topicIndex + 1,
+    lessonNumber: slotIndex + 1,
     unitNumber: topic.unitNumber,
     unitTitle: topic.unitTitle,
     instructor: topic.instructor,
@@ -218,14 +245,14 @@ function challengeForIndex(index) {
   };
 }
 
-function currentChallenge(now = new Date()) {
-  return challengeForIndex(challengeIndexAt(now));
+function currentChallenge(now = new Date(), group = DEFAULT_GAME_GROUP) {
+  return challengeForIndex(challengeIndexAt(now), group);
 }
 
-function availableChallenges(now = new Date(), limit = 10) {
+function availableChallenges(now = new Date(), limit = 10, group = DEFAULT_GAME_GROUP) {
   const currentIndex = challengeIndexAt(now);
   return Array.from({ length: Math.min(limit, currentIndex + 1) }, (_, offset) =>
-    challengeForIndex(currentIndex - offset),
+    challengeForIndex(currentIndex - offset, group),
   );
 }
 
@@ -305,12 +332,14 @@ function leaderboardForChallenge(records, challenge, viewerOpenId, identities = 
 }
 
 module.exports = {
+  GAME_GROUPS,
   availableChallenges,
   challengeForIndex,
   challengeIndexAt,
   challengeQuestion,
   currentChallenge,
   leaderboardForChallenge,
+  normalizeGameGroup,
   structuralGuide,
   weeklyTopics,
 };
