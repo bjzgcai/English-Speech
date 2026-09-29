@@ -28,6 +28,7 @@ const state = {
   discardInProgress: false,
   gameChallenge: null,
   gameChallenges: [],
+  gameGroup: "g1",
   leaderboardIdentity: null,
   activeMode: null,
   useCamera: true,
@@ -93,6 +94,7 @@ const connectionStatus = document.querySelector("#connectionStatus");
 const playTitle = document.querySelector("#playTitle");
 const gameOverview = document.querySelector("#gameOverview");
 const gameWeekLabel = document.querySelector("#gameWeekLabel");
+const gameGroupPicker = document.querySelector("#gameGroupPicker");
 const gameTopicTitle = document.querySelector("#gameTopicTitle");
 const gameTopicQuestion = document.querySelector("#gameTopicQuestion");
 const profileHeading = document.querySelector("#profileHeading");
@@ -100,6 +102,7 @@ const profileSummary = document.querySelector("#profileSummary");
 const roleField = document.querySelector("#roleField");
 const leaderboardTopic = document.querySelector("#leaderboardTopic");
 const leaderboardWeek = document.querySelector("#leaderboardWeek");
+const leaderboardGroupPicker = document.querySelector("#leaderboardGroupPicker");
 const leaderboardSummary = document.querySelector("#leaderboardSummary");
 const leaderboardList = document.querySelector("#leaderboardList");
 const leaderboardIdentitySettings = document.querySelector("#leaderboardIdentitySettings");
@@ -870,6 +873,7 @@ function getSupportedMimeType() {
 
 function setQuestion(question) {
   state.question = question;
+  syncGroupPickers();
   questionText.textContent = question.question;
   questionMeta.textContent = "";
   saveResult.textContent = "";
@@ -938,6 +942,64 @@ async function loadHistory(offset = 0) {
     pager.append(button);
   }
   historyList.append(pager);
+}
+
+const GAME_GROUP_TOKENS = ["g1", "g2"];
+const GAME_GROUP_STORAGE_KEY = "oscanner-game-group";
+
+function normalizeGroupToken(value) {
+  // Accepts "g2", "2", and "group 2" so hand-written links keep working.
+  const token = typeof value === "number" ? String(value) : String(value ?? "");
+  const cleaned = token.trim().toLowerCase().replace(/^group[\s_-]*/, "");
+  const key = /^[1-9]$/.test(cleaned) ? `g${cleaned}` : cleaned;
+  return GAME_GROUP_TOKENS.includes(key) ? key : "g1";
+}
+
+function readStoredGameGroup() {
+  try {
+    return normalizeGroupToken(window.localStorage.getItem(GAME_GROUP_STORAGE_KEY));
+  } catch (error) {
+    return "g1";
+  }
+}
+
+function readGameGroupFromUrl() {
+  const token = new URLSearchParams(window.location.search).get("group");
+  return token === null ? null : normalizeGroupToken(token);
+}
+
+// The picker on /game is locked while an attempt exists, because a generated
+// question already belongs to the group it was created for.
+function syncGroupPickers() {
+  [gameGroupPicker, leaderboardGroupPicker].forEach((picker) => {
+    if (!picker) return;
+    picker.querySelectorAll("input[type=radio]").forEach((input) => {
+      input.checked = input.value === state.gameGroup;
+      if (input.name === "gameGroup") input.disabled = Boolean(state.question);
+    });
+  });
+}
+
+function writeGameGroupToUrl() {
+  const url = new URL(window.location.href);
+  if (state.gameGroup === "g1") url.searchParams.delete("group");
+  else url.searchParams.set("group", state.gameGroup);
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (next !== current) window.history.replaceState(window.history.state, "", next);
+}
+
+function setGameGroup(value, { persist = true } = {}) {
+  state.gameGroup = normalizeGroupToken(value);
+  if (persist) {
+    try {
+      window.localStorage.setItem(GAME_GROUP_STORAGE_KEY, state.gameGroup);
+    } catch (error) {
+      /* private browsing — ignore */
+    }
+  }
+  syncGroupPickers();
+  writeGameGroupToUrl();
 }
 
 function formatChallengeRange(challenge) {
@@ -1121,7 +1183,9 @@ async function loadLeaderboard(challengeId) {
   leaderboardSummary.textContent = "Loading weekly standings...";
   leaderboardList.innerHTML = '<li class="leaderboard-loading">Loading leaderboard...</li>';
   try {
-    const query = challengeId ? `?challengeId=${encodeURIComponent(challengeId)}` : "";
+    const params = new URLSearchParams({ group: state.gameGroup });
+    if (challengeId) params.set("challengeId", challengeId);
+    const query = `?${params.toString()}`;
     const response = await window.VisitorSession.fetch(`/api/game/leaderboard${query}`, { cache: "no-store" });
     const data = await response.json();
     if (response.status === 401) {
@@ -1142,7 +1206,10 @@ async function loadLeaderboard(challengeId) {
 }
 
 async function fetchGameChallengeCatalog() {
-  const response = await window.VisitorSession.fetch("/api/game/challenge", { cache: "no-store" });
+  const response = await window.VisitorSession.fetch(
+    `/api/game/challenge?group=${encodeURIComponent(state.gameGroup)}`,
+    { cache: "no-store" },
+  );
   const data = await response.json();
   if (response.status === 401) {
     state.authUser = null;
@@ -1461,6 +1528,7 @@ function setPlayMode(route) {
     evaluationResult.innerHTML = "";
     saveResult.textContent = "";
   }
+  syncGroupPickers();
 
   if (!state.question) {
     if (isGame && state.gameChallenge) {
@@ -1528,7 +1596,8 @@ async function openProtectedHistory() {
 
 function navigateTo(pathname) {
   const normalized = normalizeRoute(pathname);
-  window.history.pushState({}, "", normalized);
+  const query = state.gameGroup === "g1" ? "" : `?group=${state.gameGroup}`;
+  window.history.pushState({}, "", `${normalized}${query}`);
   setRoute(normalized);
 }
 
@@ -1602,7 +1671,7 @@ profileForm.addEventListener("submit", async (event) => {
     const response = await window.VisitorSession.fetch(isGame ? "/api/game/question" : "/api/generate-question", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(isGame ? {} : { profile: state.profile }),
+      body: JSON.stringify(isGame ? { group: state.gameGroup } : { profile: state.profile }),
     });
     const data = await response.json();
 
@@ -1902,6 +1971,7 @@ async function discardCurrentAnswer() {
     state.saveAbortController = null;
     state.discardRequested = false;
     evaluationResult.innerHTML = "";
+    syncGroupPickers();
     if (normalizeRoute(window.location.pathname) === "/game" && state.gameChallenge) {
       showGameChallenge(state.gameChallenge);
     } else {
@@ -1992,6 +2062,7 @@ window.addEventListener("visitoridentitychange", (event) => {
   state.leaderboardIdentity = null;
   if (!event.detail.accessGranted) state.activeMode = null;
   evaluationResult.innerHTML = "";
+  syncGroupPickers();
   hideExperienceRating();
   saveResult.textContent = "";
   stopStream();
@@ -2133,6 +2204,17 @@ leaderboardWeek.addEventListener("change", () => {
   loadLeaderboard(leaderboardWeek.value);
 });
 
+[gameGroupPicker, leaderboardGroupPicker].forEach((picker) => {
+  if (!picker) return;
+  picker.addEventListener("change", (event) => {
+    const input = event.target.closest("input[type=radio]");
+    if (!input || input.disabled) return;
+    setGameGroup(input.value);
+    if (normalizeRoute(window.location.pathname) === "/leaderboard") loadLeaderboardPage();
+    else loadGameChallenge();
+  });
+});
+
 closeVideoModal.addEventListener("click", closeHistoryVideo);
 
 window.addEventListener("popstate", () => {
@@ -2176,6 +2258,7 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+setGameGroup(readGameGroupFromUrl() ?? readStoredGameGroup());
 setRoute(window.location.pathname);
 checkAuth();
 window.addEventListener("evaluation-job-completed", event => {

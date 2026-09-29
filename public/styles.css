@@ -611,6 +611,86 @@ h1 {
   margin: 0;
 }
 
+.leaderboard-controls {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.group-picker {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.group-picker legend {
+  padding: 0;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.group-picker label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 8px 0 0;
+  padding: 8px 14px;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.group-picker label:last-child {
+  margin-right: 0;
+}
+
+.group-picker label:hover {
+  border-color: #c7c1ee;
+}
+
+.group-picker label:has(input:checked) {
+  border-color: var(--accent);
+  background: #f3f1ff;
+  color: var(--accent-dark);
+}
+
+.group-picker label:has(input:focus-visible) {
+  outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.group-picker label:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.group-picker input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* The pills own their own type treatment, so the surrounding card's
+   uppercase label style must not leak into them. */
+.game-week .group-picker label span {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
 .leaderboard-picker select {
   min-width: 0;
   appearance: none;

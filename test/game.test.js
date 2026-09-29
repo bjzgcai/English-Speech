@@ -5,6 +5,7 @@ const {
   challengeForIndex,
   currentChallenge,
   leaderboardForChallenge,
+  normalizeGameGroup,
   weeklyTopics,
 } = require("../src/game");
 
@@ -138,4 +139,103 @@ test("leaderboard identity applies one current alias to every challenge entry", 
     ]]),
   );
   assert.equal(identified.entries[0].name, "Current Actual Name");
+});
+
+test("an unknown group token falls back to the default group", () => {
+  assert.equal(normalizeGameGroup("g1"), "g1");
+  assert.equal(normalizeGameGroup("g2"), "g2");
+  assert.equal(normalizeGameGroup("G2"), "g2");
+  assert.equal(normalizeGameGroup(" g2 "), "g2");
+  assert.equal(normalizeGameGroup("2"), "g2");
+  assert.equal(normalizeGameGroup(2), "g2");
+  assert.equal(normalizeGameGroup("1"), "g1");
+  assert.equal(normalizeGameGroup("group 2"), "g2");
+  assert.equal(normalizeGameGroup("group-2"), "g2");
+  assert.equal(normalizeGameGroup("group1"), "g1");
+  assert.equal(normalizeGameGroup("g3"), "g1");
+  assert.equal(normalizeGameGroup(""), "g1");
+  assert.equal(normalizeGameGroup(undefined), "g1");
+  assert.equal(currentChallenge(new Date("2026-09-29T12:00:00+08:00"), "nonsense").group, "g1");
+});
+
+test("parallel group 2 walks the same topic pool in the schedule's chapter order", () => {
+  const units = Array.from({ length: 16 }, (_, slot) =>
+    challengeForIndex(slot, "g2").unitNumber,
+  );
+  assert.deepEqual(units, [4, 4, 7, 7, 5, 5, 6, 6, 3, 3, 1, 1, 2, 2, 8, 8]);
+
+  // Each group still covers every one of the sixteen topics exactly once.
+  const titles = Array.from({ length: 16 }, (_, slot) => challengeForIndex(slot, "g2").title);
+  assert.equal(new Set(titles).size, 16);
+  assert.deepEqual([...titles].sort(), weeklyTopics.map((topic) => topic.title).sort());
+
+  // A chapter's two topics keep their existing order inside the group schedule.
+  assert.equal(challengeForIndex(0, "g2").topicIndex, 6);
+  assert.equal(challengeForIndex(1, "g2").topicIndex, 7);
+  assert.equal(challengeForIndex(14, "g2").topicIndex, 14);
+  assert.equal(challengeForIndex(15, "g2").topicIndex, 15);
+
+  const launch = currentChallenge(new Date("2026-09-29T12:00:00+08:00"), "g2");
+  assert.equal(launch.group, "g2");
+  assert.equal(launch.lessonNumber, 1);
+  assert.equal(launch.unitNumber, 4);
+  assert.equal(launch.title, "Explaining an experimental figure");
+  assert.equal(launch.instructor, "Wang Xudong");
+});
+
+test("the two groups share lesson dates but never share a challenge id", () => {
+  for (let slot = 0; slot < 18; slot += 1) {
+    const first = challengeForIndex(slot, "g1");
+    const second = challengeForIndex(slot, "g2");
+    assert.equal(first.startsAt, second.startsAt, `slot ${slot} start`);
+    assert.equal(first.endsAt, second.endsAt, `slot ${slot} end`);
+    assert.equal(first.lessonNumber, second.lessonNumber, `slot ${slot} lesson number`);
+    assert.notEqual(first.id, second.id, `slot ${slot} id`);
+    assert.equal(second.id, `${first.id}-g2`);
+    assert.equal(first.group, "g1");
+    assert.equal(second.group, "g2");
+  }
+
+  // Group 1 keeps its historical identifiers so existing records stay readable.
+  assert.equal(challengeForIndex(0).id, "weekly-2026-09-28");
+  assert.equal(challengeForIndex(15).id, "weekly-2027-01-18");
+
+  // Group 2 wraps past lesson 16 on the same course calendar.
+  const wrapped = challengeForIndex(16, "g2");
+  assert.equal(wrapped.id, "weekly-2027-01-25-g2");
+  assert.equal(wrapped.lessonNumber, 1);
+  assert.equal(wrapped.topicIndex, 6);
+  assert.equal(wrapped.startsAt, challengeForIndex(16, "g1").startsAt);
+});
+
+test("available challenges and leaderboards stay inside one group", () => {
+  const now = new Date("2026-10-21T12:00:00+08:00");
+  assert.deepEqual(
+    availableChallenges(now, 3, "g2").map((challenge) => challenge.id),
+    ["weekly-2026-10-19-g2", "weekly-2026-10-12-g2", "weekly-2026-09-28-g2"],
+  );
+
+  const first = challengeForIndex(0, "g1");
+  const second = challengeForIndex(0, "g2");
+  const records = [
+    {
+      openId: "group-one",
+      user: { name: "Group One" },
+      finishedAt: "2026-07-23T09:00:00.000Z",
+      question: { challengeId: first.id },
+      evaluation: { status: "completed", overallScore: 81 },
+    },
+    {
+      openId: "group-two",
+      user: { name: "Group Two" },
+      finishedAt: "2026-07-24T09:00:00.000Z",
+      question: { challengeId: second.id },
+      evaluation: { status: "completed", overallScore: 95 },
+    },
+  ];
+
+  const firstBoard = leaderboardForChallenge(records, first, "group-one");
+  assert.deepEqual(firstBoard.entries.map((entry) => entry.name), ["Group One"]);
+  const secondBoard = leaderboardForChallenge(records, second, "group-two");
+  assert.deepEqual(secondBoard.entries.map((entry) => entry.name), ["Group Two"]);
 });
