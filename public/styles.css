@@ -494,6 +494,14 @@ h1 {
   gap: 10px;
 }
 
+.game-lesson-meta {
+  color: var(--accent-dark);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
 .game-topic h2 {
   max-width: 760px;
   font-size: clamp(29px, 3.4vw, 48px);
@@ -565,201 +573,6 @@ h1 {
   box-shadow: 0 2px 0 var(--accent-dark);
   transform: translateY(4px);
 }
-
-@keyframes sparkle-float {
-  50% { transform: translateY(-8px) rotate(10deg); }
-}
-
-.prize-draft {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
-  overflow: hidden;
-  margin-top: 0;
-  border: 2px solid #292064;
-  border-radius: var(--radius-large);
-  background: #332a77;
-  box-shadow: 0 8px 0 #211a55, var(--shadow);
-  color: #fff;
-}
-
-.prize-draft[hidden] { display: none; }
-
-.prize-draft-visual {
-  position: relative;
-  min-height: 500px;
-  overflow: hidden;
-  border-right: 2px solid rgba(255, 255, 255, 0.16);
-  background: #c8afff;
-}
-
-.prize-draft-visual::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  box-shadow: inset 0 0 70px rgba(39, 27, 94, 0.14);
-}
-
-.prize-draft-visual img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: contain;
-  object-position: center;
-}
-
-.prize-drop-sticker {
-  position: absolute;
-  top: 20px;
-  left: 20px;
-  z-index: 1;
-  width: 86px;
-  height: 86px;
-  display: grid;
-  place-content: center;
-  transform: rotate(-8deg);
-  border: 3px solid #332a77;
-  border-radius: 50%;
-  background: #ffd84c;
-  box-shadow: 0 5px 0 rgba(51, 42, 119, 0.35);
-  color: #332a77;
-  text-align: center;
-  font-size: 31px;
-  font-weight: 950;
-  line-height: 0.68;
-}
-
-.prize-drop-sticker small {
-  font-size: 10px;
-  letter-spacing: 0.08em;
-}
-
-.prize-draft-content {
-  position: relative;
-  padding: clamp(28px, 3.5vw, 48px);
-}
-
-.prize-draft-content::before {
-  content: "✦";
-  position: absolute;
-  top: 22px;
-  right: 28px;
-  color: #ffd84c;
-  font-size: 24px;
-  animation: sparkle-float 3.4s ease-in-out infinite;
-}
-
-
-.prize-draft-content h2 {
-  max-width: 520px;
-  margin-top: 10px;
-  color: #fff;
-  font-size: clamp(36px, 4vw, 55px);
-  line-height: 0.97;
-  letter-spacing: -0.045em;
-}
-
-.prize-draft-rule {
-  max-width: 58ch;
-  margin-top: 15px;
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 14px;
-  line-height: 1.55;
-}
-
-.prize-rewards {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 18px;
-}
-
-.prize-rewards span {
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-  padding: 6px 9px;
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.prize-pick-order {
-  display: grid;
-  gap: 9px;
-  margin: 24px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.prize-pick {
-  display: grid;
-  grid-template-columns: 46px minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
-  min-height: 66px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.08);
-  padding: 8px 12px;
-}
-
-.prize-rank {
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  border: 2px solid rgba(255, 255, 255, 0.4);
-  border-radius: 12px;
-  background: #ffd84c;
-  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.18);
-  color: #332a77;
-  font-size: 20px;
-  font-weight: 950;
-}
-
-.prize-pick-2 .prize-rank { background: #bfe9ff; }
-.prize-pick-3 .prize-rank { background: #ffc6ad; }
-
-.prize-pick-copy,
-.prize-pick-copy small,
-.prize-pick-copy strong,
-.prize-pick-copy > span {
-  display: block;
-}
-
-.prize-pick-copy small {
-  color: #bdf5d9;
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.prize-pick-copy strong {
-  overflow: hidden;
-  margin-top: 1px;
-  color: #fff;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 14px;
-}
-
-.prize-pick-copy > span {
-  margin-top: 2px;
-  color: rgba(255, 255, 255, 0.64);
-  font-size: 10px;
-}
-
-.prize-draft-note {
-  margin-top: 14px;
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.prize-draft .game-cta { margin-top: 22px; }
 
 .leaderboard-panel {
   margin-top: 38px;
@@ -3056,17 +2869,6 @@ video {
 
   .game-overview {
     grid-template-columns: 1fr;
-  }
-
-  .prize-draft {
-    grid-template-columns: 1fr;
-  }
-
-  .prize-draft-visual {
-    min-height: 0;
-    aspect-ratio: 16 / 9;
-    border-right: 0;
-    border-bottom: 2px solid rgba(255, 255, 255, 0.16);
   }
 
   .game-week,

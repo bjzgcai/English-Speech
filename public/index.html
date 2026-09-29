@@ -52,13 +52,11 @@
       </section>
 
       <section class="leaderboard-view view" id="leaderboardView" data-view="/leaderboard" hidden>
-        <section class="prize-draft" id="prizeDraft" aria-labelledby="prizeDraftTitle" hidden></section>
-
         <section class="leaderboard-panel" id="leaderboardPanel" aria-labelledby="leaderboardTitle">
           <div class="leaderboard-heading">
             <div>
               <h2 id="leaderboardTitle">This week's leaderboard</h2>
-              <p id="leaderboardTopic">Best completed score for this week's topic.</p>
+              <p id="leaderboardTopic">Best completed score for this week's task.</p>
             </div>
             <label class="leaderboard-picker">
               Challenge week
@@ -91,12 +89,13 @@
 
         <section class="game-overview" id="gameOverview" aria-labelledby="gameTopicTitle" hidden>
           <div class="game-week">
-            <span id="gameWeekLabel">Jul 22 - Jul 29</span>
-            <strong>One topic. One week.</strong>
+            <span id="gameWeekLabel">Sep 28 - Oct 12</span>
+            <strong>One task. One week.</strong>
           </div>
           <div class="game-topic">
-            <h2 id="gameTopicTitle">Loading this week's topic...</h2>
-            <p id="gameTopicQuestion" hidden>Everyone answers the same topic this week.</p>
+            <span id="gameLessonMeta" class="game-lesson-meta" hidden></span>
+            <h2 id="gameTopicTitle">Loading this week's task...</h2>
+            <p id="gameTopicQuestion" hidden>Everyone answers the same task this week.</p>
           </div>
           <div class="game-rule">
             <strong>Best score counts <span class="tooltip-wrap"><button class="tooltip-trigger" type="button" aria-label="Best score details">?</button><span class="dimension-tooltip" role="tooltip">Try again; only your highest score appears.</span></span></strong>

@@ -742,6 +742,69 @@ h1 {
 .detail-reason { display: flex; flex-direction: column; justify-content: flex-end; }
 .detail-reason h4 { margin: 0; font-size: 15px; }
 
+/* Graded examples: three tiers for the selected dimension. The row is the
+   fourth child of the panel grid, so it cancels the sibling column rule and
+   claims a full-width line of its own. */
+.detail-examples {
+  grid-column: 1 / -1;
+  min-height: auto !important;
+  border-top: 1px solid var(--line);
+  border-left: 0 !important;
+}
+.detail-examples-heading h4 { margin: 0; font-size: 15px; }
+.detail-examples-heading p { max-width: 640px; margin-top: 10px; color: var(--muted); line-height: 1.55; }
+.detail-examples-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(232px, 1fr));
+  gap: 14px;
+  margin-top: 24px;
+}
+.example-card {
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: 12px;
+  /* Cream against the white panel, so the cards read as distinct surfaces.
+     All text stays on --ink / --muted, which clear AA on this background. */
+  background: var(--bg);
+}
+.example-card[data-band="needs_improvement"] { border-left-color: #c05a45; }
+.example-card[data-band="developing"] { border-left-color: #c08a2e; }
+.example-card[data-band="strong"] { border-left-color: #2f7d5f; }
+.example-band { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.example-band-label { color: var(--ink); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+.example-band-score { color: var(--muted); font-size: 15px; font-weight: 800; }
+.example-snippet { margin-top: 14px; color: var(--ink); font-size: 16px; font-weight: 600; line-height: 1.5; }
+.example-why { margin-top: 10px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+
+/* Audio control. The icon is two clip-path bars driven by the state class, so
+   the triangle becomes a pause glyph without swapping markup. */
+.example-play {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 8px 14px 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--accent-dark);
+  font-size: 13px;
+  font-weight: 800;
+}
+.example-play:hover { border-color: var(--accent); }
+.example-play:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+.example-play-icon { position: relative; width: 10px; height: 10px; flex: none; }
+.example-play-icon::before,
+.example-play-icon::after { content: ""; position: absolute; inset: 0; background: currentColor; }
+.example-play-icon::before { clip-path: polygon(8% 0, 100% 50%, 8% 100%); }
+.example-play-icon::after { display: none; }
+.example-play.is-playing .example-play-icon::before { clip-path: polygon(0 0, 36% 0, 36% 100%, 0 100%); }
+.example-play.is-playing .example-play-icon::after { display: block; clip-path: polygon(64% 0, 100% 0, 100% 100%, 64% 100%); }
+
 .balance { display: grid; grid-template-columns: 1.15fr .85fr; gap: clamp(48px, 8vw, 120px); }
 .balance-copy { align-self: end; }
 .balance-copy p { color: var(--muted); font-size: 18px; line-height: 1.6; }
@@ -868,6 +931,7 @@ footer p { color: var(--muted); font-size: 13px; }
   .dimension-detail > div + div { border-top: 1px solid var(--line); border-left: 0; }
   .detail-score { min-height: 180px !important; }
   .detail-copy h3 { margin-top: 34px; }
+  .detail-examples-grid { grid-template-columns: 1fr; }
   .formula { grid-template-columns: 1fr; gap: 10px; }
   .formula .operator { transform: rotate(90deg); justify-self: center; }
   .formula-result { width: 100%; }
