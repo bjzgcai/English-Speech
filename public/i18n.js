@@ -51,33 +51,33 @@
     // Leaderboard
     "Live standings": "实时排名",
     "This week's leaderboard": "本周排行榜",
-    "Best completed score for this week's topic.": "展示本周话题下的最佳完成成绩。",
+    "Best completed score for this week's task.": "展示本周任务下的最佳完成成绩。",
     "Challenge week": "挑战周",
     "Loading your leaderboard name…": "正在加载您的排行榜名称…",
     "Loading leaderboard...": "排行榜加载中...",
     "Your highest completed score is the one that counts.": "以您最高的完成成绩为准。",
     "Ready for another round?": "再来一轮？",
-    "No completed answers yet. Record the first one for this topic.":
-      "还没有完成的回答，快来为本话题录制第一条吧。",
+    "No completed answers yet. Record the first one for this task.":
+      "还没有完成的回答，快来为本任务录制第一条吧。",
     "Loading weekly standings...": "正在加载本周排名...",
 
     // Examine view
     "Live speaking evaluation": "实时口语评估",
     "Answer one question, record it, and get feedback.": "回答一道问题，录制下来并获得反馈。",
-    "Answer this week's topic. Your best score enters the board.": "回答本周话题，最高分计入排行榜。",
+    "Answer this week's task. Your best score enters the board.": "回答本周任务，最高分计入排行榜。",
     "Idle": "待机",
-    "One topic. One week. Your clearest answer.": "一个话题，一周时间，给出你最清晰的回答。",
-    "Weekly topic": "本周话题",
-    "Loading this week's topic...": "正在加载本周话题...",
-    "Everyone answers the same topic this week.": "本周所有人回答同一个话题。",
-    "One topic. One week.": "一个话题，一周时间。",
+    "One task. One week. Your clearest answer.": "一个任务，一周时间，给出你最清晰的回答。",
+    "Weekly task": "本周任务",
+    "Loading this week's task...": "正在加载本周任务...",
+    "Everyone answers the same task this week.": "本周所有人回答同一个任务。",
+    "One task. One week.": "一个任务，一周时间。",
     "Best score counts": "以最高分为准",
     "Try again; only your highest score appears.": "可以重复尝试，排行榜只显示最高分。",
     "Try again during the week. Only your highest completed evaluation appears on the board.":
       "本周内可重复尝试，排行榜仅显示您最高的完成评估。",
     "Candidate profile": "候选人资料",
     "Used to create one speaking question.": "用于生成一道口语问题。",
-    "The topic is fixed. Check your devices, plan, and answer.": "话题固定，请检查设备、规划并作答。",
+    "The task is fixed. Check your devices, plan, and answer.": "任务固定，请检查设备、规划并作答。",
     "Name": "姓名",
     "Role or background": "角色或背景",
     "Check camera & generate question": "检查摄像头并生成问题",
@@ -169,39 +169,28 @@
     "Answer discarded. No recording, evaluation, or score was saved.": "回答已放弃，录音、评估和分数均未保存。",
     "Finish and save the current recording before generating another question.":
       "请先完成并保存当前录制，再生成新问题。",
-    "Creating your owned attempt for this week's challenge.": "正在为本周挑战创建您的专属作答。",
+    "Creating your owned attempt for this week's task.": "正在为本周任务创建您的专属作答。",
     "Choose your leaderboard name": "选择您的排行榜名称",
     "Signed in": "已登录",
     "Session unavailable": "会话不可用",
     "Privacy consent required": "需要隐私授权",
     "Loading this week's challenge…": "正在加载本周挑战…",
-    "Preparing the weekly topic...": "正在准备本周话题...",
-    "Loading this week's fixed topic...": "正在加载本周固定话题...",
-    "The Weekly Game": "每周挑战赛",
-    "Enter this week's game": "进入本周挑战",
-    "Every player receives the same question for the week.": "本周每位玩家收到同一道问题。",
-    "The fixed topic is ready. We are setting up your private planning time.":
-      "固定话题已就绪，正在为您安排独立的思考时间。",
+    "Preparing the weekly task...": "正在准备本周任务...",
+    "Loading this week's fixed task...": "正在加载本周固定任务...",
+    "Academic English Weekly": "学术英语每周课",
+    "Enter this week's task": "进入本周任务",
+    "Every player receives the same task for the week.": "本周每位玩家收到同一个任务。",
+    "The fixed task is ready. We are setting up your private planning time.":
+      "固定任务已就绪，正在为您安排独立的思考时间。",
     "Thinking time": "思考时间",
     "Keep page open": "请保持页面打开",
     "Finalizing recording, uploading it, and evaluating the answer...": "正在结束录制、上传并评估回答...",
-    "Topic ready": "话题已就绪",
+    "Task ready": "任务已就绪",
     "How you appear": "画面呈现",
     "Coherence / task relevance": "连贯性 / 话题相关度",
     "Pronunciation / intelligibility": "发音 / 可懂度",
     "Current: ": "当前：",
     "Submitting…": "正在提交…",
-
-    // Weekly game prizes
-    "Available prizes": "可选奖品",
-    "Prize selection order": "奖品挑选顺序",
-    "First pick": "第一顺位",
-    "Second pick": "第二顺位",
-    "Final prize": "剩余奖品",
-    "Chooses any one of the three prizes": "可在三件奖品中任选一件",
-    "Chooses from the two prizes left": "可在剩余两件奖品中挑选",
-    "Receives the remaining prize": "获得剩余奖品",
-    "To be decided": "待定",
 
     // Experience rating tags
     "Clear workflow": "流程清晰",
@@ -400,7 +389,99 @@
     "QR code copied to clipboard.": "二维码已复制到剪贴板。",
     "Code copied to clipboard.": "邀请码已复制到剪贴板。",
     "Used": "已使用",
-    "Available": "可用"
+    "Available": "可用",
+
+    // Methodology — graded examples for the selected dimension
+    "The same idea at three levels.": "同一个想法，三个水平。",
+    "Three responses to the same question, from a score near 40 to a score near 85.":
+      "同一个问题下的三种回答，从 40 分左右到 85 分左右。",
+    "Needs improvement": "有待提升",
+    "Developing": "发展中",
+    "Strong": "优秀",
+    "Play example": "播放示例",
+    "Pause example": "暂停播放",
+
+    // Methodology — pronunciation examples
+    'Heard as "I wan to sey abou my las pro-jek" — the transcript drops the key words, so the listener never receives the claim.':
+      "听成 “I wan to sey abou my las pro-jek”——转写丢掉了关键词，听众始终听不到核心信息。",
+    "Blurred word endings and flat stress make the words the meaning depends on unrecoverable.":
+      "词尾含混、重音平淡，让决定语义的词无法被还原。",
+    '"I want to say about my last project" comes through, but "project" and "result" ask for a second listen.':
+      "“I want to say about my last project” 能听懂，但 project、result 需要再听一遍。",
+    "Word endings are unstable on the exact nouns the listener needs.":
+      "词尾不稳，偏偏落在听众最需要听清的名词上。",
+    '"I want to describe my last project and its result" arrives on the first listen, with stress on the words that carry the point.':
+      "“I want to describe my last project and its result” 一遍就能听懂，重音落在承载重点的词上。",
+    "Clear consonants and sentence stress let the listener catch the message immediately.":
+      "辅音清晰、句子重音到位，听众能立刻抓住信息。",
+
+    // Methodology — grammar examples
+    "Yesterday I go to office and my manager he tell me about the project, and I not understand what he saying.":
+      "昨天我去办公室，经理跟我说了项目的事，我没听懂他在说什么。",
+    "Tense and agreement errors stack up until the timeline is unclear.":
+      "时态与主谓一致错误层层叠加，时间线变得模糊。",
+    "I explained the issue to my manager and he agreed to give more time. Then we finish the report on Friday.":
+      "我向经理说明了问题，他同意多给一些时间。然后我们周五完成了报告。",
+    'Mostly clear, but one tense shift to "finish" breaks the sequence.':
+      "整体清楚，但一处时态滑向 finish，打断了时间顺序。",
+    "I explained the issue to my manager, and he agreed to give us more time. By Friday we had finished the report.":
+      "我向经理说明了问题，他同意多给我们一些时间。到周五我们已经完成了报告。",
+    "Consistent tense and clean clause structure carry the whole answer.":
+      "时态一致、句子结构干净，撑起了整个回答。",
+
+    // Methodology — fluency examples
+    "I... I think the... um... the project, it was, um... it was... good? I don't know... maybe... yeah.":
+      "我……我觉得……嗯……那个项目，它，嗯……还挺……好吧？我不知道……也许……嗯。",
+    "Long pauses and restarts break the answer into disconnected pieces.":
+      "长时间的停顿与反复起头，把回答切成互不相连的碎片。",
+    "So the project was, um, quite hard at the beginning. And then, you know, we, we managed to, to finish it.":
+      "这个项目，嗯，一开始挺难的。然后，你知道，我们，我们总算是，是做完了。",
+    "Fillers and repeated words slow the answer, though the thread still holds.":
+      "口头语和重复用词拖慢了表达，但思路还连得住。",
+    "The project was hard at the beginning. We re-planned the timeline and finished ahead of schedule.":
+      "项目一开始很难。我们重排了时间表，提前完成。",
+    "Steady pacing with pauses at clause boundaries instead of mid-phrase.":
+      "节奏平稳，停顿落在分句之间，而不是句子中间。",
+
+    // Methodology — vocabulary examples
+    "It was very good and very nice and we did many things, so everything was good.":
+      "它非常非常好，我们做了很多事情，所以一切都很不错。",
+    "Only vague, repeated words, so the listener learns nothing specific.":
+      "只有含糊、重复的词，听众得不到任何具体信息。",
+    "The project was difficult but we solved the problem. It took a long time and it was useful for me.":
+      "这个项目很难，但我们解决了问题。它花了很长时间，对我很有用。",
+    'Correct but generic: "difficult" and "useful" could describe almost anything.':
+      "表达正确但很笼统：difficult 和 useful 几乎可以形容任何事。",
+    "The project was understaffed, so we narrowed the scope and shipped a smaller release on time.":
+      "项目人手不足，所以我们缩小了范围，按时发布了更小的版本。",
+    'Precise words such as "understaffed" and "narrowed the scope" carry the real story.':
+      "understaffed、narrowed the scope 这类精准用词还原了真实情况。",
+
+    // Methodology — visual delivery examples
+    "Described behaviour: reads from off-camera notes, looks down for most of the answer, and the framing cuts off the top of the head.":
+      "行为描述：照着画面外的稿子念，大部分时间低头，构图还切掉了头顶。",
+    "The audience sees a reader, not a speaker.": "观众看到的是朗读者，不是表达者。",
+    "Described behaviour: finds the camera at the start and the end, but drifts back to the notes and sways through the middle.":
+      "行为描述：开头和结尾看向镜头，中间又回到稿子上，身体来回晃动。",
+    "Contact is intermittent, so presence comes and goes.": "目光接触时有时无，存在感也就断断续续。",
+    "Described behaviour: holds eye contact with the lens, keeps a stable upright frame, and lets facial expression follow the message.":
+      "行为描述：目光稳定看向镜头，坐姿端正，表情跟随内容变化。",
+    "Steady framing and eye contact keep attention on the message.":
+      "稳定的构图与目光接触，让注意力留在信息本身。",
+
+    // Methodology — coherence examples
+    "I like sports. Sports is good. Also I have many thing. Yes that's all.":
+      "我喜欢运动。运动很好。我还有很多东西。就这样。",
+    "Three unrelated fragments; no main point a listener can hold.":
+      "三个互不相关的碎片，听众抓不住重点。",
+    "I like sports because it's healthy. Sometimes I play basketball with friends, but I don't have much time now.":
+      "我喜欢运动，因为它健康。有时我和朋友打篮球，但我现在时间不多。",
+    "One clear reason, then the idea trails off without a close.":
+      "有一个清楚的理由，但后面话没说完就断了。",
+    "I like sports mainly because it keeps me steady. I play basketball twice a week, and that routine carries into how I plan my work.":
+      "我喜欢运动，主要是因为它让我状态稳定。我每周打两次篮球，这种规律也影响了我安排工作的方式。",
+    "A stated main point, a supporting detail, and a link back to the claim.":
+      "先点明主旨，再给支撑细节，最后回到观点。"
   };
 
   /* ------------------------------------------------------------------ */

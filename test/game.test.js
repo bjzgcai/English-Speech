@@ -8,28 +8,63 @@ const {
   weeklyTopics,
 } = require("../src/game");
 
-test("weekly game starts on 2026-07-22 and rotates ten everyday topics", () => {
-  assert.equal(weeklyTopics.length, 10);
-  const challenge = currentChallenge(new Date("2026-07-22T12:00:00+08:00"));
-  assert.equal(challenge.id, "weekly-2026-07-22");
-  assert.equal(challenge.startsAt, "2026-07-21T16:00:00.000Z");
-  assert.equal(challenge.endsAt, "2026-07-28T16:00:00.000Z");
-  assert.equal(challenge.title, "A habit that makes your day easier");
+test("academic English course starts on 2026-09-28 with sixteen lessons", () => {
+  assert.equal(weeklyTopics.length, 16);
+  assert.ok(weeklyTopics.every((topic) => topic.unitNumber >= 1 && topic.unitNumber <= 8));
+  assert.ok(weeklyTopics.every((topic) => topic.title && topic.question && topic.focus && topic.followUp));
+  assert.equal(new Set(weeklyTopics.map((topic) => topic.title)).size, 16);
+
+  // Lesson 1 spans two weeks: 2026-09-28 to 2026-10-12 (UTC+8).
+  const challenge = currentChallenge(new Date("2026-09-28T12:00:00+08:00"));
+  assert.equal(challenge.id, "weekly-2026-09-28");
+  assert.equal(challenge.startsAt, "2026-09-27T16:00:00.000Z");
+  assert.equal(challenge.endsAt, "2026-10-11T16:00:00.000Z");
+  assert.equal(challenge.title, "Introducing yourself as a researcher");
+  assert.equal(challenge.lessonNumber, 1);
+  assert.equal(challenge.unitNumber, 1);
+  assert.equal(challenge.instructor, "Liu Junli");
   assert.equal(challenge.structuralGuide.length, 4);
-  assert.equal(challenge.prizeDraft.rewards.length, 3);
-  assert.match(challenge.prizeDraft.rule, /first place chooses first/i);
-  assert.equal(challengeForIndex(1).prizeDraft, null);
-  assert.equal(challengeForIndex(10).title, challenge.title);
+  assert.equal(challenge.prizeDraft, undefined);
+
+  // The fortnight still resolves to lesson 1 on its final day.
+  assert.equal(currentChallenge(new Date("2026-10-11T12:00:00+08:00")).id, "weekly-2026-09-28");
 });
 
-test("available challenges include the current week followed by past weeks", () => {
-  const launchWeek = availableChallenges(new Date("2026-07-22T12:00:00+08:00"), 10);
-  assert.deepEqual(launchWeek.map((challenge) => challenge.id), ["weekly-2026-07-22"]);
+test("lesson 2 starts on Monday 2026-10-12 and lessons run weekly thereafter", () => {
+  const lesson2 = challengeForIndex(1);
+  assert.equal(lesson2.id, "weekly-2026-10-12");
+  assert.equal(lesson2.startsAt, "2026-10-11T16:00:00.000Z");
+  assert.equal(lesson2.endsAt, "2026-10-18T16:00:00.000Z");
+  assert.equal(lesson2.title, "Structuring an academic presentation");
+  assert.equal(lesson2.lessonNumber, 2);
 
-  const challenges = availableChallenges(new Date("2026-08-06T12:00:00+08:00"), 3);
+  assert.equal(currentChallenge(new Date("2026-10-12T00:00:00+08:00")).id, "weekly-2026-10-12");
+
+  const lesson16 = challengeForIndex(15);
+  assert.equal(lesson16.id, "weekly-2027-01-18");
+  assert.equal(lesson16.title, "Round-table defense");
+  assert.equal(lesson16.lessonNumber, 16);
+  assert.equal(lesson16.unitNumber, 8);
+});
+
+test("after lesson 16 the schedule wraps around to lesson 1", () => {
+  const wrapped = challengeForIndex(16);
+  assert.equal(wrapped.id, "weekly-2027-01-25");
+  assert.equal(wrapped.topicIndex, 0);
+  assert.equal(wrapped.title, "Introducing yourself as a researcher");
+  assert.equal(wrapped.lessonNumber, 1);
+  assert.equal(currentChallenge(new Date("2027-01-25T12:00:00+08:00")).topicIndex, 0);
+});
+
+test("available challenges list the current lesson first, then past lessons", () => {
+  // During the two-week launch lesson only that lesson exists.
+  const launch = availableChallenges(new Date("2026-09-30T12:00:00+08:00"), 10);
+  assert.deepEqual(launch.map((challenge) => challenge.id), ["weekly-2026-09-28"]);
+
+  const challenges = availableChallenges(new Date("2026-10-21T12:00:00+08:00"), 3);
   assert.deepEqual(
     challenges.map((challenge) => challenge.id),
-    ["weekly-2026-08-05", "weekly-2026-07-29", "weekly-2026-07-22"],
+    ["weekly-2026-10-19", "weekly-2026-10-12", "weekly-2026-09-28"],
   );
 });
 

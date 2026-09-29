@@ -2306,6 +2306,10 @@ async function moderateComment(comment) {
 function gameChallengeForClient(challenge) {
   return {
     id: challenge.id,
+    lessonNumber: challenge.lessonNumber,
+    unitNumber: challenge.unitNumber,
+    unitTitle: challenge.unitTitle,
+    instructor: challenge.instructor,
     title: challenge.title,
     question: challenge.question,
     focus: challenge.focus,
@@ -2314,7 +2318,6 @@ function gameChallengeForClient(challenge) {
     startsAt: challenge.startsAt,
     endsAt: challenge.endsAt,
     structuralGuide: challenge.structuralGuide,
-    prizeDraft: challenge.prizeDraft || null,
   };
 }
 
@@ -2430,7 +2433,7 @@ app.post("/api/game/question", requireVisitor, requirePrivacyConsent, requireAtt
   const challenge = currentChallenge();
   const profile = {
     name: safeText(req.user.name, "DingTalk user"),
-    role: "Weekly everyday speaking challenge",
+    role: "Academic English weekly course task",
   };
   const record = persistQuestion(
     req.user,

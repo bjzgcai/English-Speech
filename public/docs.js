@@ -5,6 +5,29 @@ const dimensions = {
     title: "Pronunciation and intelligibility",
     description: "Measures sound clarity, stress, rhythm, and whether pronunciation issues interfere with meaning.",
     reason: "Intelligibility remains essential: a strong idea cannot land if the listener cannot reliably understand the words. Its weight keeps speech clarity central without outweighing the structure and relevance of the response.",
+    examples: [
+      {
+        band: "needs_improvement",
+        label: "Needs improvement",
+        score: 40,
+        snippet: "Heard as \"I wan to sey abou my las pro-jek\" — the transcript drops the key words, so the listener never receives the claim.",
+        why: "Blurred word endings and flat stress make the words the meaning depends on unrecoverable.",
+      },
+      {
+        band: "developing",
+        label: "Developing",
+        score: 65,
+        snippet: "\"I want to say about my last project\" comes through, but \"project\" and \"result\" ask for a second listen.",
+        why: "Word endings are unstable on the exact nouns the listener needs.",
+      },
+      {
+        band: "strong",
+        label: "Strong",
+        score: 85,
+        snippet: "\"I want to describe my last project and its result\" arrives on the first listen, with stress on the words that carry the point.",
+        why: "Clear consonants and sentence stress let the listener catch the message immediately.",
+      },
+    ],
   },
   grammar: {
     weight: "20%",
@@ -12,6 +35,32 @@ const dimensions = {
     title: "Grammar",
     description: "Measures control of sentence structure, tense, agreement, and word order without demanding a particular accent or speaking style.",
     reason: "Grammar carries a substantial share because it protects meaning. Consistent errors can change relationships between ideas, time, ownership, and intent.",
+    examples: [
+      {
+        band: "needs_improvement",
+        label: "Needs improvement",
+        score: 40,
+        snippet: "Yesterday I go to office and my manager he tell me about the project, and I not understand what he saying.",
+        audio: "/assets/audio/examples/grammar-needs-improvement.mp3",
+        why: "Tense and agreement errors stack up until the timeline is unclear.",
+      },
+      {
+        band: "developing",
+        label: "Developing",
+        score: 65,
+        snippet: "I explained the issue to my manager and he agreed to give more time. Then we finish the report on Friday.",
+        audio: "/assets/audio/examples/grammar-developing.mp3",
+        why: "Mostly clear, but one tense shift to \"finish\" breaks the sequence.",
+      },
+      {
+        band: "strong",
+        label: "Strong",
+        score: 85,
+        snippet: "I explained the issue to my manager, and he agreed to give us more time. By Friday we had finished the report.",
+        audio: "/assets/audio/examples/grammar-strong.mp3",
+        why: "Consistent tense and clean clause structure carry the whole answer.",
+      },
+    ],
   },
   fluency: {
     weight: "10%",
@@ -19,6 +68,32 @@ const dimensions = {
     title: "Fluency",
     description: "Measures pacing, hesitation, pauses, self-correction, and the ability to sustain an answer without long breakdowns.",
     reason: "Fluency matters to real-time communication, but speed is not the goal. Its weight rewards an understandable flow while leaving room for thoughtful pauses and different speaking styles.",
+    examples: [
+      {
+        band: "needs_improvement",
+        label: "Needs improvement",
+        score: 40,
+        snippet: "I... I think the... um... the project, it was, um... it was... good? I don't know... maybe... yeah.",
+        audio: "/assets/audio/examples/fluency-needs-improvement.mp3",
+        why: "Long pauses and restarts break the answer into disconnected pieces.",
+      },
+      {
+        band: "developing",
+        label: "Developing",
+        score: 65,
+        snippet: "So the project was, um, quite hard at the beginning. And then, you know, we, we managed to, to finish it.",
+        audio: "/assets/audio/examples/fluency-developing.mp3",
+        why: "Fillers and repeated words slow the answer, though the thread still holds.",
+      },
+      {
+        band: "strong",
+        label: "Strong",
+        score: 85,
+        snippet: "The project was hard at the beginning. We re-planned the timeline and finished ahead of schedule.",
+        audio: "/assets/audio/examples/fluency-strong.mp3",
+        why: "Steady pacing with pauses at clause boundaries instead of mid-phrase.",
+      },
+    ],
   },
   vocabulary: {
     weight: "15%",
@@ -26,6 +101,32 @@ const dimensions = {
     title: "Vocabulary",
     description: "Measures the range, precision, and appropriateness of word choice, including the ability to avoid vague or repetitive language.",
     reason: "Vocabulary receives equal weight with fluency because precise words make ideas useful. It supports nuance without over-rewarding rare or unnecessarily complex language.",
+    examples: [
+      {
+        band: "needs_improvement",
+        label: "Needs improvement",
+        score: 40,
+        snippet: "It was very good and very nice and we did many things, so everything was good.",
+        audio: "/assets/audio/examples/vocabulary-needs-improvement.mp3",
+        why: "Only vague, repeated words, so the listener learns nothing specific.",
+      },
+      {
+        band: "developing",
+        label: "Developing",
+        score: 65,
+        snippet: "The project was difficult but we solved the problem. It took a long time and it was useful for me.",
+        audio: "/assets/audio/examples/vocabulary-developing.mp3",
+        why: "Correct but generic: \"difficult\" and \"useful\" could describe almost anything.",
+      },
+      {
+        band: "strong",
+        label: "Strong",
+        score: 85,
+        snippet: "The project was understaffed, so we narrowed the scope and shipped a smaller release on time.",
+        audio: "/assets/audio/examples/vocabulary-strong.mp3",
+        why: "Precise words such as \"understaffed\" and \"narrowed the scope\" carry the real story.",
+      },
+    ],
   },
   visual: {
     weight: "10%",
@@ -33,6 +134,29 @@ const dimensions = {
     title: "Visual delivery",
     description: "Measures posture, eye contact, facial engagement, and professional presence in camera-facing communication.",
     reason: "Presentation is part of the project goal, so delivery must count. Ten percent makes presence meaningful without allowing appearance to outweigh the substance of the speech.",
+    examples: [
+      {
+        band: "needs_improvement",
+        label: "Needs improvement",
+        score: 40,
+        snippet: "Described behaviour: reads from off-camera notes, looks down for most of the answer, and the framing cuts off the top of the head.",
+        why: "The audience sees a reader, not a speaker.",
+      },
+      {
+        band: "developing",
+        label: "Developing",
+        score: 65,
+        snippet: "Described behaviour: finds the camera at the start and the end, but drifts back to the notes and sways through the middle.",
+        why: "Contact is intermittent, so presence comes and goes.",
+      },
+      {
+        band: "strong",
+        label: "Strong",
+        score: 85,
+        snippet: "Described behaviour: holds eye contact with the lens, keeps a stable upright frame, and lets facial expression follow the message.",
+        why: "Steady framing and eye contact keep attention on the message.",
+      },
+    ],
   },
   coherence: {
     weight: "25%",
@@ -40,6 +164,32 @@ const dimensions = {
     title: "Coherence and speech consistency",
     description: "Measures whether ideas connect logically, the speaker remains internally consistent, and the listener can follow the main point.",
     reason: "Coherence has the largest share because effective speech needs a stable main point, consistent claims, and ideas connected in an order the listener can follow.",
+    examples: [
+      {
+        band: "needs_improvement",
+        label: "Needs improvement",
+        score: 40,
+        snippet: "I like sports. Sports is good. Also I have many thing. Yes that's all.",
+        audio: "/assets/audio/examples/coherence-needs-improvement.mp3",
+        why: "Three unrelated fragments; no main point a listener can hold.",
+      },
+      {
+        band: "developing",
+        label: "Developing",
+        score: 65,
+        snippet: "I like sports because it's healthy. Sometimes I play basketball with friends, but I don't have much time now.",
+        audio: "/assets/audio/examples/coherence-developing.mp3",
+        why: "One clear reason, then the idea trails off without a close.",
+      },
+      {
+        band: "strong",
+        label: "Strong",
+        score: 85,
+        snippet: "I like sports mainly because it keeps me steady. I play basketball twice a week, and that routine carries into how I plan my work.",
+        audio: "/assets/audio/examples/coherence-strong.mp3",
+        why: "A stated main point, a supporting detail, and a link back to the claim.",
+      },
+    ],
   },
 };
 
@@ -368,6 +518,77 @@ const detail = {
   reason: document.querySelector("#detailReason"),
 };
 
+const detailExamples = document.querySelector("#detailExamples");
+
+// One shared player: starting a card stops whichever card was playing, and the
+// re-render that follows a dimension switch tears the old cards down, so the
+// element is stopped with them.
+const examplePlayer = new Audio();
+let playingExampleButton = null;
+
+function stopExamplePlayback() {
+  examplePlayer.pause();
+  if (examplePlayer.src) examplePlayer.removeAttribute("src");
+  if (!playingExampleButton) return;
+  playingExampleButton.classList.remove("is-playing");
+  playingExampleButton.setAttribute("aria-pressed", "false");
+  const label = playingExampleButton.querySelector(".example-play-label");
+  if (label) label.textContent = "Play example";
+  playingExampleButton = null;
+}
+
+examplePlayer.addEventListener("ended", stopExamplePlayback);
+examplePlayer.addEventListener("error", stopExamplePlayback);
+
+function toggleExamplePlayback(button) {
+  if (playingExampleButton === button && !examplePlayer.paused) {
+    stopExamplePlayback();
+    return;
+  }
+
+  stopExamplePlayback();
+  examplePlayer.src = button.dataset.audio;
+  const started = examplePlayer.play();
+  if (started && typeof started.catch === "function") started.catch(() => stopExamplePlayback());
+  button.classList.add("is-playing");
+  button.setAttribute("aria-pressed", "true");
+  const label = button.querySelector(".example-play-label");
+  if (label) label.textContent = "Pause example";
+  playingExampleButton = button;
+}
+
+function renderExamples(dimension) {
+  if (!detailExamples) return;
+  stopExamplePlayback();
+  detailExamples.innerHTML = (dimension.examples || [])
+    .map(
+      (example) => `
+        <article class="example-card" data-band="${escapeHtml(example.band)}">
+          <div class="example-band">
+            <span class="example-band-label">${escapeHtml(example.label)}</span>
+            <strong class="example-band-score">≈${escapeHtml(String(example.score))}</strong>
+          </div>
+          <p class="example-snippet">${escapeHtml(example.snippet)}</p>
+          ${
+            example.audio
+              ? `<button type="button" class="example-play" data-audio="${escapeHtml(example.audio)}" aria-pressed="false" aria-label="Play the ${escapeHtml(example.label)} example">
+                   <span class="example-play-icon" aria-hidden="true"></span>
+                   <span class="example-play-label">Play example</span>
+                 </button>`
+              : ""
+          }
+          <p class="example-why">${escapeHtml(example.why)}</p>
+        </article>
+      `,
+    )
+    .join("");
+}
+
+detailExamples?.addEventListener("click", (event) => {
+  const button = event.target.closest(".example-play");
+  if (button) toggleExamplePlayback(button);
+});
+
 document.querySelectorAll(".weight-segment").forEach((button) => {
   button.addEventListener("click", () => {
     const selected = dimensions[button.dataset.dimension];
@@ -380,8 +601,13 @@ document.querySelectorAll(".weight-segment").forEach((button) => {
     Object.entries(detail).forEach(([key, element]) => {
       element.textContent = selected[key];
     });
+
+    renderExamples(selected);
   });
 });
+
+const activeSegment = document.querySelector(".weight-segment.is-active") || document.querySelector(".weight-segment");
+if (activeSegment) renderExamples(dimensions[activeSegment.dataset.dimension]);
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 

@@ -103,7 +103,7 @@ const leaderboardWeek = document.querySelector("#leaderboardWeek");
 const leaderboardSummary = document.querySelector("#leaderboardSummary");
 const leaderboardList = document.querySelector("#leaderboardList");
 const leaderboardIdentitySettings = document.querySelector("#leaderboardIdentitySettings");
-const prizeDraft = document.querySelector("#prizeDraft");
+const gameLessonMeta = document.querySelector("#gameLessonMeta");
 const historyList = document.querySelector("#historyList");
 const playView = document.querySelector("#playView");
 const leaderboardView = document.querySelector("#leaderboardView");
@@ -955,6 +955,12 @@ function formatChallengeRange(challenge) {
 function showGameChallenge(challenge) {
   state.gameChallenge = challenge;
   gameWeekLabel.textContent = formatChallengeRange(challenge);
+  if (challenge?.lessonNumber && challenge?.unitNumber) {
+    gameLessonMeta.textContent = `Unit ${challenge.unitNumber} · Lesson ${challenge.lessonNumber} · ${challenge.instructor || ""}`.trim();
+    gameLessonMeta.hidden = false;
+  } else {
+    gameLessonMeta.hidden = true;
+  }
   gameTopicTitle.textContent = challenge.title;
   gameTopicQuestion.textContent = challenge.question;
   if (!state.question && normalizeRoute(window.location.pathname) === "/game") {
@@ -1076,64 +1082,11 @@ async function saveLeaderboardIdentity(form) {
   }
 }
 
-function renderPrizeDraft(data) {
-  const draft = data.challenge?.prizeDraft;
-  if (!draft) {
-    prizeDraft.hidden = true;
-    prizeDraft.innerHTML = "";
-    return;
-  }
-
-  const pickLabels = ["First pick", "Second pick", "Final prize"];
-  const pickDescriptions = [
-    "Chooses any one of the three prizes",
-    "Chooses from the two prizes left",
-    "Receives the remaining prize",
-  ];
-  const pickOrder = pickLabels
-    .map((label, index) => {
-      const player = data.entries?.[index];
-      return `
-        <li class="prize-pick prize-pick-${index + 1}">
-          <span class="prize-rank">${index + 1}</span>
-          <span class="prize-pick-copy">
-            <small>${label}</small>
-            <strong>${player ? escapeHtml(player.name) : "To be decided"}</strong>
-            <span>${pickDescriptions[index]}</span>
-          </span>
-        </li>
-      `;
-    })
-    .join("");
-
-  prizeDraft.innerHTML = `
-    <div class="prize-draft-visual">
-      <img src="${escapeHtml(draft.imagePath)}" alt="Week 1 prize pool: a Vinda tissue pack, Vaseline hand cream, and anti-fog wipes" />
-      <span class="prize-drop-sticker" aria-hidden="true">3<br /><small>PRIZES</small></span>
-    </div>
-    <div class="prize-draft-content">
-      <h2 id="prizeDraftTitle">${escapeHtml(draft.title)}</h2>
-      <p class="prize-draft-rule">${escapeHtml(draft.rule)}</p>
-      <div class="prize-rewards" aria-label="Available prizes">
-        ${draft.rewards.map((reward) => `<span>${escapeHtml(reward)}</span>`).join("")}
-      </div>
-      <ol class="prize-pick-order" aria-label="Prize selection order">${pickOrder}</ol>
-      <p class="prize-draft-note">Live ranking shown. Final pick order is locked when Week 1 closes.</p>
-      <a class="game-cta" href="/game" data-route="/game">
-        Play this week's game
-        <span aria-hidden="true">→</span>
-      </a>
-    </div>
-  `;
-  prizeDraft.hidden = false;
-}
-
 function renderLeaderboard(data) {
-  renderPrizeDraft(data);
   leaderboardTopic.textContent = `${data.challenge.title}. ${formatChallengeRange(data.challenge)}.`;
   const summary = data.participantCount
     ? `${data.participantCount} ${data.participantCount === 1 ? "player" : "players"}${data.viewerRank ? `. Your rank: ${data.viewerRank}.` : ". Complete an evaluated answer to join them."}`
-    : "No completed answers yet. Record the first one for this topic.";
+    : "No completed answers yet. Record the first one for this task.";
   leaderboardSummary.textContent = summary;
   leaderboardList.title = summary;
 
@@ -1164,7 +1117,6 @@ function renderLeaderboard(data) {
 }
 
 async function loadLeaderboard(challengeId) {
-  prizeDraft.hidden = true;
   leaderboardList.setAttribute("aria-busy", "true");
   leaderboardSummary.textContent = "Loading weekly standings...";
   leaderboardList.innerHTML = '<li class="leaderboard-loading">Loading leaderboard...</li>';
@@ -1210,7 +1162,7 @@ async function loadGameChallenge() {
   try {
     await fetchGameChallengeCatalog();
   } catch (error) {
-    gameTopicTitle.textContent = "Weekly topic unavailable";
+    gameTopicTitle.textContent = "This week's task is unavailable";
     gameTopicQuestion.textContent = error.message;
   }
 }
@@ -1493,11 +1445,11 @@ function setPlayMode(route) {
   gameOverview.hidden = !isGame;
   roleField.hidden = isGame;
   nameField.hidden = isGame;
-  playTitle.textContent = isGame ? "The Weekly Game" : "Examine";
-  profileHeading.textContent = isGame ? "Enter this week's game" : "Candidate profile";
+  playTitle.textContent = isGame ? "Academic English Weekly" : "Examine";
+  profileHeading.textContent = isGame ? "Enter this week's task" : "Candidate profile";
   profileHeading.closest(".section-heading").hidden = isGame;
   profileSummary.textContent = isGame
-    ? "The topic is fixed. Check your devices, plan, and answer."
+    ? "The task is fixed. Check your devices, plan, and answer."
     : "Used to create one speaking question.";
   generateButton.textContent = isGame
     ? "Start challenge"
@@ -1514,8 +1466,8 @@ function setPlayMode(route) {
     if (isGame && state.gameChallenge) {
       showGameChallenge(state.gameChallenge);
     } else if (isGame) {
-      questionText.textContent = "Loading this week's fixed topic...";
-      questionMeta.textContent = "Every player receives the same question for the week.";
+      questionText.textContent = "Loading this week's fixed task...";
+      questionMeta.textContent = "Every player receives the same task for the week.";
     } else {
       questionText.textContent = "Enter a profile, then generate one question.";
       questionMeta.textContent = "";
@@ -1539,7 +1491,7 @@ function setRoute(pathname) {
     : isHistory
       ? "History | OScanner-Eng"
       : isGame
-        ? "Weekly Game | OScanner-Eng"
+        ? "Academic English Weekly | OScanner-Eng"
         : "Examine | OScanner-Eng";
   navLinks.forEach((link) => {
     const isActive = normalizeRoute(link.dataset.route) === route;
@@ -1558,7 +1510,7 @@ function setRoute(pathname) {
     setStatus("Leaderboard");
     loadLeaderboardPage();
   } else if (isGame) {
-    setStatus("Weekly topic");
+    setStatus("Weekly task");
     loadGameChallenge();
   } else {
     setStatus(state.authUser?.identityType === "guest" ? "Guest" : "Signed in");
@@ -1637,13 +1589,13 @@ profileForm.addEventListener("submit", async (event) => {
   const isGame = normalizeRoute(window.location.pathname) === "/game";
   setStatus("Generating");
   showGeneratingModal();
-  prepareModalTitle.textContent = isGame ? "Preparing the weekly topic..." : "Preparing your question...";
+  prepareModalTitle.textContent = isGame ? "Preparing the weekly task..." : "Preparing your question...";
   prepareModalMessage.textContent = isGame
-    ? "The fixed topic is ready. We are setting up your private planning time."
+    ? "The fixed task is ready. We are setting up your private planning time."
     : "Please wait while the assessment question is generated.";
-  questionText.textContent = isGame ? "Preparing the weekly topic..." : "Generating a question...";
+  questionText.textContent = isGame ? "Preparing the weekly task..." : "Generating a question...";
   questionMeta.textContent = isGame
-    ? "Creating your owned attempt for this week's challenge."
+    ? "Creating your owned attempt for this week's task."
     : "Calling the internally deployed model through the local server.";
 
   try {
@@ -1659,7 +1611,7 @@ profileForm.addEventListener("submit", async (event) => {
     }
 
     setQuestion(data.question);
-    setStatus(isGame ? "Topic ready" : response.ok ? "" : "Fallback ready");
+    setStatus(isGame ? "Task ready" : response.ok ? "" : "Fallback ready");
     if (data.error) {
       saveResult.textContent = `LLM fallback used: ${data.error}`;
     }
@@ -1672,7 +1624,7 @@ profileForm.addEventListener("submit", async (event) => {
     closePrepareModal();
     stopStream();
     setStatus("Error");
-    questionText.textContent = isGame ? "Weekly topic setup failed." : "Question generation failed.";
+    questionText.textContent = isGame ? "Weekly task setup failed." : "Question generation failed.";
     questionMeta.textContent = error.message;
   } finally {
     if ((!state.recorder || state.recorder.state === "inactive") && !state.mediaRetryPending) {
