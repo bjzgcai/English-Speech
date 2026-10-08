@@ -38,7 +38,17 @@ function storeUserFigure({ answerId, uploadedFile, userFiguresDir, altName }) {
   const filename = `${answerId}.${extension}`;
   const finalPath = path.join(userFiguresDir, filename);
   fs.mkdirSync(userFiguresDir, { recursive: true, mode: 0o700 });
-  fs.renameSync(uploadedFile.path, finalPath);
+  // In production each data directory is its own ReadWritePaths bind mount, so
+  // a rename from the upload inbox into user-figures can fail with EXDEV even
+  // though both live on the same disk. Copy and drop the source in that case.
+  try {
+    fs.renameSync(uploadedFile.path, finalPath);
+  } catch (error) {
+    if (error.code !== "EXDEV") throw error;
+    fs.copyFileSync(uploadedFile.path, finalPath);
+    fs.chmodSync(finalPath, 0o600);
+    fs.rmSync(uploadedFile.path, { force: true });
+  }
   fs.chmodSync(finalPath, 0o600);
   return {
     src: `${USER_FIGURE_SRC_PREFIX}${filename}`,

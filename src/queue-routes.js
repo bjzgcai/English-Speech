@@ -35,6 +35,8 @@ function registerQueueRoutes(app, deps) {
     }
     catch (error) {
       if (res.headersSent) return next(error);
+      // A silent 503 is undebuggable: always record why a queue request failed.
+      console.error(`Queue request failed: ${req.method} ${req.originalUrl}`, error);
       res.set("Retry-After", "5");
       res.status(error.status || 503).json({ error: error.status ? error.message : "Queue temporarily unavailable. Please retry.", code: "QUEUE_BUSY" });
     }
