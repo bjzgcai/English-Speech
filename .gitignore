@@ -14,7 +14,12 @@ ratings/
 analytics/
 .workbuddy/
 invitations/
+user-figures/
 not-empty-user.json
+
+# Local scratch scripts and smoke-test residue from ad-hoc runs.
+/tmp/
+
 npm-debug.log*
 .DS_Store
 

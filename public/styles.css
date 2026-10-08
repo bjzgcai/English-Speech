@@ -566,6 +566,63 @@ h1 {
   display: none;
 }
 
+/* Replace-figure controls: a quiet button plus a concise tip below the task
+   figure. The reset button appears only while a custom figure is active. */
+.task-figure-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.task-figure-controls[hidden] {
+  display: none;
+}
+
+.figure-replace-button,
+.figure-reset-button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink, #1f2933);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 5px 14px;
+  cursor: pointer;
+}
+
+.figure-replace-button:hover,
+.figure-reset-button:hover {
+  border-color: #9aa7b4;
+}
+
+.figure-replace-button:focus-visible,
+.figure-reset-button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.figure-reset-button[hidden] {
+  display: none;
+}
+
+.figure-tip {
+  margin: 0;
+  color: var(--muted, #52606d);
+  font-size: 12.5px;
+  line-height: 1.5;
+  max-width: 640px;
+}
+
+.figure-tip[hidden] {
+  display: none;
+}
+
+.figure-tip-error {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
 .history-figure {
   margin: 0 0 14px;
 }

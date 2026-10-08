@@ -5,6 +5,12 @@ const { Queue, terminal } = require("./queue");
 const { readJsonLines, updateJsonLines } = require("./storage");
 const { readMonitorStatus, monitorFile } = require("./monitoring");
 const { isGuest } = require("./visitor");
+const {
+  isSupportedUserFigure,
+  removeUserFigureForAnswer,
+  storeUserFigure,
+  userFigureFilenameFromSrc,
+} = require("./user-figures");
 
 function registerQueueRoutes(app, deps) {
   const { config, requireAuth, requireVisitor, requirePrivacyConsent, requireAdminAccess, upload, findOwnedQuestion, validAnswerSaveId, decodeUtf8UploadFilename, standaloneEvaluationTitle, requireAttemptQuota, requireVideoQuota } = deps;
@@ -47,6 +53,9 @@ function registerQueueRoutes(app, deps) {
         if (job.lease && job.lease > Date.now()) continue;
         discardedIds.add(job.id);
         removals.push(payload.inputPath, payload.record.filename ? path.join(config.recordingsDir, payload.record.filename) : null, path.join(config.artifactsDir, job.id));
+        // The canceled answer never gets a metadata record, so its uploaded
+        // figure would otherwise stay on disk forever.
+        removeUserFigureForAnswer(job.id, config.userFiguresDir);
       } else {
         upserts.push(job.result ? JSON.parse(job.result) : { ...payload.record, filename: null, hasVideo: false, bytes: 0, evaluation: { status: job.state, stage: job.stage }, pendingJobId: job.id });
         if (terminal.has(job.state)) removals.push(payload.inputPath);
@@ -142,28 +151,39 @@ function registerQueueRoutes(app, deps) {
     req.setTimeout(300000, () => req.destroy());
     res.once("close", () => {
       queue.endUpload(req.user.openId);
-      if (req.file?.path) fs.rm(req.file.path, { force: true }, () => {});
+      const files = [req.file, req.files?.video?.[0], req.files?.figure?.[0]].filter(Boolean);
+      for (const file of files) fs.rm(file.path, { force: true }, () => {});
     });
     next();
   });
   const accept = wrap(async (req, res) => {
     const receivedAt = performance.now();
-    if (!req.file) return res.status(400).json({ error: "A video file is required." });
+    const videoFile = req.files?.video?.[0] || req.file;
+    const figureFile = req.files?.figure?.[0];
+    if (!videoFile) {
+      if (figureFile) fs.rmSync(figureFile.path, { force: true });
+      return res.status(400).json({ error: "A video file is required." });
+    }
     const id = req.queueSubmission;
     const standalone = !req.ownedQuestion;
+    if (figureFile && !standalone && !isSupportedUserFigure(figureFile)) {
+      fs.rmSync(figureFile.path, { force: true });
+      fs.rmSync(videoFile.path, { force: true });
+      return res.status(400).json({ error: "Choose a PNG, JPG, or WebP figure image up to 5 MB." });
+    }
     const finishedAt = new Date().toISOString();
     const filename = `${finishedAt.replace(/[:.]/g, "-")}-${id}.mp4`;
     const inbox = path.join(config.recordingsDir, "pending");
     await fs.promises.mkdir(inbox, { recursive: true, mode: 0o700 });
     const inputPath = path.join(inbox, `${id}-${crypto.randomUUID()}`);
-    await fs.promises.rename(req.file.path, inputPath);
+    await fs.promises.rename(videoFile.path, inputPath);
     const file = await fs.promises.open(inputPath, "r");
     await file.sync(); await file.close();
     const directory = await fs.promises.open(inbox, "r");
     await directory.sync(); await directory.close();
-    const originalFilename = decodeUtf8UploadFilename(req.file.originalname);
+    const originalFilename = decodeUtf8UploadFilename(videoFile.originalname);
     const record = {
-      id, submissionId: id, hasVideo: true, filename, mimeType: "video/mp4", originalMimeType: req.file.mimetype, convertedToMp4: true,
+      id, submissionId: id, hasVideo: true, filename, mimeType: "video/mp4", originalMimeType: videoFile.mimetype, convertedToMp4: true,
       startedAt: typeof req.body.startedAt === "string" ? req.body.startedAt : finishedAt, finishedAt,
       openId: req.user.openId, userId: req.user.userId, jobNumber: req.user.jobNumber, email: req.user.email, orgEmail: req.user.orgEmail, user: req.user,
       profile: standalone ? { name: req.user.name } : req.ownedQuestion.profile,
@@ -172,17 +192,30 @@ function registerQueueRoutes(app, deps) {
       question: standalone ? { question: "Standalone speech", focus: "Speech consistency and English communication" } : req.ownedQuestion.question,
       ...(standalone ? { title: standaloneEvaluationTitle(originalFilename), originalFilename: path.basename(originalFilename), sourceType: "upload", evaluationMode: "standalone-speech" } : {}),
     };
+    if (standalone && figureFile) fs.rmSync(figureFile.path, { force: true });
+    if (!standalone && figureFile) {
+      const customFigure = storeUserFigure({
+        answerId: id,
+        uploadedFile: figureFile,
+        userFiguresDir: config.userFiguresDir,
+        altName: decodeUtf8UploadFilename(figureFile.originalname),
+      });
+      if (customFigure) record.question = { ...record.question, figure: customFigure };
+    }
     try { queue.accept(id, req.user.openId, req.queueAdmission, { record, inputPath, mode: standalone ? "standalone-speech" : "question-answer" }); }
     catch (error) { await fs.promises.rm(inputPath, { force: true }); throw error; }
     const status = queue.status(id, req.user.openId);
     const acknowledgementMs = performance.now() - receivedAt;
     res.set("Server-Timing", `upload_ack;dur=${acknowledgementMs.toFixed(2)}`);
-    queue.run("INSERT INTO telemetry(job,stage,created,data) VALUES(?,'upload',?,?)", id, Date.now(), JSON.stringify({ durationMs: Math.round(acknowledgementMs), bytes: req.file.size }));
+    queue.run("INSERT INTO telemetry(job,stage,created,data) VALUES(?,'upload',?,?)", id, Date.now(), JSON.stringify({ durationMs: Math.round(acknowledgementMs), bytes: videoFile.size }));
     res.status(202).json(status);
   });
   for (const route of ["/api/save-answer", "/api/evaluate-video"]) {
     const quotas = route === "/api/evaluate-video" ? [requireAttemptQuota, requireVideoQuota] : [requireAttemptQuota];
-    app.post(route, requireVisitor, requirePrivacyConsent, gate, ...quotas, startUpload, upload.single("video"), accept);
+    const uploadMiddleware = route === "/api/save-answer"
+      ? upload.fields([{ name: "video", maxCount: 1 }, { name: "figure", maxCount: 1 }])
+      : upload.single("video");
+    app.post(route, requireVisitor, requirePrivacyConsent, gate, ...quotas, startUpload, uploadMiddleware, accept);
   }
   return { queue, project, required };
 }

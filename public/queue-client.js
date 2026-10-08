@@ -218,6 +218,11 @@
       if (saved.questionId) form.append("questionId", saved.questionId);
       form.append("startedAt", saved.startedAt || "");
       form.append("publiclyShared", String(saved.publiclyShared === true));
+      // A learner's replacement task figure rides with the draft, so queued
+      // and retried uploads are still evaluated against their own figure.
+      if (saved.figure instanceof Blob) {
+        form.append("figure", saved.figure, saved.figure.name || "figure.png");
+      }
       signal.throwIfAborted();
       xhr.send(form);
     });
@@ -271,7 +276,9 @@
   async function retain(form, submittingOwner) {
     if (!submittingOwner) throw new Error("Your session is unavailable.");
     const blob = form.get("video");
+    const figure = form.get("figure");
     const saved = { id: form.get("submissionId") || crypto.randomUUID(), url: form.get("questionId") ? "/api/save-answer" : "/api/evaluate-video", questionId: form.get("questionId"), startedAt: form.get("startedAt"), blob, filename: blob.name || "answer.webm", retry: false };
+    saved.figure = figure instanceof Blob ? figure : null;
     saved.owner = submittingOwner;
     saved.publiclyShared = form.get("publiclyShared") === "true";
     try { await draft("put", saved, submittingOwner); }

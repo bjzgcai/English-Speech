@@ -32,6 +32,7 @@ const state = {
   leaderboardIdentity: null,
   activeMode: null,
   useCamera: true,
+  customFigure: null,
   experienceRatingScore: null,
   experienceRatingTags: [],
   experienceRatingSubmitting: false,
@@ -895,29 +896,114 @@ function setQuestion(question) {
   evaluationResult.innerHTML = "";
 }
 
+const CUSTOM_FIGURE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const MAX_CUSTOM_FIGURE_BYTES = 5 * 1024 * 1024;
+const FIGURE_TIP_TEXT = "Tip: preparing with your own chart or diagram? Click the button, choose a PNG, JPG, or WebP image (up to 5\u00a0MB), and it replaces the sample figure \u2014 your answer will be evaluated against the figure you uploaded.";
+
+function setCustomFigure(file) {
+  if (!CUSTOM_FIGURE_MIME_TYPES.has(file.type)) {
+    showFigureTipError("That file type is not supported. Choose a PNG, JPG, or WebP image.");
+    return;
+  }
+  if (file.size > MAX_CUSTOM_FIGURE_BYTES) {
+    showFigureTipError("That image is too large. Choose an image of 5 MB or less.");
+    return;
+  }
+  if (state.customFigure?.url) URL.revokeObjectURL(state.customFigure.url);
+  state.customFigure = { file, url: URL.createObjectURL(file), name: file.name };
+  refreshTaskFigures();
+}
+
+function clearCustomFigure() {
+  if (state.customFigure?.url) URL.revokeObjectURL(state.customFigure.url);
+  state.customFigure = null;
+  refreshTaskFigures();
+}
+
+// Tracks the figure each slot last received, so refreshing after an upload
+// keeps the recorder panel and the prepare modal in step without one slot's
+// state leaking into the other.
+const taskFigures = new WeakMap();
+
+function taskFigureFor(figureEl) {
+  return taskFigures.get(figureEl) || null;
+}
+
+function refreshTaskFigures() {
+  renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, taskFigureFor(questionFigure));
+  renderTaskFigure(prepareFigure, prepareFigureImage, prepareFigureCaption, taskFigureFor(prepareFigure));
+}
+
+let figureTipRestoreTimer = null;
+function showFigureTipError(message) {
+  for (const tip of document.querySelectorAll("[data-figure-tip]")) {
+    tip.textContent = message;
+    tip.classList.add("figure-tip-error");
+  }
+  if (figureTipRestoreTimer) window.clearTimeout(figureTipRestoreTimer);
+  figureTipRestoreTimer = window.setTimeout(() => {
+    for (const tip of document.querySelectorAll("[data-figure-tip]")) {
+      tip.textContent = FIGURE_TIP_TEXT;
+      tip.classList.remove("figure-tip-error");
+    }
+  }, 5000);
+}
+
+function setupFigureControls(figureEl) {
+  if (!figureEl) return;
+  const input = figureEl.querySelector("[data-figure-input]");
+  const replaceButton = figureEl.querySelector("[data-figure-replace]");
+  const resetButton = figureEl.querySelector("[data-figure-reset]");
+  if (!input || !replaceButton || !resetButton) return;
+  replaceButton.addEventListener("click", () => input.click());
+  resetButton.addEventListener("click", () => clearCustomFigure());
+  input.addEventListener("change", () => {
+    const file = input.files?.[0];
+    input.value = "";
+    if (file) setCustomFigure(file);
+  });
+}
+
+setupFigureControls(questionFigure);
+setupFigureControls(prepareFigure);
+
 // Weekly task figures are optional: hide the slot (and its "Task figure" label,
 // which sits directly above it) whenever the challenge has no figure, so the
-// nine text-only lessons keep their current layout.
+// nine text-only lessons keep their current layout. When the learner replaced
+// the figure, the uploaded image takes precedence over the default asset.
 function renderTaskFigure(figureEl, imageEl, captionEl, figure) {
   if (!figureEl || !imageEl) return;
   // The "Task figure" label lives inside the figure element.
   const labelEl = figureEl.querySelector(".task-figure-label");
+  const controls = figureEl.querySelector("[data-figure-controls]");
+  const resetButton = figureEl.querySelector("[data-figure-reset]");
+  const tipEl = figureEl.querySelector("[data-figure-tip]");
   const toggleLabel = (visible) => {
     if (labelEl) labelEl.hidden = !visible;
   };
-  const src = typeof figure?.src === "string" ? figure.src.trim() : "";
+  taskFigures.set(figureEl, figure || null);
+  const baseSrc = typeof figure?.src === "string" ? figure.src.trim() : "";
+  // A null figure means this state has no figure at all (generating, device
+  // setup). The replacement only stands in for a figure that is actually shown.
+  const custom = baseSrc ? state.customFigure : null;
+  const src = custom?.url || baseSrc;
   if (!src) {
     imageEl.removeAttribute("src");
     imageEl.alt = "";
     if (captionEl) captionEl.textContent = "";
     toggleLabel(false);
+    if (controls) controls.hidden = true;
+    if (tipEl) tipEl.hidden = true;
     figureEl.hidden = true;
     return;
   }
   imageEl.src = src;
-  imageEl.alt = typeof figure.alt === "string" ? figure.alt : "";
-  if (captionEl) captionEl.textContent = typeof figure.caption === "string" ? figure.caption : "";
+  imageEl.alt = custom ? custom.name : (typeof figure.alt === "string" ? figure.alt : "");
+  if (captionEl) captionEl.textContent = custom ? "Your figure" : (typeof figure.caption === "string" ? figure.caption : "");
   toggleLabel(true);
+  if (controls) controls.hidden = false;
+  if (resetButton) resetButton.hidden = !custom;
+  if (tipEl) tipEl.hidden = false;
   figureEl.hidden = false;
 }
 
@@ -1915,6 +2001,9 @@ async function finishRecording() {
   formData.append("questionId", recordingQuestionId);
   formData.append("startedAt", recordingStartedAt);
   formData.append("submissionId", submissionId);
+  if (state.customFigure?.file) {
+    formData.append("figure", state.customFigure.file, state.customFigure.name);
+  }
 
   if (recordingOwner !== state.authUser?.openId) {
     await window.EvaluationQueue.retain(formData, recordingOwner);
@@ -1942,6 +2031,8 @@ async function finishRecording() {
     }
 
     saveResult.innerHTML = data.path ? `Saved as <a href="${escapeHtml(data.path)}" target="_blank" rel="noreferrer">${escapeHtml(data.filename)}</a>. Generate the next question when ready.` : escapeHtml(data.evaluation?.reason || "Recording discarded.");
+    // The uploaded figure was consumed by this submission; restore the default.
+    clearCustomFigure();
     if (state.activeMode === "/game" && data.evaluation?.status === "completed") {
       await loadLeaderboardIdentity().catch(() => {});
     }
@@ -2088,6 +2179,9 @@ window.addEventListener("visitoridentitychange", (event) => {
       form.append("video", new Blob(chunks, { type }), type.includes("mp4") ? "answer.mp4" : "answer.webm");
       form.append("questionId", questionId);
       form.append("startedAt", startedAt);
+      if (state.customFigure?.file) {
+        form.append("figure", state.customFigure.file, state.customFigure.name);
+      }
       void window.EvaluationQueue.retain(form, event.detail.previous).catch(() => {});
     }, { once: true });
     recorder.stop();

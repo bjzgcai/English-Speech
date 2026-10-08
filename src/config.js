@@ -32,6 +32,7 @@ const commentsDir = path.join(dataDir, "comments");
 const commentsMetadataFile = path.join(commentsDir, "metadata.jsonl");
 const commentsMediaDir = path.join(commentsDir, "media");
 const commentsModerationFile = path.join(commentsDir, "moderation.jsonl");
+const userFiguresDir = path.join(dataDir, "user-figures");
 const consentsDir = path.join(dataDir, "consents");
 const consentsMetadataFile = path.join(consentsDir, "metadata.jsonl");
 const ratingsDir = path.join(dataDir, "ratings");
@@ -48,6 +49,7 @@ for (const directory of [
   questionsDir,
   commentsDir,
   commentsMediaDir,
+  userFiguresDir,
   consentsDir,
   ratingsDir,
   invitationsDir,
@@ -71,6 +73,7 @@ module.exports = {
   commentsMetadataFile,
   commentsMediaDir,
   commentsModerationFile,
+  userFiguresDir,
   consentsMetadataFile,
   ratingsMetadataFile,
   invitationsMetadataFile,

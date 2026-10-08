@@ -40,6 +40,13 @@ const {
   leaderboardForChallenge,
   normalizeGameGroup,
 } = require("./game");
+const {
+  USER_FIGURE_EXTENSION_MIME,
+  USER_FIGURE_SRC_PATTERN,
+  isSupportedUserFigure,
+  storeUserFigure,
+  userFigureFilenameFromSrc,
+} = require("./user-figures");
 
 const app = express();
 const {
@@ -54,6 +61,7 @@ const {
   commentsMetadataFile,
   commentsMediaDir,
   commentsModerationFile,
+  userFiguresDir,
   consentsMetadataFile,
   ratingsMetadataFile,
   invitationsMetadataFile,
@@ -189,12 +197,21 @@ const upload = multer({
   dest: recordingTmpDir,
   limits: {
     fileSize: maximumVideoBytes,
-    files: 1,
+    files: 2,
     fields: 6,
     parts: 7,
     fieldSize: 16384,
   },
   fileFilter: (_req, file, callback) => {
+    // The answer upload accepts the recording plus an optional replacement
+    // task figure. Each field has its own allowed media types.
+    if (file.fieldname === "figure") {
+      const figureMimeTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
+      if (!figureMimeTypes.has(file.mimetype)) {
+        return callback(new multer.MulterError("LIMIT_UNEXPECTED_FILE", file.fieldname));
+      }
+      return callback(null, true);
+    }
     const allowedMimeTypes = new Set([
       "video/mp4",
       "video/webm",
@@ -210,7 +227,7 @@ const upload = multer({
       "audio/wav",
       "audio/x-wav",
     ]);
-    if (!allowedMimeTypes.has(file.mimetype)) {
+    if (file.fieldname !== "video" || !allowedMimeTypes.has(file.mimetype)) {
       return callback(new multer.MulterError("LIMIT_UNEXPECTED_FILE", file.fieldname));
     }
     callback(null, true);
@@ -972,11 +989,15 @@ const figureSrcPattern = /^\/assets\/figures\/([a-z0-9][a-z0-9-]*)\.(png|jpe?g|w
 const figureMimeTypes = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp" };
 
 function resolveFigureImage(src) {
-  const match = figureSrcPattern.exec(safeText(src));
+  const source = safeText(src);
+  const staticMatch = figureSrcPattern.exec(source);
+  const userMatch = staticMatch ? null : USER_FIGURE_SRC_PATTERN.exec(source);
+  const match = staticMatch || userMatch;
   if (!match) return null;
-  const resolved = path.resolve(figuresDir, `${match[1]}.${match[2]}`);
-  if (resolved !== path.join(figuresDir, `${match[1]}.${match[2]}`)) return null;
-  if (!resolved.startsWith(`${figuresDir}${path.sep}`)) return null;
+  const baseDir = staticMatch ? figuresDir : userFiguresDir;
+  const resolved = path.resolve(baseDir, `${match[1]}.${match[2]}`);
+  if (resolved !== path.join(baseDir, `${match[1]}.${match[2]}`)) return null;
+  if (!resolved.startsWith(`${baseDir}${path.sep}`)) return null;
   if (!fs.existsSync(resolved)) return null;
   return { path: resolved, mimeType: figureMimeTypes[match[2].toLowerCase()] || "image/png" };
 }
@@ -2599,35 +2620,55 @@ app.post("/api/save-answer/:id/cancel", requireVisitor, (req, res) => {
   });
 });
 
-app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttemptQuota, upload.single("video"), async (req, res) => {
+app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttemptQuota, upload.fields([{ name: "video", maxCount: 1 }, { name: "figure", maxCount: 1 }]), async (req, res) => {
+  const videoFile = req.files?.video?.[0];
+  const figureFile = req.files?.figure?.[0];
+  const cleanupUploads = () => {
+    if (videoFile) removePath(videoFile.path);
+    if (figureFile) removePath(figureFile.path);
+  };
   const questionId = safeText(req.body.questionId);
   const questionRecord = findOwnedQuestion(questionId, req.user.openId);
   if (!questionRecord) {
-    if (req.file) removePath(req.file.path);
+    cleanupUploads();
     return res.status(400).json({ error: "The question is missing or does not belong to this user." });
   }
 
   const requestedId = safeText(req.body.submissionId);
   const id = requestedId ? validAnswerSaveId(requestedId) : crypto.randomUUID();
   if (!id) {
-    if (req.file) removePath(req.file.path);
+    cleanupUploads();
     return res.status(400).json({ error: "A valid answer save ID is required." });
   }
   if (readJsonLines(metadataFile).some((record) => record.id === id)) {
-    if (req.file) removePath(req.file.path);
+    cleanupUploads();
     return res.status(409).json({ error: "This answer save ID has already been used." });
   }
   if (isAnswerCancellationRequested(id, req.user.openId)) {
-    if (req.file) removePath(req.file.path);
+    cleanupUploads();
     return res.status(409).json({ error: "This answer was discarded.", code: "ANSWER_DISCARDED" });
   }
 
   const profile = questionRecord.profile;
   const question = questionRecord.question;
+  if (figureFile && !isSupportedUserFigure(figureFile)) {
+    cleanupUploads();
+    return res.status(400).json({ error: "Choose a PNG, JPG, or WebP figure image up to 5 MB." });
+  }
+  // A learner-supplied figure replaces the default task figure for both the
+  // stored answer and its evaluation, so the scorer judges the right chart.
+  const customFigure = storeUserFigure({
+    answerId: id,
+    uploadedFile: figureFile,
+    userFiguresDir,
+    altName: decodeUtf8UploadFilename(figureFile?.originalname),
+  });
+  const figurePath = customFigure ? path.join(userFiguresDir, customFigure.filename) : null;
+  const questionForAnswer = customFigure ? { ...question, figure: customFigure } : question;
   const startedAt = safeText(req.body.startedAt);
   const finishedAt = new Date().toISOString();
 
-  if (!req.file) {
+  if (!videoFile) {
     const record = {
       id,
       submissionId: requestedId ? id : null,
@@ -2645,7 +2686,7 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttem
       user: req.user,
       profile,
       questionId,
-      question,
+      question: questionForAnswer,
       evaluation: {
         status: "skipped",
         reason: "No video was recorded for this question.",
@@ -2653,6 +2694,7 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttem
     };
 
     if (isAnswerCancellationRequested(id, req.user.openId)) {
+      if (figurePath) removePath(figurePath);
       return res.status(409).json({ error: "This answer was discarded.", code: "ANSWER_DISCARDED" });
     }
     appendJsonLine(metadataFile, record);
@@ -2673,9 +2715,9 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttem
   let evaluationMediaInfo;
 
   try {
-    evaluationMediaInfo = limitStandaloneMediaInfo(await inspectMedia(req.file.path));
+    evaluationMediaInfo = limitStandaloneMediaInfo(await inspectMedia(videoFile.path));
     if (!evaluationMediaInfo.hasAudio) throw new Error("The answer requires a microphone track.");
-    const prepared = await normalizeRecording(req.file.path, convertedPath, {
+    const prepared = await normalizeRecording(videoFile.path, convertedPath, {
       maximumDurationSeconds: standaloneEvaluationMaxSeconds,
       mediaInfo: evaluationMediaInfo,
       artifactBaseDir: path.join(artifactsDir, id),
@@ -2684,12 +2726,13 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttem
     fs.chmodSync(convertedPath, 0o600);
     fs.renameSync(convertedPath, finalPath);
   } catch (error) {
-    removePath(req.file.path);
+    removePath(videoFile.path);
+    if (figurePath) removePath(figurePath);
     removePath(convertedPath);
     removePath(finalPath);
     return res.status(400).json({ error: "The uploaded file is not a valid supported audio or video recording." });
   }
-  removePath(req.file.path);
+  removePath(videoFile.path);
 
   if (isAnswerCancellationRequested(id, req.user.openId)) {
     removePath(finalPath);
@@ -2703,7 +2746,7 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttem
     hasVideo: true,
     filename,
     mimeType: "video/mp4",
-    originalMimeType: req.file.mimetype,
+    originalMimeType: videoFile.mimetype,
     convertedToMp4: true,
     bytes: fs.statSync(finalPath).size,
     startedAt,
@@ -2716,7 +2759,7 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttem
     user: req.user,
     profile,
     questionId,
-    question,
+    question: questionForAnswer,
   };
 
   try {
@@ -2724,7 +2767,7 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttem
       videoPath: finalPath,
       artifactBaseDir: path.join(artifactsDir, id),
       profile,
-      question,
+      question: questionForAnswer,
       mediaInfo: evaluationMediaInfo,
     });
   } catch (error) {
@@ -2737,6 +2780,7 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttem
   if (isAnswerCancellationRequested(id, req.user.openId)) {
     removePath(finalPath);
     removePath(path.join(artifactsDir, id));
+    if (figurePath) removePath(figurePath);
     return res.status(409).json({ error: "This answer was discarded.", code: "ANSWER_DISCARDED" });
   }
 
@@ -2945,6 +2989,32 @@ app.get("/api/recordings/:id/video", requireVisitor, (req, res) => {
   res.set("X-Content-Type-Options", "nosniff");
   res.type("video/mp4");
   res.sendFile(videoPath);
+});
+
+// Serves the figure a learner uploaded to replace the default task figure.
+// Ownership is resolved through the answer record, so one member can only
+// view their own figure even if the unguessable path leaks.
+app.get("/api/user-figures/:name", requireVisitor, (req, res) => {
+  const name = safeText(req.params.name);
+  if (!/^[a-z0-9][a-z0-9-]*\.(png|jpe?g|webp)$/.test(name)) {
+    return res.status(404).json({ error: "Figure not found." });
+  }
+  const record = readJsonLines(metadataFile).find(
+    (item) => recordOpenId(item) === req.user.openId && item?.question?.figure?.src === `/api/user-figures/${name}`,
+  );
+  if (!record) {
+    return res.status(404).json({ error: "Figure not found." });
+  }
+  const figurePath = path.join(userFiguresDir, name);
+  if (figurePath !== path.join(userFiguresDir, path.basename(name)) || !fs.existsSync(figurePath)) {
+    return res.status(404).json({ error: "Figure not found." });
+  }
+  res.set({
+    "Cache-Control": "private, max-age=86400",
+    "X-Content-Type-Options": "nosniff",
+  });
+  res.type(USER_FIGURE_EXTENSION_MIME[name.split(".").pop().toLowerCase()] || "image/png");
+  res.sendFile(figurePath);
 });
 
 registerPageRoutes(app, { requirePageAuth });
