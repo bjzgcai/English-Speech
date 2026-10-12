@@ -31,11 +31,12 @@ test("academic English course starts on 2026-09-28 with sixteen lessons", () => 
   assert.ok(weeklyTopics.every((topic) => topic.title && topic.question && topic.focus && topic.followUp));
   assert.equal(new Set(weeklyTopics.map((topic) => topic.title)).size, 16);
 
-  // Lesson 1 spans two weeks: 2026-09-28 to 2026-10-12 (UTC+8).
+  // Lesson 1 spans two weeks: 2026-09-28 to 2026-10-13 (UTC+8) after the
+  // one-time 24h handover extension.
   const challenge = currentChallenge(new Date("2026-09-28T12:00:00+08:00"));
   assert.equal(challenge.id, "weekly-2026-09-28");
   assert.equal(challenge.startsAt, "2026-09-27T16:00:00.000Z");
-  assert.equal(challenge.endsAt, "2026-10-11T16:00:00.000Z");
+  assert.equal(challenge.endsAt, "2026-10-12T16:00:00.000Z");
   assert.equal(challenge.title, "Introducing yourself as a researcher");
   assert.equal(challenge.lessonNumber, 1);
   assert.equal(challenge.unitNumber, 1);
@@ -43,19 +44,22 @@ test("academic English course starts on 2026-09-28 with sixteen lessons", () => 
   assert.equal(challenge.structuralGuide.length, 4);
   assert.equal(challenge.prizeDraft, undefined);
 
-  // The fortnight still resolves to lesson 1 on its final day.
+  // The fortnight still resolves to lesson 1 on its final day, including the
+  // extension window (2026-10-12 up to 24:00 UTC+8).
   assert.equal(currentChallenge(new Date("2026-10-11T12:00:00+08:00")).id, "weekly-2026-09-28");
+  assert.equal(currentChallenge(new Date("2026-10-12T23:59:59+08:00")).id, "weekly-2026-09-28");
 });
 
-test("lesson 2 starts on Monday 2026-10-12 and lessons run weekly thereafter", () => {
+test("lesson 2 starts 2026-10-13 after the handover and lessons run weekly thereafter", () => {
   const lesson2 = challengeForIndex(1);
-  assert.equal(lesson2.id, "weekly-2026-10-12");
-  assert.equal(lesson2.startsAt, "2026-10-11T16:00:00.000Z");
+  assert.equal(lesson2.id, "weekly-2026-10-13");
+  assert.equal(lesson2.startsAt, "2026-10-12T16:00:00.000Z");
+  // Lesson 2 still ends at the next Monday boundary (2026-10-19 00:00 UTC+8).
   assert.equal(lesson2.endsAt, "2026-10-18T16:00:00.000Z");
   assert.equal(lesson2.title, "Structuring an academic presentation");
   assert.equal(lesson2.lessonNumber, 2);
 
-  assert.equal(currentChallenge(new Date("2026-10-12T00:00:00+08:00")).id, "weekly-2026-10-12");
+  assert.equal(currentChallenge(new Date("2026-10-13T00:00:00+08:00")).id, "weekly-2026-10-13");
 
   const lesson16 = challengeForIndex(15);
   assert.equal(lesson16.id, "weekly-2027-01-18");
@@ -81,7 +85,7 @@ test("available challenges list the current lesson first, then past lessons", ()
   const challenges = availableChallenges(new Date("2026-10-21T12:00:00+08:00"), 3);
   assert.deepEqual(
     challenges.map((challenge) => challenge.id),
-    ["weekly-2026-10-19", "weekly-2026-10-12", "weekly-2026-09-28"],
+    ["weekly-2026-10-19", "weekly-2026-10-13", "weekly-2026-09-28"],
   );
 });
 
@@ -120,12 +124,70 @@ test("leaderboard keeps each participant's best score and uses earlier completio
   assert.equal(leaderboard.participantCount, 2);
   assert.equal(leaderboard.viewerRank, 2);
   assert.deepEqual(leaderboard.entries, [
-    { rank: 1, name: "Amina Rahman", score: 88, attempts: 2, isViewer: false },
-    { rank: 2, name: "Mateo Silva", score: 88, attempts: 1, isViewer: true },
+    { rank: 1, name: "Amina Rahman", score: 88, attempts: 2, isViewer: false, answerId: undefined, mediaType: undefined },
+    { rank: 2, name: "Mateo Silva", score: 88, attempts: 1, isViewer: true, answerId: undefined, mediaType: undefined },
   ]);
 });
 
-test("leaderboard identity applies one current alias to every challenge entry", () => {
+test("leaderboard exposes the best attempt's recording for playback", () => {
+  const challenge = challengeForIndex(0);
+  const records = [
+    {
+      id: "record-old",
+      openId: "user-a",
+      user: { name: "Amina Rahman" },
+      finishedAt: "2026-07-23T09:00:00.000Z",
+      filename: "old-answer.mp4",
+      question: { challengeId: challenge.id },
+      evaluation: { status: "completed", overallScore: 70 },
+    },
+    {
+      id: "record-best",
+      openId: "user-a",
+      user: { name: "Amina Rahman" },
+      finishedAt: "2026-07-24T09:00:00.000Z",
+      filename: "best-answer.mp4",
+      question: { challengeId: challenge.id },
+      evaluation: { status: "completed", overallScore: 88 },
+    },
+    {
+      id: "record-audio",
+      openId: "user-b",
+      user: { name: "Mateo Silva" },
+      finishedAt: "2026-07-24T10:00:00.000Z",
+      filename: "audio-answer.mp3",
+      question: { challengeId: challenge.id },
+      evaluation: { status: "completed", overallScore: 64 },
+    },
+    {
+      // A lower attempt whose recording must not shadow the best one.
+      id: "record-noise",
+      openId: "user-b",
+      user: { name: "Mateo Silva" },
+      finishedAt: "2026-07-25T10:00:00.000Z",
+      filename: "noise-answer.mp4",
+      question: { challengeId: challenge.id },
+      evaluation: { status: "completed", overallScore: 60 },
+    },
+    {
+      // Answers without a stored recording still rank without a play button.
+      openId: "user-c",
+      user: { name: "No Recording" },
+      finishedAt: "2026-07-24T11:00:00.000Z",
+      question: { challengeId: challenge.id },
+      evaluation: { status: "completed", overallScore: 55 },
+    },
+  ];
+
+  const leaderboard = leaderboardForChallenge(records, challenge, "user-c");
+  assert.deepEqual(leaderboard.entries, [
+    { rank: 1, name: "Amina Rahman", score: 88, attempts: 2, isViewer: false, answerId: "record-best", mediaType: "video" },
+    { rank: 2, name: "Mateo Silva", score: 64, attempts: 2, isViewer: false, answerId: "record-audio", mediaType: "audio" },
+    { rank: 3, name: "No Recording", score: 55, attempts: 1, isViewer: true, answerId: undefined, mediaType: undefined },
+  ]);
+});
+
+test("leaderboard always shows the real name; stored actualName wins over the record name", () => {
   const challenge = challengeForIndex(0);
   const records = [
     {
@@ -137,24 +199,22 @@ test("leaderboard identity applies one current alias to every challenge entry", 
     },
   ];
 
-  const anonymous = leaderboardForChallenge(
+  const withStoredName = leaderboardForChallenge(
+    records,
+    challenge,
+    "alias-user",
+    new Map([["alias-user", { actualName: "Current Actual Name" }]]),
+  );
+  assert.equal(withStoredName.entries[0].name, "Current Actual Name");
+
+  // Even a legacy alias record can no longer anonymise the board.
+  const withLegacyAlias = leaderboardForChallenge(
     records,
     challenge,
     "alias-user",
     new Map([["alias-user", { alias: "Breezy Otter 2048", useAlias: true }]]),
   );
-  assert.equal(anonymous.entries[0].name, "Breezy Otter 2048");
-
-  const identified = leaderboardForChallenge(
-    records,
-    challenge,
-    "alias-user",
-    new Map([[
-      "alias-user",
-      { alias: "Breezy Otter 2048", useAlias: false, actualName: "Current Actual Name" },
-    ]]),
-  );
-  assert.equal(identified.entries[0].name, "Current Actual Name");
+  assert.equal(withLegacyAlias.entries[0].name, "Actual Name");
 });
 
 test("an unknown group token falls back to the default group", () => {
@@ -228,7 +288,7 @@ test("available challenges and leaderboards stay inside one group", () => {
   const now = new Date("2026-10-21T12:00:00+08:00");
   assert.deepEqual(
     availableChallenges(now, 3, "g2").map((challenge) => challenge.id),
-    ["weekly-2026-10-19-g2", "weekly-2026-10-12-g2", "weekly-2026-09-28-g2"],
+    ["weekly-2026-10-19-g2", "weekly-2026-10-13-g2", "weekly-2026-09-28-g2"],
   );
 
   const first = challengeForIndex(0, "g1");

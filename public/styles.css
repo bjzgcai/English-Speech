@@ -1057,6 +1057,49 @@ h1 {
   box-shadow: 0 4px 0 rgba(71, 59, 183, 0.18);
 }
 
+.leaderboard-row.has-media {
+  grid-template-columns: 54px minmax(0, 1fr) auto auto;
+}
+
+.leaderboard-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #d7d2f3;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 3px 0 #dcd7f3;
+  color: var(--accent-dark);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.leaderboard-play span {
+  margin-left: 2px;
+}
+
+.leaderboard-play:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 4px 0 rgba(71, 59, 183, 0.35);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.leaderboard-play:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 rgba(71, 59, 183, 0.35);
+}
+
+.leaderboard-play:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .leaderboard-loading,
 .leaderboard-empty,
 .leaderboard-error {
@@ -1839,6 +1882,19 @@ video {
   background: #fff8f8;
 }
 
+/* Shown when only part of a recording could be evaluated, so a score is never
+   presented as if it covered the whole answer. */
+.media-notice {
+  margin-top: 18px;
+  border-left: 3px solid var(--gold);
+  border-radius: var(--radius-small);
+  background: var(--gold-soft);
+  padding: 14px 16px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .evaluation-header,
 .feedback-columns {
   display: grid;
@@ -2239,7 +2295,9 @@ video {
 
 .history-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 10px;
   margin-bottom: 18px;
 }
 
@@ -2333,6 +2391,42 @@ video {
   aspect-ratio: 16 / 9;
   border-radius: 12px;
   background: #17172b;
+}
+
+.video-modal {
+  max-height: calc(100dvh - 36px);
+  overflow-y: auto;
+}
+
+.video-modal-transcript {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8f7ff;
+  padding: 9px 11px;
+}
+
+.video-modal-transcript-label {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.video-modal-transcript p {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.video-modal-transcript #videoModalTranscriptQuestion {
+  color: var(--accent-dark);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .prepare-modal {
@@ -3461,6 +3555,16 @@ video {
     gap: 9px;
     min-height: 70px;
     padding: 8px 10px;
+  }
+
+  .leaderboard-row.has-media {
+    grid-template-columns: 42px minmax(0, 1fr) auto auto;
+  }
+
+  .leaderboard-play {
+    width: 36px;
+    height: 36px;
+    font-size: 13px;
   }
 
   .leaderboard-rank > strong { font-size: 20px; }

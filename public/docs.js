@@ -400,7 +400,7 @@ function renderVideoEvaluation(evaluation) {
       <strong>${Math.round(Number(evaluation.overallScore || 0))}<span>/100</span></strong>
       <p>${escapeHtml(evaluation.summary || "Evaluation completed.")}</p>
     </div>
-    ${notice ? `<p class="media-notice ${evaluation.mediaValidation.visualEvaluated && !evaluation.mediaValidation.truncated ? "" : "is-limited"}">${escapeHtml(notice)}</p>` : ""}
+    ${notice ? `<p class="media-notice ${evaluation.mediaValidation.visualEvaluated && !evaluation.mediaValidation.truncated && !evaluation.mediaValidation.incomplete ? "" : "is-limited"}">${escapeHtml(notice)}</p>` : ""}
     <div class="result-dimensions">
       ${dimensions
         .map(

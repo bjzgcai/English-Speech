@@ -1,10 +1,26 @@
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Recorded answers playable from the leaderboard. Anything that is not a known
+// audio extension is treated as video (normalized recordings are MP4).
+const LEADERBOARD_AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".ogg"]);
+
+function leaderboardAnswerMediaType(filename) {
+  if (typeof filename !== "string" || !filename) return null;
+  const extension = filename.slice(filename.lastIndexOf(".")).toLowerCase();
+  if (!LEADERBOARD_AUDIO_EXTENSIONS.has(extension)) return "video";
+  return "audio";
+}
 // Academic English weekly course: lesson 1 launches Monday 2026-09-28 (UTC+8) and
-// spans two weeks (until 2026-10-12). From lesson 2 onward each lesson runs one
-// week, Monday to Monday. After lesson 16 the schedule wraps around (modulo 16).
+// spans two weeks. As a one-time handover, lesson 1 was extended by 24 hours (to
+// 2026-10-13 00:00 UTC+8) and lesson 2 starts then, running to the next Monday
+// boundary (2026-10-19 00:00 UTC+8). From lesson 2's end onward each lesson runs
+// one week, Monday to Monday. After lesson 16 the schedule wraps around (mod 16).
 const COURSE_ANCHOR_MS = Date.parse("2026-09-28T00:00:00+08:00");
 const LESSON_COUNT = 16;
 const LAUNCH_END_MS = COURSE_ANCHOR_MS + 2 * WEEK_MS;
+// One-time handover on 2026-10-12: previous lesson extended to 24:00, current
+// lesson starts 2026-10-13 00:00 UTC+8. Later lessons keep their Monday slots.
+const HANDOVER_EXTENSION_MS = 24 * 60 * 60 * 1000;
 
 // The course runs two parallel class groups over the same weekly lesson slots.
 // Group 1 ("g1") keeps the original topic order; Group 2 ("g2") walks the same
@@ -239,12 +255,24 @@ const structuralGuide = Object.freeze([
 ]);
 
 // Lesson-slot index: slot 0 is the two-week launch lesson (2026-09-28 to
-// 2026-10-12); every later slot is one week starting Monday. Times before the
-// launch clamp to slot 0.
+// 2026-10-13 00:00 UTC+8 after the one-time handover extension); slot 1 runs
+// 2026-10-13 to 2026-10-19; every later slot is one week starting Monday.
+// Times before the launch clamp to slot 0.
 function challengeIndexAt(now = new Date()) {
   const t = Math.max(0, now.getTime());
-  if (t < LAUNCH_END_MS) return 0;
+  if (t < LAUNCH_END_MS + HANDOVER_EXTENSION_MS) return 0;
   return 1 + Math.floor((t - LAUNCH_END_MS) / WEEK_MS);
+}
+
+function slotStartMs(index) {
+  if (index <= 0) return COURSE_ANCHOR_MS;
+  if (index === 1) return LAUNCH_END_MS + HANDOVER_EXTENSION_MS;
+  return COURSE_ANCHOR_MS + (index + 1) * WEEK_MS;
+}
+
+function slotEndMs(index) {
+  if (index === 0) return LAUNCH_END_MS + HANDOVER_EXTENSION_MS;
+  return slotStartMs(index + 1);
 }
 
 function challengeForIndex(index, group = DEFAULT_GAME_GROUP) {
@@ -252,8 +280,8 @@ function challengeForIndex(index, group = DEFAULT_GAME_GROUP) {
   const slotIndex = ((index % LESSON_COUNT) + LESSON_COUNT) % LESSON_COUNT;
   const topicIndex = GAME_GROUPS[normalizedGroup][slotIndex];
   const topic = weeklyTopics[topicIndex];
-  const startMs = index === 0 ? COURSE_ANCHOR_MS : COURSE_ANCHOR_MS + (index + 1) * WEEK_MS;
-  const endMs = index === 0 ? LAUNCH_END_MS : startMs + WEEK_MS;
+  const startMs = slotStartMs(index);
+  const endMs = slotEndMs(index);
   const dateKey = new Date(startMs).toLocaleDateString("en-CA", { timeZone: "Asia/Shanghai" });
   // Group 1 keeps its historical identifier so existing answers, boards, and
   // analytics remain valid; Group 2 gets its own identifier for a separate board.
@@ -327,6 +355,8 @@ function leaderboardForChallenge(records, challenge, viewerOpenId, identities = 
       score: Math.round(Number(record.evaluation.overallScore)),
       finishedAt: record.finishedAt || "",
       attempts: 1,
+      answerId: typeof record.id === "string" && record.id ? record.id : "",
+      mediaType: leaderboardAnswerMediaType(record.filename),
     };
     const current = bestByUser.get(openId);
     if (!current) {
@@ -342,6 +372,8 @@ function leaderboardForChallenge(records, challenge, viewerOpenId, identities = 
       current.score = entry.score;
       current.finishedAt = entry.finishedAt;
       current.name = entry.name;
+      current.answerId = entry.answerId;
+      current.mediaType = entry.mediaType;
     }
   });
 
@@ -351,13 +383,14 @@ function leaderboardForChallenge(records, challenge, viewerOpenId, identities = 
       const identity = identities.get(entry.openId);
       return {
         rank: index + 1,
-        name:
-          identity?.useAlias === true && identity.alias
-            ? identity.alias
-            : identity?.actualName || entry.name,
+        // Anonymity was removed: the board always shows the real name.
+        name: identity?.actualName || entry.name,
         score: entry.score,
         attempts: entry.attempts,
         isViewer: entry.openId === viewerOpenId,
+        // Best attempt's recording so the board can offer inline playback.
+        answerId: entry.answerId || undefined,
+        mediaType: entry.mediaType || undefined,
       };
     });
 
@@ -376,6 +409,7 @@ module.exports = {
   challengeQuestion,
   currentChallenge,
   leaderboardForChallenge,
+  leaderboardAnswerMediaType,
   normalizeGameGroup,
   structuralGuide,
   weeklyTopics,

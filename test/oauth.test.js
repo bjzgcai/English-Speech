@@ -268,14 +268,11 @@ test("authenticated users can read the current weekly challenge and leaderboard"
   assert.ok(Array.isArray(leaderboardBody.entries));
 });
 
-test("users can keep one leaderboard alias, rename it, and switch back to their actual name", async (context) => {
+test("leaderboard identity always shows the actual name; anonymous aliases are gone", async (context) => {
   const server = await listenForTest(app);
   context.after(() => new Promise((resolve) => server.close(resolve)));
 
   const openId = `identity-user-${Date.now()}-${Math.random()}`;
-  const aliasSuffix = openId.replace(/\D/g, "").slice(-8);
-  const firstAlias = `Cozy Panda ${aliasSuffix}`;
-  const secondAlias = `Sunny Otter ${aliasSuffix}`;
   const session = testHelpers.createSessionToken({ openId, name: "Identity Tester" });
   const headers = {
     "X-Expected-Owner": JSON.parse(Buffer.from(session.split(".")[0], "base64url")).user.openId, Cookie: `englisheval_session=${session}`,
@@ -287,29 +284,19 @@ test("users can keep one leaderboard alias, rename it, and switch back to their 
   assert.equal(initialResponse.status, 200);
   const initial = (await initialResponse.json()).identity;
   assert.equal(initial.actualName, "Identity Tester");
-  assert.equal(initial.useAlias, false);
-  assert.match(initial.alias, /\S+ \S+ \d{4}/);
+  assert.equal(initial.displayName, "Identity Tester");
 
-  const anonymousResponse = await fetch(`${baseUrl}/api/game/identity`, {
+  // The alias endpoint is gone: the board has no anonymous mode any more.
+  const aliasResponse = await fetch(`${baseUrl}/api/game/identity`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ useAlias: true, alias: firstAlias }),
+    body: JSON.stringify({ useAlias: true, alias: "Cozy Panda 2048" }),
   });
-  assert.equal(anonymousResponse.status, 200);
-  const anonymous = (await anonymousResponse.json()).identity;
-  assert.equal(anonymous.displayName, firstAlias);
-  assert.equal(anonymous.saved, true);
-
-  const identifiedResponse = await fetch(`${baseUrl}/api/game/identity`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ useAlias: false, alias: secondAlias }),
-  });
-  assert.equal(identifiedResponse.status, 200);
-  const identified = (await identifiedResponse.json()).identity;
-  assert.equal(identified.alias, secondAlias);
-  assert.equal(identified.displayName, "Identity Tester");
+  assert.equal(aliasResponse.status, 404);
 
   const reloaded = await fetch(`${baseUrl}/api/game/identity`, { headers });
-  assert.equal((await reloaded.json()).identity.alias, secondAlias);
+  const reloadedIdentity = (await reloaded.json()).identity;
+  assert.equal(reloadedIdentity.displayName, "Identity Tester");
+  assert.equal(reloadedIdentity.useAlias, undefined);
+  assert.equal(reloadedIdentity.alias, undefined);
 });

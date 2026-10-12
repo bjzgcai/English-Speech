@@ -29,7 +29,6 @@ const state = {
   gameChallenge: null,
   gameChallenges: [],
   gameGroup: "g1",
-  leaderboardIdentity: null,
   activeMode: null,
   useCamera: true,
   customFigure: null,
@@ -106,7 +105,6 @@ const leaderboardWeek = document.querySelector("#leaderboardWeek");
 const leaderboardGroupPicker = document.querySelector("#leaderboardGroupPicker");
 const leaderboardSummary = document.querySelector("#leaderboardSummary");
 const leaderboardList = document.querySelector("#leaderboardList");
-const leaderboardIdentitySettings = document.querySelector("#leaderboardIdentitySettings");
 const gameLessonMeta = document.querySelector("#gameLessonMeta");
 const questionFigure = document.querySelector("#questionFigure");
 const questionFigureImage = document.querySelector("#questionFigureImage");
@@ -127,6 +125,9 @@ const navLinks = document.querySelectorAll(".main-nav [data-route]");
 const videoModal = document.querySelector("#videoModal");
 const videoModalTitle = document.querySelector("#videoModalTitle");
 const historyVideo = document.querySelector("#historyVideo");
+const videoModalTranscript = document.querySelector("#videoModalTranscript");
+const videoModalTranscriptQuestion = document.querySelector("#videoModalTranscriptQuestion");
+const videoModalTranscriptText = document.querySelector("#videoModalTranscriptText");
 const closeVideoModal = document.querySelector("#closeVideoModal");
 const prepareModal = document.querySelector("#prepareModal");
 const prepareDialog = prepareModal.querySelector(".prepare-dialog");
@@ -417,6 +418,75 @@ function getMediaErrorMessage(error) {
       return error?.message || "Check your browser and phone privacy settings, then try again.";
   }
 }
+
+// Client diagnostics: report media/device failures and unhandled errors to the
+// server so an administrator can debug a user's report from the server log.
+// Fire-and-forget, capped per page load, and deduplicated by message so a
+// repeating failure cannot loop into request spam.
+const clientErrorReportState = { sent: 0, seenMessages: new Set() };
+
+function reportClientError(payload) {
+  try {
+    if (clientErrorReportState.sent >= 10) return;
+    clientErrorReportState.sent += 1;
+    window.fetch("/api/log-client-error", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    }).catch(() => {});
+  } catch { /* reporting must never break the user flow */ }
+}
+
+function mediaErrorReportPayload(error, retryAction, friendlyMessage) {
+  const stream = state.stream || null;
+  const trackReport = (track) => track
+    ? { live: track.readyState === "live", muted: !!track.muted, enabled: track.enabled !== false }
+    : null;
+  return {
+    kind: "media",
+    name: String(error?.name || "").slice(0, 120),
+    message: String(error?.message || "").slice(0, 500),
+    friendlyMessage: String(friendlyMessage || "").slice(0, 500),
+    page: `${window.location.pathname}${window.location.search}`.slice(0, 200),
+    retryAction: String(retryAction || "").slice(0, 50),
+    useCamera: !!state.useCamera,
+    unavailableDevice: String(state.requiredDeviceInterrupted || "").slice(0, 50),
+    stream: {
+      hasStream: !!stream,
+      audio: trackReport(stream?.getAudioTracks()[0]),
+      video: trackReport(stream?.getVideoTracks()[0]),
+    },
+  };
+}
+
+window.addEventListener("error", (event) => {
+  const message = String(event?.message || "").slice(0, 500);
+  if (!message || clientErrorReportState.seenMessages.has(`error:${message}`)) return;
+  clientErrorReportState.seenMessages.add(`error:${message}`);
+  reportClientError({
+    kind: "global",
+    name: String(event?.error?.name || "").slice(0, 120),
+    message,
+    source: `${event.filename || ""}:${event.lineno || 0}:${event.colno || 0}`.slice(0, 300),
+    stack: String(event?.error?.stack || "").slice(0, 2000),
+    page: `${window.location.pathname}${window.location.search}`.slice(0, 200),
+  });
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event?.reason;
+  const raw = reason instanceof Error ? String(reason.message || "") : String(reason || "");
+  if (!raw || clientErrorReportState.seenMessages.has(`rejection:${raw}`)) return;
+  clientErrorReportState.seenMessages.add(`rejection:${raw}`);
+  reportClientError({
+    kind: "global",
+    name: reason instanceof Error ? String(reason.name || "").slice(0, 120) : "",
+    message: raw.slice(0, 500),
+    stack: reason instanceof Error ? String(reason.stack || "").slice(0, 2000) : "",
+    page: `${window.location.pathname}${window.location.search}`.slice(0, 200),
+  });
+});
 
 function setStatus(message) {
   if (connectionStatus) connectionStatus.textContent = message;
@@ -733,6 +803,7 @@ function showRecorderInPrepareModal() {
 function showMediaRequiredModal(error, retryAction = "record") {
   state.mediaRetryPending = true;
   state.mediaRetryAction = retryAction;
+  reportClientError(mediaErrorReportPayload(error, retryAction, getMediaErrorMessage(error)));
   restoreRecorderPanel();
   prepareDialog.classList.remove("is-countdown");
   prepareDialog.classList.add("no-figure");
@@ -749,6 +820,34 @@ function showMediaRequiredModal(error, retryAction = "record") {
   countdownDisplay.hidden = true;
   prepareActions.hidden = false;
   speakDirectlyButton.textContent = "Try camera and microphone again";
+  prepareModal.hidden = false;
+  document.body.classList.add("modal-open");
+  resetPrepareScroll();
+}
+
+// A recorder can stall while the live preview keeps playing, so the learner has
+// no way to see that most of the answer never reached the file. Explain what
+// happened and offer a second take instead of scoring the fragment.
+function showIncompleteRecordingModal(capturedSeconds) {
+  state.mediaRetryPending = true;
+  state.mediaRetryAction = "record";
+  restoreRecorderPanel();
+  prepareDialog.classList.remove("is-countdown");
+  prepareDialog.classList.add("no-figure");
+  renderTaskFigure(prepareFigure, prepareFigureImage, prepareFigureCaption, null);
+  prepareModalKicker.textContent = "Recording interrupted";
+  prepareModalTitle.textContent = "Only part of your answer was recorded";
+  prepareModalMessage.textContent =
+    "Your recording stopped early, so the rest of your answer was never captured. Nothing was uploaded and no attempt was used.";
+  prepareSpinner.hidden = true;
+  preparePreviewWrap.hidden = true;
+  prepareCameraGuidance.hidden = false;
+  prepareGuidanceTitle.textContent = "Record in Chrome";
+  prepareGuidanceMessage.textContent =
+    `Only about ${Math.max(1, Math.round(capturedSeconds))} seconds were saved. Record in Google Chrome on a computer if possible, and do not lock the screen, switch apps, or take a call during the recording.`;
+  countdownDisplay.hidden = true;
+  prepareActions.hidden = false;
+  speakDirectlyButton.textContent = "Record the answer again";
   prepareModal.hidden = false;
   document.body.classList.add("modal-open");
   resetPrepareScroll();
@@ -1038,6 +1137,7 @@ async function releaseWakeLock() {
 }
 
 let historyOffset = 0;
+let historyPageCount = 0;
 async function loadHistory(offset = 0) {
   if (!window.VisitorSession.hasAccess) return;
   const response = await window.VisitorSession.fetch(`/api/recordings?limit=20&offset=${offset}`);
@@ -1051,10 +1151,12 @@ async function loadHistory(offset = 0) {
   historyOffset = offset;
 
   if (recordings.length === 0) {
+    historyPageCount = 0;
     historyList.innerHTML = '<p class="empty-history">No saved answers yet.</p>';
     return;
   }
 
+  historyPageCount = recordings.length;
   historyList.innerHTML = recordings
     .map((item, index) => renderHistoryItem(item, index))
     .join("");
@@ -1069,6 +1171,38 @@ async function loadHistory(offset = 0) {
     pager.append(button);
   }
   historyList.append(pager);
+}
+
+// Hard-deletes one owned evaluation (metadata record, recording, artifacts,
+// figure). The server physically removes the record from metadata.jsonl, so
+// the leaderboard's per-user best score automatically falls back to the next
+// remaining answer.
+async function deleteHistoryRecord(button) {
+  const id = button.dataset.historyId;
+  if (!id || button.disabled) return;
+  const title = button.dataset.historyTitle || "this evaluation";
+  const confirmed = window.confirm(
+    `Delete "${title}"? The evaluation will also be removed from the leaderboard.`,
+  );
+  if (!confirmed) return;
+  button.disabled = true;
+  try {
+    const response = await window.VisitorSession.fetch(
+      `/api/recordings/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      window.alert(data.error || "Unable to delete this evaluation.");
+      button.disabled = false;
+      return;
+    }
+    // Stay on a valid page: step back when the deleted item was the only one here.
+    const nextOffset = historyPageCount === 1 && historyOffset >= 20 ? historyOffset - 20 : historyOffset;
+    await loadHistory(nextOffset);
+  } catch {
+    button.disabled = false;
+  }
 }
 
 const GAME_GROUP_TOKENS = ["g1", "g2"];
@@ -1159,119 +1293,6 @@ function showGameChallenge(challenge) {
   }
 }
 
-function leaderboardIdentityForm(identity, context = "leaderboard") {
-  if (!identity) return '<p class="identity-loading">Loading your leaderboard name…</p>';
-  const suffix = context === "result" ? "result" : "leaderboard";
-  return `
-    <form class="leaderboard-identity-form" data-identity-form>
-      <div class="identity-copy">
-        <span class="identity-icon" aria-hidden="true">✦</span>
-        <div>
-          <h3 title="Your score always stays on the board. Switching names updates every challenge leaderboard.">${context === "result" ? "Choose your leaderboard name" : "How you appear"}</h3>
-          <p class="identity-detail">Your score always stays on the board. Switching names updates every challenge leaderboard.</p>
-        </div>
-      </div>
-      <label class="identity-toggle" for="useLeaderboardAlias-${suffix}">
-        <input
-          id="useLeaderboardAlias-${suffix}"
-          name="useAlias"
-          type="checkbox"
-          ${identity.useAlias ? "checked" : ""}
-        />
-        <span>
-          <strong>Appear anonymously</strong>
-          <small>Show a nickname instead of ${escapeHtml(identity.actualName)}.</small>
-        </span>
-      </label>
-      <label class="identity-alias" for="leaderboardAlias-${suffix}">
-        Your one alias
-        <input
-          id="leaderboardAlias-${suffix}"
-          name="alias"
-          type="text"
-          minlength="2"
-          maxlength="32"
-          autocomplete="off"
-          value="${escapeHtml(identity.alias)}"
-          required
-        />
-      </label>
-      <button class="secondary-button identity-save" type="submit">Save leaderboard name</button>
-      <span class="identity-feedback" role="status" aria-live="polite"></span>
-    </form>
-  `;
-}
-
-function renderLeaderboardIdentitySettings() {
-  if (state.authUser?.identityType === "guest") {
-    leaderboardIdentitySettings.innerHTML = "";
-    return;
-  }
-  leaderboardIdentitySettings.innerHTML = leaderboardIdentityForm(
-    state.leaderboardIdentity,
-    "leaderboard",
-  );
-}
-
-function updateIdentityFormPreview(form) {
-  const useAlias = form.elements.useAlias.checked;
-  const alias = form.elements.alias.value.trim() || state.leaderboardIdentity?.alias || "your alias";
-  const displayName = useAlias ? alias : state.leaderboardIdentity?.actualName || "your actual name";
-  const target = form.querySelector("[data-identity-display]");
-  if (target) target.textContent = displayName;
-}
-
-function syncLeaderboardIdentityForms(message = "") {
-  document.querySelectorAll("[data-identity-form]").forEach((form) => {
-    form.elements.useAlias.checked = state.leaderboardIdentity.useAlias;
-    form.elements.alias.value = state.leaderboardIdentity.alias;
-    updateIdentityFormPreview(form);
-    const feedback = form.querySelector(".identity-feedback");
-    if (feedback) feedback.textContent = message;
-  });
-}
-
-async function loadLeaderboardIdentity() {
-  const response = await window.VisitorSession.fetch("/api/game/identity", { cache: "no-store" });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Unable to load your leaderboard name.");
-  state.leaderboardIdentity = data.identity;
-  renderLeaderboardIdentitySettings();
-  return data.identity;
-}
-
-async function saveLeaderboardIdentity(form) {
-  const button = form.querySelector(".identity-save");
-  const feedback = form.querySelector(".identity-feedback");
-  button.disabled = true;
-  feedback.textContent = "Saving…";
-  try {
-    const response = await window.VisitorSession.fetch("/api/game/identity", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        useAlias: form.elements.useAlias.checked,
-        alias: form.elements.alias.value,
-      }),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Unable to save your leaderboard name.");
-    state.leaderboardIdentity = data.identity;
-    syncLeaderboardIdentityForms(
-      data.identity.useAlias
-        ? `Saved. The leaderboard now shows ${data.identity.alias}.`
-        : `Saved. The leaderboard now shows ${data.identity.actualName}.`,
-    );
-    if (normalizeRoute(window.location.pathname) === "/leaderboard") {
-      await loadLeaderboard(leaderboardWeek.value);
-    }
-  } catch (error) {
-    feedback.textContent = error.message;
-  } finally {
-    button.disabled = false;
-  }
-}
-
 function renderLeaderboard(data) {
   leaderboardTopic.textContent = `${data.challenge.title}. ${formatChallengeRange(data.challenge)}.`;
   const summary = data.participantCount
@@ -1288,7 +1309,7 @@ function renderLeaderboard(data) {
   leaderboardList.innerHTML = data.entries
     .map(
       (entry) => `
-        <li class="leaderboard-row${entry.isViewer ? " is-viewer" : ""}">
+        <li class="leaderboard-row${entry.isViewer ? " is-viewer" : ""}${entry.answerId ? " has-media" : ""}">
           <span class="leaderboard-rank" aria-label="Rank ${entry.rank}">
             <span aria-hidden="true">${entry.rank <= 3 ? "★" : "#"}</span>
             <strong>${entry.rank}</strong>
@@ -1300,6 +1321,7 @@ function renderLeaderboard(data) {
             <strong>${entry.score}</strong>
             <small>pts</small>
           </span>
+          ${entry.answerId ? `<button type="button" class="leaderboard-play" data-answer-id="${escapeHtml(entry.answerId)}" data-answer-name="${escapeHtml(entry.name)}" aria-label="Play ${escapeHtml(entry.name)}'s answer" title="Play answer"><span aria-hidden="true">▶</span></button>` : ""}
         </li>
       `,
     )
@@ -1368,10 +1390,7 @@ async function loadLeaderboardPage() {
   leaderboardSummary.textContent = "Loading this week's challenge…";
   leaderboardList.innerHTML = '<li class="leaderboard-loading">Loading leaderboard…</li>';
   try {
-    const [data] = await Promise.all([
-      fetchGameChallengeCatalog(),
-      window.VisitorSession.hasAccess ? loadLeaderboardIdentity().catch(() => leaderboardIdentitySettings.replaceChildren()) : Promise.resolve(leaderboardIdentitySettings.replaceChildren()),
-    ]);
+    const data = await fetchGameChallengeCatalog();
     if (!data) {
       leaderboardList.setAttribute("aria-busy", "false");
       return;
@@ -1488,6 +1507,11 @@ function renderEvaluationContent(evaluation, shareId = "") {
 
   const tips = evaluation.improvements || [];
   const strengths = evaluation.strengths || [];
+  // Only a limited or lost recording is worth interrupting the score with; the
+  // routine "speech and visual delivery were evaluated" line would be noise.
+  const mediaWarning = evaluation.mediaValidation?.truncated || evaluation.mediaValidation?.incomplete
+    ? evaluation.mediaValidation?.notice || ""
+    : "";
 
   return `
     <section class="evaluation-card">
@@ -1498,6 +1522,7 @@ function renderEvaluationContent(evaluation, shareId = "") {
         </div>
         <span class="status-pill compact">${escapeHtml(evaluation.model?.evaluate || "LLM")}</span>
       </div>
+      ${mediaWarning ? `<p class="media-notice">${escapeHtml(mediaWarning)}</p>` : ""}
       ${
         evaluation.transcript
           ? `
@@ -1578,11 +1603,7 @@ function renderEvaluation(evaluation) {
 
   const shareId = evaluation.status === "completed" ? "latest" : "";
   if (shareId) window.EvaluationShare.register(shareId, evaluation);
-  const identityChoice =
-    shareId && state.activeMode === "/game" && state.leaderboardIdentity
-      ? `<section class="post-evaluation-identity">${leaderboardIdentityForm(state.leaderboardIdentity, "result")}</section>`
-      : "";
-  evaluationResult.innerHTML = `${renderEvaluationContent(evaluation, shareId)}${identityChoice}`;
+  evaluationResult.innerHTML = renderEvaluationContent(evaluation, shareId);
 }
 
 function renderHistoryItem(item, index) {
@@ -1611,6 +1632,20 @@ function renderHistoryItem(item, index) {
       `
       : "";
 
+  const videoButtonMarkup =
+    item.hasVideo !== false && videoPath
+      ? `
+        <button
+          type="button"
+          class="secondary-button video-link"
+          data-video-src="${escapeHtml(videoPath)}"
+          data-video-title="${escapeHtml(title)}"
+        >
+          Open video
+        </button>
+      `
+      : '<p class="no-video-label">No video was recorded for this question.</p>';
+
   return `
     <details class="history-collapse" ${index === 0 ? "open" : ""}>
       <summary>
@@ -1619,22 +1654,17 @@ function renderHistoryItem(item, index) {
       </summary>
       <div class="history-detail">
         ${figureMarkup}
-        ${
-          item.hasVideo !== false && videoPath
-            ? `
-              <div class="history-actions">
-                <button
-                  type="button"
-                  class="secondary-button video-link"
-                  data-video-src="${escapeHtml(videoPath)}"
-                  data-video-title="${escapeHtml(title)}"
-                >
-                  Open video
-                </button>
-              </div>
-            `
-            : '<p class="no-video-label">No video was recorded for this question.</p>'
-        }
+        <div class="history-actions">
+          ${videoButtonMarkup}
+          <button
+            type="button"
+            class="secondary-button history-delete"
+            data-history-id="${escapeHtml(item.id)}"
+            data-history-title="${escapeHtml(title)}"
+          >
+            Delete evaluation
+          </button>
+        </div>
         ${item.evaluation ? renderEvaluationContent(item.evaluation, shareId) : '<p class="empty-history">No evaluation saved for this answer.</p>'}
       </div>
     </details>
@@ -1743,10 +1773,49 @@ function navigateTo(pathname) {
   setRoute(normalized);
 }
 
-function openVideoModal(src, title) {
+function openVideoModal(src, title, { showTranscript = false } = {}) {
   historyVideo.src = src;
   videoModalTitle.textContent = title || "Saved answer";
+  videoModalTranscript.hidden = true;
+  videoModalTranscriptQuestion.hidden = true;
+  videoModalTranscriptQuestion.textContent = "";
+  videoModalTranscriptText.textContent = "";
   videoModal.hidden = false;
+}
+
+function showVideoModalTranscript(transcript, question = "") {
+  const text = typeof transcript === "string" ? transcript.trim() : "";
+  if (!text) {
+    videoModalTranscript.hidden = true;
+    return;
+  }
+  const questionText = typeof question === "string" ? question.trim() : "";
+  videoModalTranscriptQuestion.textContent = questionText;
+  videoModalTranscriptQuestion.hidden = !questionText;
+  videoModalTranscriptText.textContent = text;
+  videoModalTranscript.hidden = false;
+}
+
+async function openLeaderboardAnswer(button) {
+  const answerId = button.dataset.answerId;
+  if (!answerId) return;
+  const name = button.dataset.answerName || "Saved answer";
+  openVideoModal(
+    `/api/game/leaderboard-answers/${encodeURIComponent(answerId)}/media`,
+    `${name} — saved answer`,
+    { showTranscript: true },
+  );
+  try {
+    const response = await window.VisitorSession.fetch(
+      `/api/game/leaderboard-answers/${encodeURIComponent(answerId)}/transcript`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) throw new Error("Transcript unavailable.");
+    const data = await response.json();
+    showVideoModalTranscript(data.transcript, data.question);
+  } catch {
+    showVideoModalTranscript("");
+  }
 }
 
 function closeHistoryVideo() {
@@ -1754,6 +1823,7 @@ function closeHistoryVideo() {
   historyVideo.removeAttribute("src");
   historyVideo.load();
   videoModal.hidden = true;
+  videoModalTranscript.hidden = true;
 }
 
 profileForm.addEventListener("submit", async (event) => {
@@ -1926,6 +1996,96 @@ async function startRecording() {
   }
 }
 
+// A recorder that stalls keeps the live preview running while the encoded file
+// stops growing: the learner speaks for two minutes and hands in the first few
+// seconds. Measure the file itself before uploading it.
+const RECORDING_SHORTFALL_SECONDS = 4;
+const RECORDING_SHORTFALL_RATIO = 0.8;
+const MEASURE_RECORDING_TIMEOUT_MS = 8000;
+const MEASURE_DECODE_MAX_BYTES = 32 * 1024 * 1024;
+
+// Web Audio decodes the real samples, so it ignores a container whose timeline
+// claims far more media than the file actually holds. That is exactly the
+// failure the media-element fallback cannot see, so it is tried first.
+async function decodedAudioSeconds(blob) {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass || blob.size > MEASURE_DECODE_MAX_BYTES) return null;
+  let context = null;
+  try {
+    const buffer = await Promise.race([
+      blob.arrayBuffer().then(
+        (data) =>
+          new Promise((resolve, reject) => {
+            context = new AudioContextClass();
+            context.decodeAudioData(data, resolve, reject);
+          }),
+      ),
+      new Promise((resolve) => window.setTimeout(() => resolve(null), MEASURE_RECORDING_TIMEOUT_MS)),
+    ]);
+    const seconds = Number(buffer?.duration);
+    return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+  } catch {
+    return null;
+  } finally {
+    try { await context?.close(); } catch { /* the context may already be gone */ }
+  }
+}
+
+// Fallback for codecs Web Audio refuses, such as WebM on Safari. A recorder that
+// freezes its own timeline still reports the shorter file here.
+function elementMediaSeconds(blob) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob);
+    const element = document.createElement("video");
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      try {
+        element.removeAttribute("src");
+        element.load();
+      } catch { /* the element may already be reset */ }
+      URL.revokeObjectURL(url);
+      resolve(value);
+    };
+    const accept = () => {
+      const seconds = Number(element.duration);
+      if (!Number.isFinite(seconds) || seconds <= 0) return false;
+      finish(seconds);
+      return true;
+    };
+    const timer = window.setTimeout(() => finish(null), MEASURE_RECORDING_TIMEOUT_MS);
+    element.preload = "metadata";
+    element.muted = true;
+    element.addEventListener("loadedmetadata", () => {
+      if (accept()) return;
+      // Recorders that omit the duration only report it once the media is
+      // seeked past its end.
+      element.addEventListener("timeupdate", accept, { once: true });
+      try { element.currentTime = 1e101; } catch { finish(null); }
+    }, { once: true });
+    element.addEventListener("error", () => finish(null), { once: true });
+    element.src = url;
+  });
+}
+
+async function measureCapturedSeconds(blob) {
+  if (!blob || !blob.size) return null;
+  const decoded = await decodedAudioSeconds(blob);
+  return decoded === null ? elementMediaSeconds(blob) : decoded;
+}
+
+// Small gaps are normal stop latency; a large one means the file holds a
+// fraction of the answer. An unmeasurable file is uploaded as before rather than
+// blocked, so a decoding quirk can never cost a learner their answer.
+function isRecordingIncomplete(capturedSeconds, recordedSeconds) {
+  if (!Number.isFinite(capturedSeconds) || capturedSeconds <= 0) return false;
+  if (!Number.isFinite(recordedSeconds) || recordedSeconds <= 0) return false;
+  return recordedSeconds - capturedSeconds > RECORDING_SHORTFALL_SECONDS
+    && capturedSeconds < recordedSeconds * RECORDING_SHORTFALL_RATIO;
+}
+
 async function finishRecording() {
   if (!state.recorder || state.recorder.state === "inactive") return;
   const recordingOwner = state.authUser.openId;
@@ -2010,6 +2170,36 @@ async function finishRecording() {
     return;
   }
 
+  // Scoring a fraction of the answer is worse than asking for a second take, so
+  // verify the file before it is uploaded or counted as an attempt.
+  const recordedSeconds = state.recordingStartedAtMs ? (Date.now() - state.recordingStartedAtMs) / 1000 : null;
+  const capturedSeconds = await measureCapturedSeconds(videoBlob);
+  if (isRecordingIncomplete(capturedSeconds, recordedSeconds)) {
+    state.activeSaveId = null;
+    state.saveAbortController = null;
+    state.discardRequested = false;
+    state.recorder = null;
+    state.chunks = [];
+    finishButton.textContent = "Finish and save";
+    logoutButton.disabled = false;
+    setDiscardAvailable(false);
+    setVideoLoading(false);
+    setStatus("Record again");
+    saveResult.textContent =
+      `Only about ${Math.max(1, Math.round(capturedSeconds))} seconds of the recording could be read. Nothing was uploaded. Record again, preferably in Google Chrome.`;
+    reportClientError({
+      kind: "recording",
+      name: "IncompleteRecording",
+      message: `captured=${capturedSeconds.toFixed(1)}s recorded=${Number(recordedSeconds).toFixed(1)}s bytes=${videoBlob.size} mime=${blobType} camera=${state.useCamera === true}`,
+      friendlyMessage: "A recording that stopped early was not uploaded.",
+      page: `${window.location.pathname}${window.location.search}`,
+      retryAction: "record",
+      useCamera: !!state.useCamera,
+    });
+    showIncompleteRecordingModal(capturedSeconds);
+    return;
+  }
+
   try {
     const data = await window.EvaluationQueue.submit(formData, {
       owner: recordingOwner,
@@ -2033,9 +2223,6 @@ async function finishRecording() {
     saveResult.innerHTML = data.path ? `Saved as <a href="${escapeHtml(data.path)}" target="_blank" rel="noreferrer">${escapeHtml(data.filename)}</a>. Generate the next question when ready.` : escapeHtml(data.evaluation?.reason || "Recording discarded.");
     // The uploaded figure was consumed by this submission; restore the default.
     clearCustomFigure();
-    if (state.activeMode === "/game" && data.evaluation?.status === "completed") {
-      await loadLeaderboardIdentity().catch(() => {});
-    }
     renderEvaluation(data.evaluation);
     if (data.evaluation?.status === "completed") {
       await activateExperienceRating();
@@ -2209,7 +2396,6 @@ window.addEventListener("visitoridentitychange", (event) => {
   state.privacyConsent = null;
   state.profile = null;
   state.question = null;
-  state.leaderboardIdentity = null;
   if (!event.detail.accessGranted) state.activeMode = null;
   evaluationResult.innerHTML = "";
   syncGroupPickers();
@@ -2323,27 +2509,13 @@ dismissExperienceRatingButton.addEventListener("click", () => {
   submitExperienceRating("DISMISSED");
 });
 
-document.addEventListener("change", (event) => {
-  const form = event.target.closest("[data-identity-form]");
-  if (form && ["useAlias", "alias"].includes(event.target.name)) {
-    updateIdentityFormPreview(form);
-  }
-});
-
-document.addEventListener("input", (event) => {
-  const form = event.target.closest("[data-identity-form]");
-  if (form && event.target.name === "alias") updateIdentityFormPreview(form);
-});
-
-document.addEventListener("submit", (event) => {
-  const form = event.target.closest("[data-identity-form]");
-  if (!form) return;
-  event.preventDefault();
-  saveLeaderboardIdentity(form);
-});
-
 historyList.addEventListener("click", (event) => {
   if (window.EvaluationShare.handleClick(event)) return;
+  const deleteButton = event.target instanceof Element ? event.target.closest(".history-delete") : null;
+  if (deleteButton) {
+    deleteHistoryRecord(deleteButton);
+    return;
+  }
   const button = event.target.closest(".video-link");
   if (!button) return;
 
@@ -2352,6 +2524,12 @@ historyList.addEventListener("click", (event) => {
 
 leaderboardWeek.addEventListener("change", () => {
   loadLeaderboard(leaderboardWeek.value);
+});
+
+leaderboardList.addEventListener("click", (event) => {
+  const button = event.target instanceof Element ? event.target.closest(".leaderboard-play") : null;
+  if (!button) return;
+  openLeaderboardAnswer(button);
 });
 
 [gameGroupPicker, leaderboardGroupPicker].forEach((picker) => {

@@ -12,6 +12,7 @@ questions/
 consents/
 ratings/
 analytics/
+client-errors.jsonl
 .workbuddy/
 invitations/
 user-figures/

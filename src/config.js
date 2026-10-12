@@ -41,6 +41,7 @@ const invitationsDir = path.join(dataDir, "invitations");
 const invitationsMetadataFile = path.join(invitationsDir, "metadata.jsonl");
 const analyticsDir = path.join(dataDir, "analytics");
 const analyticsEventsFile = path.join(analyticsDir, "events.jsonl");
+const clientErrorsFile = path.join(dataDir, "client-errors.jsonl");
 
 for (const directory of [
   recordingsDir,
@@ -79,5 +80,6 @@ module.exports = {
   invitationsMetadataFile,
   analyticsDir,
   analyticsEventsFile,
+  clientErrorsFile,
   openApiFile: path.join(rootDir, "openapi.yaml"),
 };
