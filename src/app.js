@@ -66,6 +66,7 @@ const {
   ratingsMetadataFile,
   invitationsMetadataFile,
   analyticsEventsFile,
+  clientErrorsFile,
 } = config;
 const ZGC_CORP_ID = "<DINGTALK_CORP_ID>";
 const MAX_OWNER_ATTEMPTS = 100;
@@ -334,6 +335,7 @@ function publicEvaluationForClient(record) {
     mediaValidation: {
       visualEvaluated: record.evaluation.mediaValidation?.visualEvaluated === true,
       truncated: record.evaluation.mediaValidation?.truncated === true,
+      incomplete: record.evaluation.mediaValidation?.incomplete === true,
       notice: safeText(record.evaluation.mediaValidation?.notice),
     },
     posterPath: fs.existsSync(posterPath)
@@ -624,6 +626,61 @@ app.post("/api/analytics/events", (req, res) => {
   res.status(204).end();
 });
 
+// Client diagnostics: browser-side media/device failures and unhandled errors
+// are appended to a JSONL log (and echoed to the process log) so an
+// administrator can debug a "permissions are on but it still fails" report
+// without screen sharing. Unauthenticated by design, so the payload is
+// whitelist-sanitized and volume-throttled per client address.
+const clientErrorLogThrottle = createFailureLimiter({
+  limit: 30,
+  windowMs: 60 * 1000,
+  blockBaseMs: 1000,
+  blockMaxMs: 60 * 1000,
+});
+
+function clientErrorTrackReport(track) {
+  if (!track || typeof track !== "object") return null;
+  return { live: track.live === true, muted: track.muted === true, enabled: track.enabled === true };
+}
+
+app.post("/api/log-client-error", (req, res) => {
+  try {
+    const address = clientIp(req);
+    if (clientErrorLogThrottle.check(address).blocked || clientErrorLogThrottle.fail(address).blocked) {
+      return res.status(429).json({ code: "TOO_MANY_REQUESTS", error: "Too many client error reports." });
+    }
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const stream = body.stream && typeof body.stream === "object" ? body.stream : null;
+    const entry = {
+      id: crypto.randomUUID(),
+      ts: new Date().toISOString(),
+      kind: safeText(body.kind).slice(0, 50) || "unknown",
+      name: safeText(body.name).slice(0, 120),
+      message: safeText(body.message).slice(0, 500),
+      friendlyMessage: safeText(body.friendlyMessage).slice(0, 500),
+      page: safeText(body.page).slice(0, 200),
+      retryAction: safeText(body.retryAction).slice(0, 50),
+      useCamera: body.useCamera === true,
+      unavailableDevice: safeText(body.unavailableDevice).slice(0, 50),
+      source: safeText(body.source).slice(0, 300),
+      stack: safeText(body.stack).slice(0, 2000),
+      stream: stream ? {
+        hasStream: stream.hasStream === true,
+        audio: clientErrorTrackReport(stream.audio),
+        video: clientErrorTrackReport(stream.video),
+      } : null,
+      clientIp: address,
+      userAgent: String(req.get("user-agent") || "").slice(0, 300),
+    };
+    const identity = analyticsIdentity(req);
+    entry.identity = identity?.type || "";
+    entry.userHash = identity?.owner ? crypto.createHash("sha256").update(identity.owner).digest("hex") : "";
+    appendJsonLine(clientErrorsFile, entry);
+    console.error(`[client-error] ${JSON.stringify(entry)}`);
+  } catch { /* diagnostics must never break the response */ }
+  res.status(204).end();
+});
+
 function adminTokensMatch(receivedToken, configuredToken = process.env.ADMIN_ACCESS_TOKEN) {
   const received = safeText(receivedToken);
   const configured = safeText(configuredToken);
@@ -719,68 +776,26 @@ function mergeUserInfo(current, incoming) {
   };
 }
 
-const cuteAliasAdjectives = Object.freeze([
-  "Breezy", "Bright", "Bubbly", "Cheery", "Clever", "Cozy", "Dapper", "Gentle",
-  "Happy", "Jolly", "Lucky", "Merry", "Peppy", "Sunny", "Swift", "Twinkly",
-]);
-const cuteAliasAnimals = Object.freeze([
-  "Alpaca", "Bunny", "Capybara", "Dolphin", "Fox", "Koala", "Otter", "Panda",
-  "Penguin", "Puffin", "Quokka", "Robin", "Seal", "Shiba", "Sparrow", "Turtle",
-]);
-
+// Leaderboard identities only remember each user's latest real name; the
+// anonymous-alias feature was removed, so every board shows actual names.
 function leaderboardIdentities() {
   const identities = new Map();
   readJsonLines(leaderboardIdentitiesFile).forEach((record) => {
     const openId = safeText(record?.openId);
-    const alias = safeText(record?.alias);
-    if (openId && alias && typeof record?.useAlias === "boolean") {
-      identities.set(openId, { ...record, openId, alias });
+    const actualName = safeText(record?.actualName);
+    if (openId && actualName) {
+      identities.set(openId, { openId, actualName });
     }
   });
   return identities;
 }
 
-function cuteAliasForUser(openId, identities = leaderboardIdentities()) {
-  const digest = crypto.createHash("sha256").update(openId).digest();
-  const adjective = cuteAliasAdjectives[digest[0] % cuteAliasAdjectives.length];
-  const animal = cuteAliasAnimals[digest[1] % cuteAliasAnimals.length];
-  const usedAliases = new Set(
-    [...identities.values()]
-      .filter((identity) => identity.openId !== openId)
-      .map((identity) => identity.alias.toLocaleLowerCase("en-US")),
-  );
-
-  for (let offset = 0; offset < 10_000; offset += 1) {
-    const suffix = ((digest.readUInt16BE(2) + offset) % 10_000).toString().padStart(4, "0");
-    const candidate = `${adjective} ${animal} ${suffix}`;
-    if (!usedAliases.has(candidate.toLocaleLowerCase("en-US"))) return candidate;
-  }
-  return `Friendly Player ${crypto.randomBytes(4).toString("hex")}`;
-}
-
-function normalizeLeaderboardAlias(value) {
-  const alias = safeText(value).normalize("NFC").replace(/\s+/g, " ");
-  if (
-    alias.length < 2 ||
-    alias.length > 32 ||
-    /[\u0000-\u001f\u007f]/.test(alias)
-  ) {
-    return "";
-  }
-  return alias;
-}
-
-function leaderboardIdentityForClient(user, identity, identities = leaderboardIdentities()) {
-  if (isGuest(user)) return { alias: user.name, useAlias: true, actualName: user.name, displayName: user.name, saved: true };
-  const alias = identity?.alias || cuteAliasForUser(user.openId, identities);
-  const useAlias = identity?.useAlias === true;
-  const actualName = safeText(user.name, "DingTalk user");
+function leaderboardIdentityForClient(user, identity) {
+  const actualName = safeText(user.name, isGuest(user) ? "Guest" : "DingTalk user");
   return {
-    alias,
-    useAlias,
     actualName,
-    displayName: useAlias ? alias : actualName,
-    saved: Boolean(identity),
+    displayName: actualName,
+    saved: isGuest(user) || Boolean(identity),
   };
 }
 
@@ -920,6 +935,7 @@ function discardPersistedAnswer({
   metadataPath = metadataFile,
   recordingsPath = recordingsDir,
   artifactsPath = artifactsDir,
+  userFiguresPath = userFiguresDir,
   requireSubmissionId = false,
 }) {
   const matchesDiscard = (record) =>
@@ -942,9 +958,21 @@ function discardPersistedAnswer({
     if (record.filename && path.basename(record.filename) === record.filename) {
       removePath(path.join(recordingsPath, record.filename));
     }
+    if (userFiguresPath) {
+      const figureFilename = userFigureFilenameFromSrc(record?.question?.figure?.src);
+      if (figureFilename) removePath(path.join(userFiguresPath, figureFilename));
+    }
   });
   removePath(path.join(artifactsPath, id));
   return discardedRecords.length;
+}
+
+// Hard-deletes one owned evaluation: the metadata record, its recording,
+// artifacts, and any learner-uploaded figure. Because the record is physically
+// removed from metadata.jsonl, /history and /leaderboard both drop it without
+// any extra aggregation logic.
+function deleteOwnedRecording(id, openId) {
+  return discardPersistedAnswer({ id, openId, requireSubmissionId: false });
 }
 
 function runFfmpeg(args) {
@@ -961,6 +989,41 @@ function limitStandaloneMediaInfo(mediaInfo) {
     durationSeconds: hasKnownDuration
       ? Math.min(originalDurationSeconds, standaloneEvaluationMaxSeconds)
       : standaloneEvaluationMaxSeconds,
+  };
+}
+
+// A recorder that stalls mid-sentence keeps the container's timeline running
+// while the media stops. The inspected duration then describes a file that is
+// mostly missing, so the seconds that were really decoded - not the container's
+// claim - are the honest answer to "how much of this attempt was evaluated?".
+function evaluatedMediaSeconds(analysis, mediaInfo) {
+  const decoded = Number(analysis?.durationSeconds);
+  if (Number.isFinite(decoded) && decoded > 0) return decoded;
+  const claimed = Number(mediaInfo?.durationSeconds);
+  return Number.isFinite(claimed) && claimed > 0 ? claimed : null;
+}
+
+// Differences this small are normal stop latency, not a lost recording.
+const mediaShortfallFloorSeconds = 4;
+const mediaShortfallRatio = 0.2;
+
+function mediaCompleteness(mediaInfo, analysis, maximumSeconds = standaloneEvaluationMaxSeconds) {
+  const raw = Number(mediaInfo?.originalDurationSeconds ?? mediaInfo?.durationSeconds);
+  const claimedSeconds = Number.isFinite(raw) && raw > 0 ? raw : null;
+  // A recording longer than the two-minute limit is expected to be evaluated
+  // only up to that limit, so the shortfall is measured against the expectation
+  // rather than against the raw container duration.
+  const expectedSeconds = claimedSeconds === null ? null : Math.min(claimedSeconds, maximumSeconds);
+  const evaluatedSeconds = evaluatedMediaSeconds(analysis, mediaInfo);
+  const shortfallSeconds = Number.isFinite(expectedSeconds) && Number.isFinite(evaluatedSeconds)
+    ? expectedSeconds - evaluatedSeconds
+    : null;
+  return {
+    claimedSeconds,
+    expectedSeconds,
+    evaluatedSeconds,
+    incomplete: shortfallSeconds !== null
+      && shortfallSeconds > Math.max(mediaShortfallFloorSeconds, expectedSeconds * mediaShortfallRatio),
   };
 }
 
@@ -1838,6 +1901,7 @@ async function evaluateSavedVideo({
     framePaths,
     evaluationMode,
   }));
+  const completeness = mediaCompleteness(inspectedMedia, analysis);
 
   return {
     status: "completed",
@@ -1848,11 +1912,15 @@ async function evaluateSavedVideo({
       hasVideo: inspectedMedia.hasVideo,
       visualEvaluated: framePaths.length > 0,
       truncated: inspectedMedia.truncated === true,
-      originalDurationSeconds: inspectedMedia.originalDurationSeconds || null,
-      evaluatedDurationSeconds: inspectedMedia.durationSeconds || null,
+      incomplete: completeness.incomplete,
+      originalDurationSeconds: completeness.claimedSeconds,
+      evaluatedDurationSeconds: completeness.evaluatedSeconds,
       notice: [
         inspectedMedia.truncated
           ? "The video was longer than two minutes, so only the first two minutes were evaluated."
+          : "",
+        completeness.incomplete
+          ? `Only the first ${Math.max(1, Math.round(completeness.evaluatedSeconds || 0))} seconds of this recording could be read, so the rest of the answer was never evaluated. Please record the answer again.`
           : "",
         !result.hasScorableEnglishSpeech
           ? "No scorable English speech was detected, so this attempt received 0 out of 100."
@@ -2407,56 +2475,19 @@ app.get("/api/game/identity", requireVisitor, (req, res) => {
   const identities = leaderboardIdentities();
   res.set("Cache-Control", "no-store");
   res.json({
-    identity: leaderboardIdentityForClient(
-      req.user,
-      identities.get(req.user.openId),
-      identities,
-    ),
+    identity: leaderboardIdentityForClient(req.user, identities.get(req.user.openId)),
   });
-});
-
-app.post("/api/game/identity", requireVisitor, (req, res) => {
-  if (isGuest(req.user)) return res.json({ identity: leaderboardIdentityForClient(req.user) });
-  if (typeof req.body?.useAlias !== "boolean") {
-    return res.status(400).json({ error: "Choose whether to show your alias or actual name." });
-  }
-
-  const identities = leaderboardIdentities();
-  const current = identities.get(req.user.openId);
-  const alias = req.body?.alias === undefined
-    ? current?.alias || cuteAliasForUser(req.user.openId, identities)
-    : normalizeLeaderboardAlias(req.body.alias);
-  if (!alias) {
-    return res.status(400).json({ error: "Your alias must contain 2 to 32 characters." });
-  }
-
-  const duplicate = [...identities.values()].find(
-    (identity) =>
-      identity.openId !== req.user.openId &&
-      identity.alias.toLocaleLowerCase("en-US") === alias.toLocaleLowerCase("en-US"),
-  );
-  if (duplicate) {
-    return res.status(409).json({ error: "That alias is already in use. Try another cute name." });
-  }
-
-  const identity = {
-    id: crypto.randomUUID(),
-    openId: req.user.openId,
-    alias,
-    useAlias: req.body.useAlias,
-    actualName: safeText(req.user.name, "DingTalk user"),
-    updatedAt: new Date().toISOString(),
-  };
-  appendJsonLine(leaderboardIdentitiesFile, identity);
-  identities.set(req.user.openId, identity);
-  res.json({ identity: leaderboardIdentityForClient(req.user, identity, identities) });
 });
 
 app.get("/api/game/leaderboard", (req, res) => {
   let viewerOpenId;
+  let viewer = null;
   try {
-    const viewer = visitorAccess.resolveVisitor(req, res);
-    if (visitorAccess.hasAccess(req, viewer)) viewerOpenId = viewer.openId;
+    const resolved = visitorAccess.resolveVisitor(req, res);
+    if (visitorAccess.hasAccess(req, resolved)) {
+      viewer = resolved;
+      viewerOpenId = resolved.openId;
+    }
   } catch { /* Public standings do not depend on session availability. */ }
   const group = normalizeGameGroup(safeText(req.query.group));
   const challenges = availableChallenges(new Date(), 10, group);
@@ -2474,6 +2505,13 @@ app.get("/api/game/leaderboard", (req, res) => {
     viewerOpenId,
     leaderboardIdentities(),
   );
+  // Play buttons travel only to viewers allowed to open the recordings;
+  // everyone else (including signed-out visitors) renders a plain board.
+  if (!canViewLeaderboardPlayback(viewer)) {
+    leaderboard.entries = leaderboard.entries.map(
+      ({ answerId, mediaType, ...entry }) => entry,
+    );
+  }
   res.set("Cache-Control", "no-store");
   res.json({ challenge: gameChallengeForClient(challenge), ...leaderboard });
 });
@@ -2957,6 +2995,112 @@ app.get("/api/public-evaluations/:id/video", (req, res) => {
   res.sendFile(videoPath);
 });
 
+// Leaderboard answer playback is limited to these DingTalk display names
+// (exact match after trimming, compared against the authenticated session
+// name). Everyone else sees the board without play buttons, and the media and
+// transcript endpoints reject the request.
+const LEADERBOARD_PLAYBACK_NAMES = new Set([
+  "王旭东",
+  "邹欣",
+  "吴衍标",
+  "高坤",
+  "柳君丽",
+  "胡辰",
+  "何源",
+]);
+
+// Guests who redeemed one of these invitation codes may also watch. The code
+// is resolved from the invitation record bound to the guest's openId.
+const LEADERBOARD_PLAYBACK_INVITATION_CODES = new Set(["B19B59975BC0"]);
+
+function guestInvitationCodeFor(openId) {
+  const guestId = safeText(openId);
+  if (!guestId.startsWith("guest:")) return "";
+  const record = invitationRecords().filter((item) => item?.usedBy === guestId).pop();
+  return safeText(record?.code).toUpperCase();
+}
+
+function canViewLeaderboardPlayback(user, guestCode = null) {
+  if (!user) return false;
+  if (isGuest(user)) {
+    const code = typeof guestCode === "string" ? guestCode : guestInvitationCodeFor(user.openId);
+    return LEADERBOARD_PLAYBACK_INVITATION_CODES.has(code.toUpperCase());
+  }
+  return LEADERBOARD_PLAYBACK_NAMES.has(safeText(user.name).trim());
+}
+
+// Resolves a leaderboard answer's playable media. A record qualifies only when
+// it is a completed weekly-challenge answer (the same records the leaderboard
+// is built from) with a stored recording file.
+function leaderboardAnswerMedia(records, id, recordingsPath) {
+  const recordId = safeText(id);
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(recordId)) return null;
+  const record = records.find((item) => item?.id === recordId);
+  if (!record?.question?.challengeId) return null;
+  if (record?.evaluation?.status !== "completed") return null;
+  const filename = safeText(record.filename);
+  if (!filename || path.basename(filename) !== filename) return null;
+  const filePath = path.join(recordingsPath, filename);
+  if (!fs.existsSync(filePath)) return null;
+
+  const mimeTypeByExtension = {
+    ".mp4": "video/mp4",
+    ".m4v": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+    ".ogg": "audio/ogg",
+  };
+  const extension = path.extname(filename).toLowerCase();
+  return {
+    record,
+    filename,
+    filePath,
+    mimeType: mimeTypeByExtension[extension] || "video/mp4",
+    mediaType: extension === ".mp3" || extension === ".wav" || extension === ".m4a" || extension === ".ogg"
+      ? "audio"
+      : "video",
+  };
+}
+
+app.get("/api/game/leaderboard-answers/:id/media", requireVisitor, (req, res) => {
+  if (!canViewLeaderboardPlayback(req.user)) {
+    return res.status(403).json({ error: "Leaderboard playback is not available for your account." });
+  }
+  const media = leaderboardAnswerMedia(readJsonLines(metadataFile), req.params.id, recordingsDir);
+  if (!media) {
+    return res.status(404).json({ error: "Leaderboard answer not found." });
+  }
+
+  res.set({
+    "Cache-Control": "private, max-age=3600",
+    "X-Content-Type-Options": "nosniff",
+  });
+  res.type(media.mimeType);
+  res.sendFile(media.filePath);
+});
+
+app.get("/api/game/leaderboard-answers/:id/transcript", requireVisitor, (req, res) => {
+  if (!canViewLeaderboardPlayback(req.user)) {
+    return res.status(403).json({ error: "Leaderboard playback is not available for your account." });
+  }
+  const media = leaderboardAnswerMedia(readJsonLines(metadataFile), req.params.id, recordingsDir);
+  if (!media) {
+    return res.status(404).json({ error: "Leaderboard answer not found." });
+  }
+
+  res.set("Cache-Control", "no-store");
+  res.json({
+    id: media.record.id,
+    mediaType: media.mediaType,
+    transcript: safeText(media.record.evaluation?.transcript),
+    question: safeText(media.record.question?.question || media.record.question?.title),
+    finishedAt: safeText(media.record.finishedAt),
+  });
+});
+
 app.get("/api/recordings", requireVisitor, (req, res) => {
   queueApi?.project();
   const recordings = readJsonLines(metadataFile)
@@ -2989,6 +3133,21 @@ app.get("/api/recordings/:id/video", requireVisitor, (req, res) => {
   res.set("X-Content-Type-Options", "nosniff");
   res.type("video/mp4");
   res.sendFile(videoPath);
+});
+
+app.delete("/api/recordings/:id", requireVisitor, (req, res) => {
+  const id = safeText(req.params.id);
+  if (!validAnswerSaveId(id)) {
+    return res.status(400).json({ error: "A valid recording ID is required." });
+  }
+  const owned = readJsonLines(metadataFile).some(
+    (record) => record.id === id && recordOpenId(record) === req.user.openId,
+  );
+  if (!owned) {
+    return res.status(404).json({ error: "Recording not found." });
+  }
+  const removedRecordCount = deleteOwnedRecording(id, req.user.openId);
+  res.json({ ok: true, id, removedRecordCount });
 });
 
 // Serves the figure a learner uploaded to replace the default task figure.
@@ -3067,6 +3226,7 @@ module.exports = {
     createSessionToken,
     decodeUtf8UploadFilename,
     discardPersistedAnswer,
+    deleteOwnedRecording,
     evaluateAnswer,
     extractJsonObject,
     evaluationTimeoutMessage,
@@ -3076,6 +3236,9 @@ module.exports = {
     isTranscriptionSizeError,
     isTranscriptionFileOpenError,
     limitStandaloneMediaInfo,
+    mediaCompleteness,
+    leaderboardAnswerMedia,
+    canViewLeaderboardPlayback,
     modelMessageText,
     normalizeEvaluation,
     normalizeDingTalkInAppUser,

@@ -93,6 +93,7 @@ test("public evaluation projection contains feedback but excludes private evalua
     mediaValidation: {
       visualEvaluated: false,
       truncated: false,
+      incomplete: false,
       notice: "",
     },
     posterPath: null,

@@ -423,8 +423,11 @@ directory.
 ## Deploy
 
 The included script deploys versioned releases over SSH, installs a systemd
-service, and keeps `.env`, `.env.prod`, `recordings/`, `questions/`, `comments/`, `consents/`, `ratings/`, and `invitations/` in shared persistent
-storage on the target host. Local-only working state (`.workbuddy/`, `output/`,
+service, and keeps `.env`, `.env.prod`, `recordings/`, `questions/`, `comments/`, `consents/`, `ratings/`, `invitations/`, `analytics/`, and `user-figures/` in shared persistent
+storage on the target host. Every directory that `src/config.js` creates must be
+in that shared list and in the `ReadWritePaths` of each systemd unit that loads
+it; otherwise `ProtectSystem=strict` makes the release tree read-only and the
+service fails to start. Local-only working state (`.workbuddy/`, `output/`,
 `tmp/`, `downloads/`, `backups/`, and the offline age/LUKS key material) is
 excluded from the release. `.env` contains settings shared by development and
 production, while `.env.local` and `.env.prod` override environment-specific

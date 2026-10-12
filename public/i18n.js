@@ -63,6 +63,8 @@
     "No completed answers yet. Record the first one for this task.":
       "还没有完成的回答，快来为本任务录制第一条吧。",
     "Loading weekly standings...": "正在加载本周排名...",
+    "Play answer": "播放回答",
+    "Transcript": "转写文本",
 
     // Examine view
     "Live speaking evaluation": "实时口语评估",
@@ -134,6 +136,8 @@
       "打开一条评估可查看分项得分、反馈以及已保存的回答视频。",
     "Saved answer": "已保存的回答",
     "Record again": "重新录制",
+    "Open video": "打开视频",
+    "Delete evaluation": "删除评估",
     "No video": "无视频",
     "Evaluated": "已评估",
     "Pending": "待评估",
@@ -169,6 +173,19 @@
     "Turn on your camera and microphone before generating a question.": "请在生成问题前开启摄像头和麦克风。",
     "Device turned off": "设备已关闭",
     "Devices required": "需要设备权限",
+    "Recording interrupted": "录制中断",
+    "Only part of your answer was recorded": "只录到了部分回答",
+    "Your recording stopped early, so the rest of your answer was never captured. Nothing was uploaded and no attempt was used.":
+      "录制提前中断，后面的回答没有被录进去。本次未上传，也未消耗作答次数。",
+    "Keep this page in front while you speak": "作答期间请保持此页面在前台",
+    "Do not lock the screen, switch apps, or take a call during the recording.": "录制过程中请勿锁屏、切换应用或接听电话。",
+    "If the recording stops again, try another browser or device.": "如果再次出现中断，请换一个浏览器或设备重试。",
+    "Record the answer again": "重新录制回答",
+    "Record the answer again.": "请重新录制回答。",
+    "Nothing was uploaded.": "未上传任何内容。",
+    "Please record the answer again.": "请重新录制回答。",
+    "The video was longer than two minutes, so only the first two minutes were evaluated.":
+      "视频超过两分钟，仅评估了前两分钟。",
     "Generating a question...": "正在生成问题...",
     "Question generation failed.": "问题生成失败。",
     "Saving…": "正在保存…",

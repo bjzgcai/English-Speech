@@ -84,8 +84,8 @@
           <ol class="leaderboard-list" id="leaderboardList" role="list" aria-live="polite">
             <li class="leaderboard-loading">Loading leaderboard...</li>
           </ol>
-          <section class="leaderboard-identity-settings" id="leaderboardIdentitySettings" aria-live="polite">
-            <p>Loading your leaderboard name…</p>
+          <section class="leaderboard-identity-settings" aria-live="polite">
+            <p>The board shows your DingTalk name. Anonymous aliases are no longer available.</p>
           </section>
           <footer class="leaderboard-footer">
             <p>Your highest completed score is the one that counts.</p>
@@ -303,6 +303,11 @@
           <button type="button" id="closeVideoModal" aria-label="Close video">Close</button>
         </div>
         <video id="historyVideo" controls playsinline></video>
+        <div class="video-modal-transcript" id="videoModalTranscript" hidden>
+          <span class="video-modal-transcript-label">Transcript</span>
+          <p id="videoModalTranscriptQuestion" hidden></p>
+          <p id="videoModalTranscriptText"></p>
+        </div>
       </aside>
 
       <div

@@ -39,7 +39,8 @@ async function main() {
       await page.goto(base + "/leaderboard");
       await page.waitForFunction(() => document.querySelector("#leaderboardWeek").options.length > 0);
       assert.equal(await page.locator("#loginPanel").isVisible(), false);
-      assert.equal(await page.locator("#leaderboardIdentitySettings").innerText(), "");
+      // The identity section is now a static note: the board always shows real names.
+      assert.ok((await page.locator(".leaderboard-identity-settings").innerText()).includes("DingTalk name"));
       assert.equal(await page.locator("dialog").count(), 0);
       await page.locator("#leaderboardWeek").selectOption({ index: 1 });
       await page.screenshot({ path: `/tmp/englisheval-public-${viewport.width}.png`, fullPage: true });

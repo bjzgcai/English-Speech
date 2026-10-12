@@ -162,12 +162,9 @@ async function main() {
       member.on("pageerror", error => errors.push(error.message));
       await member.route("https://g.alicdn.com/**", route => route.abort());
       await member.goto(base + "/leaderboard");
-      await member.locator("#leaderboardAlias-leaderboard").fill(`Browser Test ${viewport.width}`);
-      await member.locator("#useLeaderboardAlias-leaderboard").check();
-      await member.locator(".identity-save").click();
-      await member.locator("[data-identity-display]").filter({ hasText: `Browser Test ${viewport.width}` }).waitFor();
-      await member.reload();
-      await member.locator("[data-identity-display]").filter({ hasText: `Browser Test ${viewport.width}` }).waitFor();
+      // Anonymity was removed: the board shows the DingTalk name and offers no alias form.
+      await member.locator(".leaderboard-identity-settings").filter({ hasText: "DingTalk name" }).waitFor();
+      assert.equal(await member.locator("[data-identity-form]").count(), 0);
       await member.goto(base + "/methodology");
       await member.locator("#evaluationVideo").setInputFiles(fixture);
       await member.locator("#publiclyShareVideo").check();
