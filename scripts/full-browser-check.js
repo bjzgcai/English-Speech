@@ -18,22 +18,29 @@ async function main() {
   const score = { summary: "Clear response with specific evidence.", hasScorableEnglishSpeech: true, improvedAnswer: "We worked together to build and test a useful application.", strengths: ["Clear structure"], improvements: ["Add specific examples"], rubric: Object.fromEntries(["pronunciation", "fluency", "grammar", "vocabulary", "coherence", "visualDelivery"].map(key => [key, { score: 80, feedback: "Clear and understandable." }])) };
   const upstream = http.createServer(async (req, res) => {
     req.resume();
-    await once(req, "end");
+    const body = await new Promise(resolve => { let data = ""; req.on("data", chunk => data += chunk); req.on("end", () => resolve(data)); });
     res.setHeader("Content-Type", "application/json");
     if (req.url === "/asr") {
       calls.asr++;
       return res.end(JSON.stringify({ text: "We worked together to build an application. I listened to my colleagues and tested our solution. The project helped me improve my communication skills." }));
     }
-    const question = req.url === "/question";
-    calls[question ? "question" : "scoring"]++;
-    res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(question ? { question: "Describe a project where you solved a problem with your team.", focus: "Communication", expectedDurationSeconds: 120, followUp: "What did you learn?" } : score) } }] }));
+    // Question generation and scoring both POST chat-completions to the
+    // internal URL, and scoring also arrives at the OpenRouter fallback URL
+    // when the internal gateway fails; route by the requested model.
+    const model = JSON.parse(body).model;
+    if (model === "test-question") {
+      calls.question++;
+      return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ question: "Describe a project where you solved a problem with your team.", focus: "Communication", expectedDurationSeconds: 120, followUp: "What did you learn?" }) } }] }));
+    }
+    calls.scoring++;
+    res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(score) } }] }));
   });
   await listenForTest(upstream);
   const upstreamUrl = `http://127.0.0.1:${upstream.address().port}`;
   const probe = await listenForTest();
   const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
   const base = `http://127.0.0.1:${port}`;
-  const env = { ...process.env, NODE_ENV: "test", DATA_DIR: data, HOST: "127.0.0.1", PORT: String(port), SESSION_SECRET: "full-browser-secret", DINGTALK_CLIENT_ID: "", DINGTALK_CLIENT_SECRET: "", DINGTALK_CORP_ID: "", COOKIE_SECURE: "false", QUEUE_ENABLED: "true", QUEUE_START_PAUSED: "false", INTERNAL_LLM_API_KEY: "test", OPENROUTER_API_KEY: "test", INTERNAL_LLM_CHAT_COMPLETIONS_URL: `${upstreamUrl}/question`, INTERNAL_LLM_TRANSCRIPTIONS_URL: `${upstreamUrl}/asr`, OPENROUTER_CHAT_COMPLETIONS_URL: `${upstreamUrl}/score`, NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${path.join(__dirname, "../test/fixtures/guest-browser-runtime.cjs")}` };
+  const env = { ...process.env, NODE_ENV: "test", DATA_DIR: data, HOST: "127.0.0.1", PORT: String(port), SESSION_SECRET: "full-browser-secret", DINGTALK_CLIENT_ID: "", DINGTALK_CLIENT_SECRET: "", DINGTALK_CORP_ID: "", COOKIE_SECURE: "false", QUEUE_ENABLED: "true", QUEUE_START_PAUSED: "false", INTERNAL_LLM_API_KEY: "test", OPENROUTER_API_KEY: "test", INTERNAL_LLM_QUESTION_MODEL: "test-question", INTERNAL_LLM_EVAL_MODEL: "test-scoring", INTERNAL_LLM_CHAT_COMPLETIONS_URL: `${upstreamUrl}/question`, INTERNAL_LLM_TRANSCRIPTIONS_URL: `${upstreamUrl}/asr`, OPENROUTER_CHAT_COMPLETIONS_URL: `${upstreamUrl}/score`, NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${path.join(__dirname, "../test/fixtures/guest-browser-runtime.cjs")}` };
   const service = spawn("npm", ["run", "dev"], { cwd: path.resolve(__dirname, ".."), env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
   let diagnostics = "";
   service.stdout.on("data", value => { diagnostics = (diagnostics + value).slice(-4000); });
