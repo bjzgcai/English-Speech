@@ -14,6 +14,14 @@ const { appendJsonLine, readJsonLines, updateJsonLines } = require("./storage");
 const { clientIp, createFailureLimiter } = require("./rate-limit");
 const { securityHeaders } = require("./security");
 const { createQuestionService } = require("./questions");
+const {
+  chatCompletionWithFallback,
+  openRouterModelFor,
+  openRouterAuthHeaders,
+  openRouterTranscribeModel,
+  openRouterTranscriptionsUrl,
+  transcriptionWithFallback,
+} = require("./model-fallback");
 const { registerPageRoutes } = require("./routes/pages");
 const { createVisitorAccess, isGuest } = require("./visitor");
 const analytics = require("./analytics");
@@ -107,6 +115,7 @@ const internalLlmTranscriptionsUrl =
 const internalLlmQuestionModel = process.env.INTERNAL_LLM_QUESTION_MODEL || "glm";
 const internalLlmTranscribeModel = process.env.INTERNAL_LLM_TRANSCRIBE_MODEL || "qwen-asr";
 const internalLlmEvalModel = process.env.INTERNAL_LLM_EVAL_MODEL || "qwen";
+const openRouterEvalModelName = () => openRouterModelFor("eval");
 const maximumVideoBytes = 250 * 1024 * 1024;
 const standaloneEvaluationMaxSeconds = 2 * 60;
 const answerCancellationTtlMs = 60 * 60 * 1000;
@@ -1436,7 +1445,7 @@ function nonNegativeInteger(value, fallback = 0) {
 
 function normalizeEvaluation(
   rawEvaluation,
-  { visualAvailable = true, hasScorableSpeech = true, transcript = "" } = {},
+  { visualAvailable = true, hasScorableSpeech = true, transcript = "", evaluateModel = internalLlmEvalModel } = {},
 ) {
   const modelSpeechFlag = rawEvaluation?.hasScorableEnglishSpeech;
   const modelFoundScorableSpeech =
@@ -1495,7 +1504,7 @@ function normalizeEvaluation(
         : ["Start speaking in English and give at least one complete response to the question."],
     model: {
       transcribe: internalLlmTranscribeModel,
-      evaluate: internalLlmEvalModel,
+      evaluate: evaluateModel,
     },
   };
 }
@@ -1514,7 +1523,14 @@ function transcriptionRetryDelay(attempt) {
   return new Promise((resolve) => setTimeout(resolve, attempt * 300));
 }
 
-async function transcribeAudioFile(audioPath) {
+function transcriptionCacheKeyBase(audioPath) {
+  return `${path.basename(audioPath)}:${crypto
+    .createHash("sha256")
+    .update(fs.readFileSync(audioPath))
+    .digest("hex")}`;
+}
+
+async function transcribeWithInternalGateway(audioPath, cacheKeyBase) {
   const apiKey = process.env.INTERNAL_LLM_API_KEY;
   const maximumAttempts = processing.context.getStore() ? 1 : Math.min(
     positiveInteger(Number(process.env.TRANSCRIPTION_MAX_ATTEMPTS), 3),
@@ -1538,7 +1554,7 @@ async function transcribeAudioFile(audioPath) {
           Authorization: `Bearer ${apiKey}`,
         },
         body: formData,
-      }, "transcription", `transcription:${path.basename(audioPath)}:${crypto.createHash("sha256").update(fs.readFileSync(audioPath)).digest("hex")}`);
+      }, "transcription", `transcription:${cacheKeyBase}`);
 
       if (!response.ok) {
         const detail = await response.text();
@@ -1556,6 +1572,37 @@ async function transcribeAudioFile(audioPath) {
   }
 
   return "";
+}
+
+async function transcribeWithOpenRouter(audioPath, cacheKeyBase, fallbackModel) {
+  const formData = new FormData();
+  const file = new Blob([fs.readFileSync(audioPath)], {
+    type: transcriptionMimeType(audioPath),
+  });
+  formData.append("model", fallbackModel);
+  formData.append("file", file, path.basename(audioPath));
+  formData.append("language", "en");
+
+  const response = await processing.modelFetch(openRouterTranscriptionsUrl(), {
+    method: "POST",
+    headers: openRouterAuthHeaders(),
+    body: formData,
+  }, "transcription", `transcription:openrouter:${cacheKeyBase}`);
+
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 500);
+    throw new Error(`OpenRouter transcription fallback returned HTTP ${response.status}: ${detail}`);
+  }
+  const payload = await response.json();
+  return safeText(payload.text);
+}
+
+async function transcribeAudioFile(audioPath) {
+  return transcriptionWithFallback({
+    runInternal: () => transcribeWithInternalGateway(audioPath, transcriptionCacheKeyBase(audioPath)),
+    runFallback: (fallbackModel) =>
+      transcribeWithOpenRouter(audioPath, transcriptionCacheKeyBase(audioPath), fallbackModel),
+  });
 }
 
 function isTranscriptionSizeError(error) {
@@ -1813,12 +1860,12 @@ async function evaluateAnswer({
       "Content-Type": "application/json",
     };
 
-    const response = await processing.modelFetch(internalLlmChatCompletionsUrl, {
-      method: "POST",
-      // Queue waits do not spend the upstream deadline; modelFetch times each attempt.
-      signal: config.queueEnabled ? undefined : AbortSignal.timeout(requestTimeoutMs),
+    // Queue waits do not spend the upstream deadline; modelFetch times each attempt.
+    const requestSignal = config.queueEnabled ? undefined : AbortSignal.timeout(requestTimeoutMs);
+    const { response, model: usedModel } = await chatCompletionWithFallback({
+      url: internalLlmChatCompletionsUrl,
       headers,
-      body: JSON.stringify({
+      body: {
         model: internalLlmEvalModel,
         max_tokens: 16384,
         temperature: 0.1,
@@ -1834,20 +1881,20 @@ async function evaluateAnswer({
             content,
           },
         ],
-      }),
-    }, "scoring");
-
-    if (!response.ok) {
-      const detail = await response.text();
-      throw new Error(`Internal model evaluation failed: ${detail}`);
-    }
+      },
+      kind: "scoring",
+      fallbackModel: openRouterEvalModelName(),
+      internalSignal: requestSignal,
+      fallbackSignal: requestSignal,
+    });
 
     const payload = await response.json();
-    const outputText = modelMessageText(payload.choices?.[0]?.message);
+    const outputText = modelMessageText(payload.choices?.[0].message);
     return normalizeEvaluation(extractJsonObject(outputText), {
       visualAvailable: framePaths.length > 0,
       hasScorableSpeech: transcriptHasScorableSpeech,
       transcript,
+      evaluateModel: usedModel,
     });
   } catch (error) {
     if (isEvaluationTimeout(error)) {
@@ -2578,13 +2625,13 @@ app.post("/api/generate-question", requireVisitor, requirePrivacyConsent, requir
   }
 
   try {
-    const response = await processing.modelFetch(internalLlmChatCompletionsUrl, {
-      method: "POST",
+    const { response, model: usedModel } = await chatCompletionWithFallback({
+      url: internalLlmChatCompletionsUrl,
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
+      body: {
         model: internalLlmQuestionModel,
         max_tokens: 4096,
         temperature: 0.8,
@@ -2600,17 +2647,10 @@ app.post("/api/generate-question", requireVisitor, requirePrivacyConsent, requir
             content: buildPrompt(profile),
           },
         ],
-      }),
-    }, "question");
-
-    if (!response.ok) {
-      const detail = await response.text();
-      const record = persistQuestion(req.user, profile, fallbackQuestion(profile), "fallback");
-      return res.status(response.status).json({
-        error: `Internal model request failed: ${detail}`,
-        question: questionForClient(record),
-      });
-    }
+      },
+      kind: "question",
+      fallbackModel: openRouterModelFor("question"),
+    });
 
     const payload = await response.json();
     const content = payload.choices?.[0]?.message?.content;
@@ -2623,8 +2663,8 @@ app.post("/api/generate-question", requireVisitor, requirePrivacyConsent, requir
       followUp: safeText(question.followUp, ""),
     };
 
-    const record = persistQuestion(req.user, profile, question, internalLlmQuestionModel);
-    res.json({ question: questionForClient(record), model: internalLlmQuestionModel, user: req.user });
+    const record = persistQuestion(req.user, profile, question, usedModel);
+    res.json({ question: questionForClient(record), model: usedModel, user: req.user });
   } catch (error) {
     const record = persistQuestion(req.user, profile, fallbackQuestion(profile), "fallback");
     if (error.code === "MODEL_BUSY" || error.code === "MODEL_BUDGET_EXCEEDED") {
@@ -3146,8 +3186,20 @@ app.delete("/api/recordings/:id", requireVisitor, (req, res) => {
   if (!owned) {
     return res.status(404).json({ error: "Recording not found." });
   }
+  // Cancel first: once the job is terminal the worker's finish() can no longer
+  // write a result, so a later projection cannot resurrect the record deleted
+  // below. A canceled queued/processing job also cleans up its own pending
+  // upload, normalized file, and artifacts during projection, and a canceled
+  // failed job cannot replay its pending failed result over the deletion.
+  // Completed jobs are left untouched — their media is removed by
+  // deleteOwnedRecording and their result JSON is not worth destroying.
+  let canceledJob = false;
+  const job = queueApi?.queue?.get("SELECT id, state FROM jobs WHERE id=? AND owner=?", id, req.user.openId);
+  if (job && ["queued", "processing", "failed"].includes(job.state)) {
+    canceledJob = Boolean(queueApi.queue.cancel(id, req.user.openId));
+  }
   const removedRecordCount = deleteOwnedRecording(id, req.user.openId);
-  res.json({ ok: true, id, removedRecordCount });
+  res.json({ ok: true, id, removedRecordCount, canceledJob });
 });
 
 // Serves the figure a learner uploaded to replace the default task figure.

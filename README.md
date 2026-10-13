@@ -28,7 +28,16 @@ INTERNAL_LLM_QUESTION_MODEL=glm
 INTERNAL_LLM_TRANSCRIBE_MODEL=qwen-asr
 INTERNAL_LLM_EVAL_MODEL=qwen
 EVAL_MAX_FRAMES=24
-EVAL_REQUEST_TIMEOUT_MS=600000
+EVAL_REQUEST_TIMEOUT_MS=100000
+
+# OpenRouter fallback for question generation, scoring, comment moderation,
+# and ASR transcription when the internal gateway is unavailable. The
+# transcription fallback uses OpenRouter's POST /api/v1/audio/transcriptions
+# endpoint with a Qwen3 ASR model (same language coverage as qwen-asr).
+OPENROUTER_API_KEY=...
+OPENROUTER_CHAT_COMPLETIONS_URL=https://openrouter.ai/api/v1/chat/completions
+OPENROUTER_EVAL_MODEL=z-ai/glm-5.3-flash
+OPENROUTER_TRANSCRIBE_MODEL=qwen/qwen3-asr-1.7b
 ```
 
 Everyone can generate questions, save recordings, and view their own history as a guest. DingTalk login is optional; configure it with:
@@ -171,6 +180,13 @@ chat gateway; question generation remains on `INTERNAL_LLM_QUESTION_MODEL`
 (default `glm`). Qwen ASR requests explicitly use English and retry transient failures. Audio longer than the configured chunk
 size (30 seconds by default, capped at 40) is split and transcribed in order;
 known Qwen input-format failures trigger WAV/MP3 format fallback.
+
+If the internal gateway fails during question generation, evaluation scoring,
+or comment moderation, the same request is retried once through OpenRouter
+(`OPENROUTER_API_KEY` required; scoring uses `OPENROUTER_EVAL_MODEL`, default
+`z-ai/glm-5.3-flash`, and question/moderation fall back to
+`OPENROUTER_QUESTION_MODEL`/`OPENROUTER_MODERATION_MODEL` when set). The
+evaluation result records whichever model actually produced it.
 
 ## Capacity and Background Evaluation
 

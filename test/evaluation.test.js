@@ -663,3 +663,119 @@ test("a hostile figure path degrades to a text-only evaluation", async (context)
   assert.equal(content.filter((part) => part.type === "image_url").length, 0);
   assert.doesNotMatch(content[0].text, /reference figure, attached as the first image/);
 });
+
+test("evaluation falls back to OpenRouter when the internal gateway fails", async (context) => {
+  const originalFetch = global.fetch;
+  const originalInternalKey = process.env.INTERNAL_LLM_API_KEY;
+  const originalOpenRouterKey = process.env.OPENROUTER_API_KEY;
+  const originalOpenRouterUrl = process.env.OPENROUTER_CHAT_COMPLETIONS_URL;
+  const originalOpenRouterModel = process.env.OPENROUTER_EVAL_MODEL;
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-fallback-"));
+  const framePath = path.join(tempDir, "frame.jpg");
+  fs.writeFileSync(framePath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+  process.env.INTERNAL_LLM_API_KEY = "test-internal-key";
+  process.env.OPENROUTER_API_KEY = "test-openrouter-key";
+  process.env.OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.example.test/v1/chat/completions";
+  process.env.OPENROUTER_EVAL_MODEL = "z-ai/glm-5.3-flash";
+  delete process.env.OPENROUTER_QUESTION_MODEL;
+
+  context.after(() => {
+    global.fetch = originalFetch;
+    if (originalInternalKey === undefined) delete process.env.INTERNAL_LLM_API_KEY;
+    else process.env.INTERNAL_LLM_API_KEY = originalInternalKey;
+    if (originalOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
+    if (originalOpenRouterUrl === undefined) delete process.env.OPENROUTER_CHAT_COMPLETIONS_URL;
+    else process.env.OPENROUTER_CHAT_COMPLETIONS_URL = originalOpenRouterUrl;
+    if (originalOpenRouterModel === undefined) delete process.env.OPENROUTER_EVAL_MODEL;
+    else process.env.OPENROUTER_EVAL_MODEL = originalOpenRouterModel;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const requests = [];
+  global.fetch = async (url, options) => {
+    requests.push({ url: String(url), options });
+    if (String(url).includes("api.example.com")) {
+      return new Response("internal gateway unavailable", { status: 500 });
+    }
+    return new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                summary: "Fallback evaluation.",
+                transcript: "A test answer.",
+                rubric: {
+                  pronunciation: { score: 80, feedback: "Clear." },
+                  fluency: { score: 80, feedback: "Smooth." },
+                  grammar: { score: 80, feedback: "Accurate." },
+                  vocabulary: { score: 80, feedback: "Appropriate." },
+                  coherence: { score: 80, feedback: "Logical." },
+                  visualDelivery: { score: 80, feedback: "Engaged." },
+                },
+                strengths: ["Clear"],
+                improvements: ["Add detail"],
+              }),
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  };
+
+  const evaluation = await testHelpers.evaluateAnswer({
+    profile: { level: "B2" },
+    question: { prompt: "Tell me about a project." },
+    transcript: "A test answer.",
+    audioMetrics: { speakingRateWpm: 120 },
+    framePaths: [framePath],
+  });
+
+  assert.equal(requests.length, 2);
+  assert.match(requests[0].url, /api\.example\.com/);
+  assert.match(requests[1].url, /openrouter\.example\.test/);
+  const fallbackBody = JSON.parse(requests[1].options.body);
+  assert.equal(requests[1].options.headers.Authorization, "Bearer test-openrouter-key");
+  assert.equal(fallbackBody.model, "z-ai/glm-5.3-flash");
+  assert.equal(evaluation.model.evaluate, "z-ai/glm-5.3-flash");
+  assert.equal(evaluation.overallScore, 80);
+});
+
+test("evaluation failure surfaces when no OpenRouter key is configured", async (context) => {
+  const originalFetch = global.fetch;
+  const originalInternalKey = process.env.INTERNAL_LLM_API_KEY;
+  const originalOpenRouterKey = process.env.OPENROUTER_API_KEY;
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-no-fallback-"));
+  const framePath = path.join(tempDir, "frame.jpg");
+  fs.writeFileSync(framePath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+  process.env.INTERNAL_LLM_API_KEY = "test-internal-key";
+  delete process.env.OPENROUTER_API_KEY;
+
+  context.after(() => {
+    global.fetch = originalFetch;
+    if (originalInternalKey === undefined) delete process.env.INTERNAL_LLM_API_KEY;
+    else process.env.INTERNAL_LLM_API_KEY = originalInternalKey;
+    if (originalOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  let called = false;
+  global.fetch = async () => {
+    called = true;
+    return new Response("internal gateway unavailable", { status: 500 });
+  };
+
+  await assert.rejects(
+    testHelpers.evaluateAnswer({
+      profile: { level: "B2" },
+      question: { prompt: "Tell me about a project." },
+      transcript: "A test answer.",
+      audioMetrics: { speakingRateWpm: 120 },
+      framePaths: [framePath],
+    }),
+  );
+  assert.equal(called, true);
+});
