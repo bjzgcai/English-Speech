@@ -303,6 +303,30 @@ function detectionSummary(row) {
   return { state: "pending", suspicious: false, confidence: null, reason: "" };
 }
 
+// Deleting a best answer promotes the learner's second-best take, which needs
+// its own one-time analysis. Deletes run in bursts (learners clean up several
+// takes), so the re-check is debounced per user: every qualifying deletion
+// resets the timer and only the last one fires. The timer lives in the web
+// process and is unref()ed; a restart inside the window loses it, but the
+// other ensureTeacherDetections() triggers (teacher page load, queue
+// projection, next evaluation) make the same enqueue happen eventually.
+const redetectionTimers = new Map();
+
+function scheduleBestAnswerRedetection(openId, delayMs = Number(process.env.AI_DETECTION_REDETECTION_DELAY_MS) || 60000) {
+  if (!openId) return;
+  const existing = redetectionTimers.get(openId);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    redetectionTimers.delete(openId);
+    try {
+      ensureTeacherDetections();
+      void processTeacherDetections().catch(() => {});
+    } catch { /* The next trigger retries the enqueue. */ }
+  }, delayMs);
+  timer.unref();
+  redetectionTimers.set(openId, timer);
+}
+
 module.exports = {
   ensureTeacherDetections,
   processTeacherDetections,
@@ -310,4 +334,5 @@ module.exports = {
   detectionSummary,
   detectionById,
   bestAnswerIds,
+  scheduleBestAnswerRedetection,
 };

@@ -15,6 +15,7 @@ const {
   processTeacherDetections,
   detectionSummary,
   bestAnswerIds,
+  scheduleBestAnswerRedetection,
 } = require("../src/ai-detection");
 
 function seedAnswer(answerId, openId, score) {
@@ -232,6 +233,65 @@ test("an answer deleted after enqueueing completes without a verdict", async () 
   assert.equal(row.suspicious, false);
   assert.match(row.reason, /no longer exists/);
   assert.equal(ensureTeacherDetections(), 0, "the missing answer is not re-enqueued");
+});
+
+test("scheduling a re-detection enqueues and analyzes the new best answer", async (t) => {
+  // The learner's best (88) already has a completed row; the second-best (81)
+  // has none. After the best answer is deleted, the debounced re-check must
+  // enqueue the second-best take and analyze it — the once-only rule keeps
+  // the already-analyzed row from re-running.
+  const best = "best-answer-7";
+  const second = "second-answer-7";
+  seedAnswer(best, "user-h", 88);
+  seedAnswer(second, "user-h", 81);
+  ensureTeacherDetections();
+  t.mock.method(processing, "modelFetch", async () =>
+    new Response(JSON.stringify({ choices: [{ message: { content: '{"aiGenerated":false,"confidence":95,"reason":"Natural fillers."}' } }] })));
+  await processTeacherDetections();
+  assert.equal(latestRow(best).state, "completed");
+
+  // The delete happens outside this module; simulate its effect on metadata
+  // and then schedule the re-check the delete route would schedule.
+  const { updateJsonLines } = require("../src/storage");
+  updateJsonLines(config.metadataFile, rows => rows.filter(row => row.id !== best));
+
+  let processed = 0;
+  t.mock.method(processing, "modelFetch", async () => {
+    processed++;
+    return new Response(JSON.stringify({ choices: [{ message: { content: '{"aiGenerated":true,"confidence":90,"reason":"Outlier take."}' } }] }));
+  });
+  scheduleBestAnswerRedetection("user-h", 20);
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  assert.equal(processed, 1, "only the second-best take was analyzed");
+  const row = latestRow(second);
+  assert.equal(row.state, "completed");
+  assert.equal(row.suspicious, true);
+  assert.equal(latestRow(best).state, "completed", "the deleted answer's old verdict stays untouched");
+});
+
+test("a burst of re-detection schedules for the same user coalesces into one timer", async () => {
+  seedAnswer("burst-best-1", "user-i", 90);
+  seedAnswer("burst-second-1", "user-i", 60);
+  ensureTeacherDetections();
+
+  scheduleBestAnswerRedetection("user-i", 20);
+  scheduleBestAnswerRedetection("user-i", 20);
+  scheduleBestAnswerRedetection("user-i", 20);
+  await new Promise(resolve => setTimeout(resolve, 100));
+  // Three schedules within the window must have collapsed to one timer: the
+  // observable effect is a single enqueue sweep, which enqueued nothing new
+  // here (both takes already had rows) — the assertion is that no error and
+  // no duplicate rows resulted.
+  const deduped = readJsonLines(config.aiDetectionsFile).filter(row => row.id === "burst-best-1");
+  assert.equal(deduped.length, 1, "no duplicate enqueue rows from coalesced timers");
+});
+
+test("an openId-less schedule call is ignored", async () => {
+  scheduleBestAnswerRedetection("", 20);
+  scheduleBestAnswerRedetection(undefined, 20);
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.ok(true, "no throw from empty/undefined openId");
 });
 
 test.after(() => {

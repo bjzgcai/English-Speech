@@ -51,6 +51,8 @@ const {
 const {
   detectionById,
   detectionSummary,
+  bestAnswerIds,
+  scheduleBestAnswerRedetection,
   ensureTeacherDetections,
   processTeacherDetections,
 } = require("./ai-detection");
@@ -3327,7 +3329,8 @@ app.delete("/api/recordings/:id", requireVisitor, (req, res) => {
   if (!validAnswerSaveId(id)) {
     return res.status(400).json({ error: "A valid recording ID is required." });
   }
-  const owned = readJsonLines(metadataFile).some(
+  const records = readJsonLines(metadataFile);
+  const owned = records.some(
     (record) => record.id === id && recordOpenId(record) === req.user.openId,
   );
   if (!owned) {
@@ -3345,7 +3348,25 @@ app.delete("/api/recordings/:id", requireVisitor, (req, res) => {
   if (job && ["queued", "processing", "failed"].includes(job.state)) {
     canceledJob = Boolean(queueApi.queue.cancel(id, req.user.openId));
   }
+  // If the deleted answer was the learner's best completed take for its
+  // challenge week, the second-best take becomes the new best and needs its
+  // own one-time AI detection. Debounced per user so a burst of deletions
+  // settles before the re-check runs.
+  const deletedRecord = records.find(
+    (record) => record.id === id && recordOpenId(record) === req.user.openId,
+  );
+  const wasBestAnswer = Boolean(
+    deletedRecord
+    && deletedRecord.evaluation?.status === "completed"
+    && Number.isFinite(deletedRecord.evaluation?.overallScore)
+    && bestAnswerIds(records).has(id),
+  );
   const removedRecordCount = deleteOwnedRecording(id, req.user.openId);
+  if (wasBestAnswer) {
+    try {
+      scheduleBestAnswerRedetection(req.user.openId);
+    } catch { /* The next ensureTeacherDetections trigger retries. */ }
+  }
   res.json({ ok: true, id, removedRecordCount, canceledJob });
 });
 
