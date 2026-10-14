@@ -81,6 +81,10 @@
   delivery baseline; a take ≥15% faster than the learner's fastest other take injects a veto-proof
   FLAG RULE (breaths, fillers, or mouth-sync do not override it — a learner can mouth along while TTS
   plays). Reading the question aloud is explicitly normal behavior, never evidence of AI.
+- When a learner deletes an answer from /history that was their best completed take for its
+  challenge week, the delete route schedules a per-user debounced re-check (60s,
+  `scheduleBestAnswerRedetection`) so the promoted second-best take gets its one-time detection;
+  takes that already have a verdict are never re-analyzed.
 - Detection is an inference, not proof: the UI must keep saying "possibly AI-generated"/"疑似" rather
   than asserting cheating, mirroring the pronunciation-scoring caveat above.
 
