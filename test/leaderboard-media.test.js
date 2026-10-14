@@ -8,7 +8,7 @@ process.env.NODE_ENV = "test";
 
 const { testHelpers } = require("../src/app");
 
-const { leaderboardAnswerMedia, canViewLeaderboardPlayback } = testHelpers;
+const { leaderboardAnswerMedia, canAccessTeacher } = testHelpers;
 
 function seedRecordings() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-board-media-"));
@@ -94,29 +94,29 @@ test("leaderboard answer media rejects answers outside the weekly challenge", ()
   }
 });
 
-test("leaderboard playback is limited to the allow-listed DingTalk names", () => {
+test("teacher access is limited to the allow-listed DingTalk names", () => {
   const dingtalk = (name) => ({ openId: "user-1", name, identityType: "dingtalk" });
 
-  for (const name of ["王旭东", "邹欣", "吴衍标", "高坤", "柳君丽", "胡辰", "何源"]) {
-    assert.equal(canViewLeaderboardPlayback(dingtalk(name)), true, name);
+  for (const name of ["王旭东", "邹欣", "吴衍标", "高坤", "柳君丽", "胡辰", "何源", "董圣娇", "赵晨"]) {
+    assert.equal(canAccessTeacher(dingtalk(name)), true, name);
   }
   // Whitespace around the session name is tolerated; near-misses are not.
-  assert.equal(canViewLeaderboardPlayback(dingtalk(" 王旭东 ")), true);
-  assert.equal(canViewLeaderboardPlayback(dingtalk("王旭 东")), false);
+  assert.equal(canAccessTeacher(dingtalk(" 王旭东 ")), true);
+  assert.equal(canAccessTeacher(dingtalk("王旭 东")), false);
 
-  assert.equal(canViewLeaderboardPlayback(dingtalk("陈云")), false);
-  assert.equal(canViewLeaderboardPlayback(dingtalk("")), false);
-  assert.equal(canViewLeaderboardPlayback(null), false);
-  assert.equal(canViewLeaderboardPlayback({ openId: "guest:0f4a2f2e-6d44-4d8b-ab1c-b823529ca1b5", name: "王旭东", identityType: "guest" }), false);
+  assert.equal(canAccessTeacher(dingtalk("陈云")), false);
+  assert.equal(canAccessTeacher(dingtalk("")), false);
+  assert.equal(canAccessTeacher(null), false);
+  assert.equal(canAccessTeacher({ openId: "guest:0f4a2f2e-6d44-4d8b-ab1c-b823529ca1b5", name: "王旭东", identityType: "guest" }), false);
 });
 
-test("guests who redeemed an allow-listed invitation code may watch", () => {
+test("guests who redeemed an allow-listed invitation code may enter the teacher console", () => {
   const guest = (openId) => ({ openId, identityType: "guest", name: "Guest 12345678" });
   const openId = "guest:0f4a2f2e-6d44-4d8b-ab1c-b823529ca1b5";
 
-  assert.equal(canViewLeaderboardPlayback(guest(openId), "B19B59975BC0"), true);
+  assert.equal(canAccessTeacher(guest(openId), "B19B59975BC0"), true);
   // Case-insensitive against the configured code; wrong codes stay denied.
-  assert.equal(canViewLeaderboardPlayback(guest(openId), "b19b59975bc0"), true);
-  assert.equal(canViewLeaderboardPlayback(guest(openId), "B19B59975BC1"), false);
-  assert.equal(canViewLeaderboardPlayback(guest(openId), ""), false);
+  assert.equal(canAccessTeacher(guest(openId), "b19b59975bc0"), true);
+  assert.equal(canAccessTeacher(guest(openId), "B19B59975BC1"), false);
+  assert.equal(canAccessTeacher(guest(openId), ""), false);
 });

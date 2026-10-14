@@ -11,6 +11,7 @@ const {
   storeUserFigure,
   userFigureFilenameFromSrc,
 } = require("./user-figures");
+const { ensureTeacherDetections, processTeacherDetections } = require("./ai-detection");
 
 function registerQueueRoutes(app, deps) {
   const { config, requireAuth, requireVisitor, requirePrivacyConsent, requireAdminAccess, upload, findOwnedQuestion, validAnswerSaveId, decodeUtf8UploadFilename, standaloneEvaluationTitle, requireAttemptQuota, requireVideoQuota } = deps;
@@ -85,6 +86,13 @@ function registerQueueRoutes(app, deps) {
     for (const target of removals.filter(Boolean)) fs.rmSync(target, { force: true, recursive: true });
     // A worker completing during projection must remain eligible for the next pass.
     for (const job of done) queue.run("UPDATE jobs SET projected=1 WHERE id=? AND state=? AND updated=?", job.id, job.state, job.updated);
+
+    // A newly completed answer may be its owner's new best: queue its one-time
+    // AI-detection pass. Fire-and-forget so projection never blocks on a model.
+    try {
+      ensureTeacherDetections();
+      void processTeacherDetections().catch(() => {});
+    } catch { /* The worker tick retries the detection queue. */ }
   }
   const generating = new Set();
   const required = wrap((req, res, next) => {

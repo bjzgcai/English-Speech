@@ -14,6 +14,9 @@ function openRouterModelFor(purpose) {
   const evalModel = process.env.OPENROUTER_EVAL_MODEL || "z-ai/glm-5.3-flash";
   if (purpose === "eval") return evalModel;
   if (purpose === "moderation") return process.env.OPENROUTER_MODERATION_MODEL || evalModel;
+  if (purpose === "detection") return process.env.OPENROUTER_AI_DETECTION_MODEL || evalModel;
+  // Audio-input detection needs a model that accepts input_audio parts.
+  if (purpose === "audio-detection") return process.env.OPENROUTER_AUDIO_DETECTION_MODEL || "qwen/qwen3.8-omni-flash";
   return process.env.OPENROUTER_QUESTION_MODEL || evalModel;
 }
 
@@ -109,6 +112,22 @@ async function chatCompletionWithFallback({
   }
 }
 
+// Direct-to-OpenRouter chat call for content the internal hub cannot serve
+// (e.g. audio-input detection): no internal attempt is made, but the same
+// modelFetch gate/kind, retry, and telemetry path apply.
+async function openRouterChatCompletion({ model, body, kind }) {
+  if (!process.env.OPENROUTER_API_KEY) throw new Error("OpenRouter is not configured.");
+  const response = await processing.modelFetch(
+    openRouterChatCompletionsUrl(),
+    { method: "POST", headers: openRouterHeaders(), body: JSON.stringify({ ...body, model }) },
+    kind,
+    `${kind}:openrouter`,
+  );
+  if (response.ok) return { response, provider: "openrouter", model };
+  const detail = (await response.text()).slice(0, 500);
+  throw new Error(`OpenRouter returned HTTP ${response.status}: ${detail}`);
+}
+
 // Transcription fallback: the internal gateway stays primary; OpenRouter is
 // only consulted after the internal attempt (including its own retry budget)
 // has failed with a non-cancellation error. runFallback receives the resolved
@@ -140,6 +159,7 @@ async function transcriptionWithFallback({ runInternal, runFallback }) {
 
 module.exports = {
   chatCompletionWithFallback,
+  openRouterChatCompletion,
   openRouterModelFor,
   openRouterAuthHeaders,
   openRouterTranscribeModel,

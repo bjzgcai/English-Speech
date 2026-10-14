@@ -1,0 +1,83 @@
+/* Teacher console (/teacher): page chrome on top of the shared leaderboard
+   styles (styles.css supplies .leaderboard-panel/-heading/-list/-row,
+   .group-picker, .leaderboard-play, and the .video-modal). */
+
+.teacher-main {
+  max-width: 1180px;
+  margin: 40px auto 100px;
+  padding: 0 28px;
+}
+
+.teacher-export-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 18px 0 6px;
+}
+
+/* The invitation-codes page styles .codes-action, but this page does not load
+   invitation-codes.css, so the export buttons style themselves. */
+.teacher-export-bar a {
+  background: #6558e8;
+  color: #fff;
+  border: 0;
+  border-radius: 14px;
+  padding: 13px 20px;
+  font-weight: 800;
+  font-size: 15px;
+  text-decoration: none;
+  box-shadow: 0 5px 0 #473bb7;
+}
+
+.teacher-export-bar a:hover {
+  filter: brightness(1.05);
+}
+
+.teacher-export-bar a:active {
+  transform: translateY(2px);
+  box-shadow: 0 3px 0 #473bb7;
+}
+
+/* Suspicious/pending AI markers sit before the score cell. */
+.teacher-score-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.teacher-ai {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 15px;
+  cursor: help;
+}
+
+.teacher-ai-flag {
+  background: #fdecec;
+  color: #b53f55;
+  border: 1px solid #f0c4c8;
+}
+
+.teacher-ai-pending {
+  background: #f1f1f5;
+  color: #686984;
+  border: 1px solid #e2e2ee;
+  font-size: 13px;
+}
+
+@media (max-width: 700px) {
+  .teacher-main {
+    padding: 0 16px;
+    margin-top: 24px;
+  }
+
+  .teacher-export-bar a {
+    flex: 1 1 100%;
+    text-align: center;
+  }
+}

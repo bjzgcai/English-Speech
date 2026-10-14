@@ -3,7 +3,7 @@ const { appendJsonLine, readJsonLines } = require("./storage");
 const { isGuest } = require("./visitor");
 
 const cookieName = "englisheval_analytics";
-const pages = new Set(["/leaderboard", "/game", "/examine", "/history", "/intro", "/prepare"]);
+const pages = new Set(["/leaderboard", "/game", "/examine", "/history", "/intro", "/prepare", "/teacher"]);
 const bots = /bot|crawler|spider|slurp|headless/i;
 // The identities a tracked request can carry. A `guest` is someone who redeemed
 // an invitation code; every other signed-in visitor is a DingTalk account.

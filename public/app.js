@@ -18,6 +18,7 @@ const state = {
   wakeLock: null,
   authUser: null,
   authReady: false,
+  teacherAccess: false,
   inAppAuthAttempted: false,
   privacyConsent: null,
   privacyConsentResolve: null,
@@ -120,6 +121,7 @@ const loginHint = document.querySelector(".login-hint");
 const authChip = document.querySelector("#authChip");
 const authUserName = document.querySelector("#authUserName");
 const invitationLink = document.querySelector("[data-invitation-link]");
+const teacherLink = document.querySelector("[data-teacher-link]");
 const logoutButton = document.querySelector("#logoutButton");
 const navLinks = document.querySelectorAll(".main-nav [data-route]");
 const videoModal = document.querySelector("#videoModal");
@@ -611,6 +613,8 @@ function updateAuthView() {
   historyView.hidden = route !== "/history";
   window.VisitorSession.renderIdentityName(authUserName, state.authUser?.name);
   if (invitationLink) invitationLink.hidden = !(state.authUser?.identityType === "dingtalk");
+  // Strictly allow-listed server-side; the flag comes from /api/me.
+  if (teacherLink) teacherLink.hidden = !state.teacherAccess;
   nameInput.value = state.authUser?.name || "";
   const loginHref = `/auth/dingtalk?redirect=${encodeURIComponent(window.location.pathname)}`;
   loginButton.href = loginHref;
@@ -693,6 +697,7 @@ async function checkAuth() {
     const data = await response.json();
     state.authUser = data.user || null;
     state.authReady = true;
+    state.teacherAccess = data.teacherAccess === true;
     state.dingTalkConfigured = data.configured;
     setStatus(!state.authUser || state.authUser.identityType === "guest" ? "Guest" : "Signed in");
     updateAuthView();
@@ -1309,7 +1314,7 @@ function renderLeaderboard(data) {
   leaderboardList.innerHTML = data.entries
     .map(
       (entry) => `
-        <li class="leaderboard-row${entry.isViewer ? " is-viewer" : ""}${entry.answerId ? " has-media" : ""}">
+        <li class="leaderboard-row${entry.isViewer ? " is-viewer" : ""}">
           <span class="leaderboard-rank" aria-label="Rank ${entry.rank}">
             <span aria-hidden="true">${entry.rank <= 3 ? "★" : "#"}</span>
             <strong>${entry.rank}</strong>
@@ -1321,7 +1326,6 @@ function renderLeaderboard(data) {
             <strong>${entry.score}</strong>
             <small>pts</small>
           </span>
-          ${entry.answerId ? `<button type="button" class="leaderboard-play" data-answer-id="${escapeHtml(entry.answerId)}" data-answer-name="${escapeHtml(entry.name)}" aria-label="Play ${escapeHtml(entry.name)}'s answer" title="Play answer"><span aria-hidden="true">▶</span></button>` : ""}
         </li>
       `,
     )
@@ -1794,28 +1798,6 @@ function showVideoModalTranscript(transcript, question = "") {
   videoModalTranscriptQuestion.hidden = !questionText;
   videoModalTranscriptText.textContent = text;
   videoModalTranscript.hidden = false;
-}
-
-async function openLeaderboardAnswer(button) {
-  const answerId = button.dataset.answerId;
-  if (!answerId) return;
-  const name = button.dataset.answerName || "Saved answer";
-  openVideoModal(
-    `/api/game/leaderboard-answers/${encodeURIComponent(answerId)}/media`,
-    `${name} — saved answer`,
-    { showTranscript: true },
-  );
-  try {
-    const response = await window.VisitorSession.fetch(
-      `/api/game/leaderboard-answers/${encodeURIComponent(answerId)}/transcript`,
-      { cache: "no-store" },
-    );
-    if (!response.ok) throw new Error("Transcript unavailable.");
-    const data = await response.json();
-    showVideoModalTranscript(data.transcript, data.question);
-  } catch {
-    showVideoModalTranscript("");
-  }
 }
 
 function closeHistoryVideo() {
@@ -2524,12 +2506,6 @@ historyList.addEventListener("click", (event) => {
 
 leaderboardWeek.addEventListener("change", () => {
   loadLeaderboard(leaderboardWeek.value);
-});
-
-leaderboardList.addEventListener("click", (event) => {
-  const button = event.target instanceof Element ? event.target.closest(".leaderboard-play") : null;
-  if (!button) return;
-  openLeaderboardAnswer(button);
 });
 
 [gameGroupPicker, leaderboardGroupPicker].forEach((picker) => {

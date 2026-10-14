@@ -49,6 +49,12 @@ const {
   normalizeGameGroup,
 } = require("./game");
 const {
+  detectionById,
+  detectionSummary,
+  ensureTeacherDetections,
+  processTeacherDetections,
+} = require("./ai-detection");
+const {
   USER_FIGURE_EXTENSION_MIME,
   USER_FIGURE_SRC_PATTERN,
   isSupportedUserFigure,
@@ -601,6 +607,19 @@ const visitorAccess = createVisitorAccess({
 });
 // API services require DingTalk authentication or a redeemed invitation.
 const { requireAccess: requireVisitor } = visitorAccess;
+
+// The teacher console serves only allow-listed teachers (DingTalk name or
+// invitation-code guest). Everyone else is quietly sent back to the public
+// board — the menu entry never appears for them, so there is no sign-in flow
+// to funnel them through here.
+function requireTeacherPage(req, res, next) {
+  const user = visitorAccess.resolveVisitor(req, res);
+  if (visitorAccess.hasAccess(req, user) && canAccessTeacher(user)) {
+    req.user = user;
+    return next();
+  }
+  return res.redirect(302, "/leaderboard");
+}
 
 // Which identity a page view or browser beacon used, so the digest can report
 // logged-in PV/UV split by DingTalk sign-in and redeemed invitation code. It
@@ -2278,6 +2297,7 @@ app.get("/api/me", (req, res) => {
     user,
     identityType: user?.identityType || null,
     isZgcMember: user?.isZgcMember === true,
+    teacherAccess: hasAccess && canAccessTeacher(user),
     accessMode: hasAccess ? user.identityType === "dingtalk" ? "dingtalk" : "invitation" : null,
   });
 });
@@ -2552,13 +2572,11 @@ app.get("/api/game/leaderboard", (req, res) => {
     viewerOpenId,
     leaderboardIdentities(),
   );
-  // Play buttons travel only to viewers allowed to open the recordings;
-  // everyone else (including signed-out visitors) renders a plain board.
-  if (!canViewLeaderboardPlayback(viewer)) {
-    leaderboard.entries = leaderboard.entries.map(
-      ({ answerId, mediaType, ...entry }) => entry,
-    );
-  }
+  // Playback lives on the teacher console only; the public board never
+  // receives the answer ids, so no viewer ever sees a play button here.
+  leaderboard.entries = leaderboard.entries.map(
+    ({ answerId, mediaType, ...entry }) => entry,
+  );
   res.set("Cache-Control", "no-store");
   res.json({ challenge: gameChallengeForClient(challenge), ...leaderboard });
 });
@@ -2863,6 +2881,14 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttem
   }
 
   appendJsonLine(metadataFile, record);
+  // The answer just joined a weekly board; queue its one-time AI detection
+  // when it ends up being its owner's best.
+  try {
+    if (record.evaluation?.status === "completed" && record.question?.challengeId) {
+      ensureTeacherDetections();
+      void processTeacherDetections().catch(() => {});
+    }
+  } catch { /* The worker tick retries the detection queue. */ }
 
   res.json({
     ok: true,
@@ -3035,11 +3061,11 @@ app.get("/api/public-evaluations/:id/video", (req, res) => {
   res.sendFile(videoPath);
 });
 
-// Leaderboard answer playback is limited to these DingTalk display names
+// The teacher console (/teacher) is limited to these DingTalk display names
 // (exact match after trimming, compared against the authenticated session
-// name). Everyone else sees the board without play buttons, and the media and
-// transcript endpoints reject the request.
-const LEADERBOARD_PLAYBACK_NAMES = new Set([
+// name). The public leaderboard never shows playback controls any more; the
+// media and transcript endpoints below reject everyone outside this list.
+const TEACHER_NAMES = new Set([
   "王旭东",
   "邹欣",
   "吴衍标",
@@ -3047,11 +3073,13 @@ const LEADERBOARD_PLAYBACK_NAMES = new Set([
   "柳君丽",
   "胡辰",
   "何源",
+  "董圣娇",
+  "赵晨",
 ]);
 
-// Guests who redeemed one of these invitation codes may also watch. The code
+// Guests who redeemed one of these invitation codes may also enter. The code
 // is resolved from the invitation record bound to the guest's openId.
-const LEADERBOARD_PLAYBACK_INVITATION_CODES = new Set(["B19B59975BC0"]);
+const TEACHER_INVITATION_CODES = new Set(["B19B59975BC0"]);
 
 function guestInvitationCodeFor(openId) {
   const guestId = safeText(openId);
@@ -3060,13 +3088,13 @@ function guestInvitationCodeFor(openId) {
   return safeText(record?.code).toUpperCase();
 }
 
-function canViewLeaderboardPlayback(user, guestCode = null) {
+function canAccessTeacher(user, guestCode = null) {
   if (!user) return false;
   if (isGuest(user)) {
     const code = typeof guestCode === "string" ? guestCode : guestInvitationCodeFor(user.openId);
-    return LEADERBOARD_PLAYBACK_INVITATION_CODES.has(code.toUpperCase());
+    return TEACHER_INVITATION_CODES.has(code.toUpperCase());
   }
-  return LEADERBOARD_PLAYBACK_NAMES.has(safeText(user.name).trim());
+  return TEACHER_NAMES.has(safeText(user.name).trim());
 }
 
 // Resolves a leaderboard answer's playable media. A record qualifies only when
@@ -3106,8 +3134,8 @@ function leaderboardAnswerMedia(records, id, recordingsPath) {
 }
 
 app.get("/api/game/leaderboard-answers/:id/media", requireVisitor, (req, res) => {
-  if (!canViewLeaderboardPlayback(req.user)) {
-    return res.status(403).json({ error: "Leaderboard playback is not available for your account." });
+  if (!canAccessTeacher(req.user)) {
+    return res.status(403).json({ error: "Teacher playback is not available for your account." });
   }
   const media = leaderboardAnswerMedia(readJsonLines(metadataFile), req.params.id, recordingsDir);
   if (!media) {
@@ -3123,8 +3151,8 @@ app.get("/api/game/leaderboard-answers/:id/media", requireVisitor, (req, res) =>
 });
 
 app.get("/api/game/leaderboard-answers/:id/transcript", requireVisitor, (req, res) => {
-  if (!canViewLeaderboardPlayback(req.user)) {
-    return res.status(403).json({ error: "Leaderboard playback is not available for your account." });
+  if (!canAccessTeacher(req.user)) {
+    return res.status(403).json({ error: "Teacher playback is not available for your account." });
   }
   const media = leaderboardAnswerMedia(readJsonLines(metadataFile), req.params.id, recordingsDir);
   if (!media) {
@@ -3139,6 +3167,125 @@ app.get("/api/game/leaderboard-answers/:id/transcript", requireVisitor, (req, re
     question: safeText(media.record.question?.question || media.record.question?.title),
     finishedAt: safeText(media.record.finishedAt),
   });
+});
+
+// ---- Teacher console -------------------------------------------------------
+// Everything below serves /teacher: standings with playback fields and AI
+// verdicts for allow-listed teachers, plus CSV exports for record keeping.
+
+function requireTeacher(req, res, next) {
+  if (!canAccessTeacher(req.user)) {
+    return res.status(403).json({ error: "The teacher console is not available for your account." });
+  }
+  next();
+}
+
+// Builds teacher-view entries: playback fields kept, plus the best answer's
+// completion time and its one-time AI-detection verdict.
+function teacherLeaderboardPayload(records, challenge, challenges, group) {
+  const leaderboard = leaderboardForChallenge(records, challenge, null, leaderboardIdentities());
+  const detections = detectionById();
+  const recordById = new Map(records.map((record) => [record.id, record]));
+  const entries = leaderboard.entries.map((entry) => {
+    const answer = entry.answerId ? recordById.get(entry.answerId) : null;
+    return {
+      ...entry,
+      finishedAt: answer?.finishedAt || "",
+      // No stored recording means nothing to play back or analyze.
+      aiSuspicious: entry.answerId
+        ? detectionSummary(detections.get(entry.answerId))
+        : { state: "none", suspicious: false, confidence: null, reason: "" },
+    };
+  });
+  return {
+    group,
+    challenge: gameChallengeForClient(challenge),
+    challenges: challenges.map(gameChallengeForClient),
+    participantCount: leaderboard.participantCount,
+    entries,
+  };
+}
+
+function resolveTeacherChallenge(query) {
+  const group = normalizeGameGroup(safeText(query.group));
+  const challenges = availableChallenges(new Date(), 10, group);
+  const requestedId = safeText(query.challengeId);
+  const challenge = requestedId
+    ? challenges.find((item) => item.id === requestedId)
+    : challenges[0];
+  return { group, challenges, challenge };
+}
+
+app.get("/api/teacher/leaderboard", requireVisitor, requireTeacher, (req, res) => {
+  const { group, challenges, challenge } = resolveTeacherChallenge(req.query);
+  if (!challenge) {
+    return res.status(400).json({ error: "Choose an available weekly challenge." });
+  }
+  // A missing verdict enqueues its one-time analysis without blocking the board.
+  try { ensureTeacherDetections(); } catch { /* The worker tick retries. */ }
+
+  res.set("Cache-Control", "no-store");
+  res.json(teacherLeaderboardPayload(readJsonLines(metadataFile), challenge, challenges, group));
+});
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  return /["',\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function teacherCsvRow(entry, challenge, group) {
+  return [
+    entry.rank,
+    entry.name,
+    entry.score,
+    entry.attempts,
+    entry.finishedAt,
+    group,
+    challenge.startsAt.slice(0, 10),
+    entry.aiSuspicious?.suspicious ? "yes" : "",
+  ].map(csvCell).join(",");
+}
+
+function sendTeacherCsv(res, filename, rows) {
+  // The BOM lets Excel recognize UTF-8 so Chinese names survive the import.
+  res.set({
+    "Content-Type": "text/csv; charset=utf-8",
+    "Content-Disposition": `attachment; filename="${filename}"`,
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+  });
+  res.send(`\uFEFF${rows.join("\r\n")}\r\n`);
+}
+
+const TEACHER_CSV_HEADER = ["Rank", "Name", "Score", "Attempts", "FinishedAt", "Group", "Week", "AI-suspicious"].join(",");
+
+app.get("/api/teacher/export", requireVisitor, requireTeacher, (req, res) => {
+  const { group, challenge } = resolveTeacherChallenge(req.query);
+  if (!challenge) {
+    return res.status(400).json({ error: "Choose an available weekly challenge." });
+  }
+  const payload = teacherLeaderboardPayload(readJsonLines(metadataFile), challenge, [], group);
+  const rows = [TEACHER_CSV_HEADER, ...payload.entries.map((entry) => teacherCsvRow(entry, challenge, group))];
+  sendTeacherCsv(res, `teacher-export-${challenge.id}.csv`, rows);
+});
+
+app.get("/api/teacher/export-all", requireVisitor, requireTeacher, (_req, res) => {
+  const records = readJsonLines(metadataFile);
+  const challenges = [
+    ...availableChallenges(new Date(), 200, "g1"),
+    ...availableChallenges(new Date(), 200, "g2"),
+  ]
+    .filter((challenge) => records.some((record) =>
+      record?.question?.challengeId === challenge.id &&
+      record?.evaluation?.status === "completed" &&
+      Number.isFinite(Number(record?.evaluation?.overallScore))))
+    .sort((left, right) => left.startsAt.localeCompare(right.startsAt) || left.group.localeCompare(right.group));
+  const rows = [TEACHER_CSV_HEADER];
+  for (const challenge of challenges) {
+    const payload = teacherLeaderboardPayload(records, challenge, [], challenge.group);
+    for (const entry of payload.entries) rows.push(teacherCsvRow(entry, challenge, challenge.group));
+  }
+  sendTeacherCsv(res, "teacher-export-all.csv", rows);
 });
 
 app.get("/api/recordings", requireVisitor, (req, res) => {
@@ -3228,7 +3375,7 @@ app.get("/api/user-figures/:name", requireVisitor, (req, res) => {
   res.sendFile(figurePath);
 });
 
-registerPageRoutes(app, { requirePageAuth });
+registerPageRoutes(app, { requirePageAuth, requireTeacherPage });
 
 app.use((error, _req, res, next) => {
   if (error instanceof multer.MulterError) {
@@ -3248,6 +3395,12 @@ function startServer() {
   if (!process.env.SESSION_SECRET && !process.env.DINGTALK_CLIENT_SECRET && !process.env.DINGTALK_APP_SECRET) {
     throw new Error("SESSION_SECRET is required when DingTalk credentials are absent.");
   }
+  // Backfill AI-detection jobs for best answers that predate the feature and
+  // work through whatever is queued; the worker's tick covers it after this.
+  void ensureTeacherDetections();
+  void processTeacherDetections().catch(() => {
+    console.warn("AI detection catch-up is unavailable right now; the worker will retry.");
+  });
   const timer = queueApi ? setInterval(() => {
     try { queueApi.project(); queueApi.queue.transaction(() => queueApi.queue.sweep()); }
     catch { console.error("Queue projection temporarily unavailable; retrying."); }
@@ -3290,7 +3443,8 @@ module.exports = {
     limitStandaloneMediaInfo,
     mediaCompleteness,
     leaderboardAnswerMedia,
-    canViewLeaderboardPlayback,
+    canAccessTeacher,
+    guestInvitationCodeFor,
     modelMessageText,
     normalizeEvaluation,
     normalizeDingTalkInAppUser,

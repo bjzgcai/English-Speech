@@ -55,6 +55,35 @@
 - The link is offered for used codes too: the same guest recovers their identity on another browser by
   re-entering the name bound to the code.
 
+### Teacher console
+
+- `/teacher` (page `public/teacher.html`, route in `src/routes/pages.js`) is limited to an allow-list:
+  the DingTalk session names in `TEACHER_NAMES` (王旭东, 邹欣, 吴衍标, 高坤, 柳君丽, 胡辰, 何源, 董圣娇, 赵晨)
+  plus guests who redeemed an invitation code in `TEACHER_INVITATION_CODES` (`B19B59975BC0`).
+  `canAccessTeacher(user)` in `src/app.js` is the single gate; the page route redirects everyone else to
+  `/leaderboard`, the APIs return 403, and `/api/me` exposes `teacherAccess` so the nav menu item
+  (`data-teacher-link`) only renders for allow-listed sessions.
+- The public `/leaderboard` never shows playback controls any more: `GET /api/game/leaderboard` always
+  strips `answerId`/`mediaType`. Playback lives on `/teacher` via
+  `GET /api/game/leaderboard-answers/:id/media|transcript`, gated by the same teacher allow-list.
+- `/teacher` serves weekly standings per group (g1/g2) with the best answer per learner, plus CSV export:
+  `GET /api/teacher/export?group=&challengeId=` ("export current week") and `GET /api/teacher/export-all`
+  (both groups, every week with completed answers). CSVs are UTF-8 with BOM.
+- The AI-suspicion flag is produced by `src/ai-detection.js`: a one-time background analysis of each
+  learner's best answer, stored in `ai-detections/metadata.jsonl`. Any existing row — including a
+  terminal `failed` one — suppresses re-enqueueing, so each answer is analyzed at most once. The verdict
+  is surfaced as `aiSuspicious` on teacher entries and an ⚠ "疑似AI" icon before the score.
+- Detection is acoustic-first: the request carries the recording (`recordings/artifacts/<id>/audio.mp3`,
+  the same file the ASR stage sends off-server) as an `input_audio` part to `qwen/qwen3.8-omni-flash`
+  via OpenRouter (`OPENROUTER_AUDIO_DETECTION_MODEL`), plus transcript, delivery metrics, and three
+  sampled frames. Records without an audio artifact fall back to the transcript-only prompt over the
+  internal-first gateway chain. Answers with ≥2 sibling takes of the same question get a precomputed
+  delivery baseline; a take ≥15% faster than the learner's fastest other take injects a veto-proof
+  FLAG RULE (breaths, fillers, or mouth-sync do not override it — a learner can mouth along while TTS
+  plays). Reading the question aloud is explicitly normal behavior, never evidence of AI.
+- Detection is an inference, not proof: the UI must keep saying "possibly AI-generated"/"疑似" rather
+  than asserting cheating, mirroring the pronunciation-scoring caveat above.
+
 ### Audio and evaluation
 
 - Qwen ASR is used only for English audio-to-text transcription. It does not score the learner.

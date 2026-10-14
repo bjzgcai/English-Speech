@@ -3,8 +3,9 @@ const authChip = document.querySelector("[data-auth-chip]");
 const authUserName = document.querySelector("[data-auth-user-name]");
 const logoutButton = document.querySelector("[data-logout-button]");
 const invitationLink = document.querySelector("[data-invitation-link]");
+const teacherLink = document.querySelector("[data-teacher-link]");
 
-function showHeaderUser(user, memberFlag = user?.isZgcMember) {
+function showHeaderUser(user, memberFlag = user?.isZgcMember, canTeach = false) {
   const isSignedIn = Boolean(user) && user.identityType !== "guest";
   const hasAccess = window.VisitorSession.hasAccess;
   // An invited guest is signed in too: hide the sign-in entry and offer logout.
@@ -14,6 +15,8 @@ function showHeaderUser(user, memberFlag = user?.isZgcMember) {
   // Keep the management entry discoverable for signed-in DingTalk users; the
   // API still enforces the organization-member check before allowing access.
   if (invitationLink) invitationLink.hidden = !(isSignedIn && user?.identityType === "dingtalk");
+  // The teacher console link is strictly allow-listed server-side too.
+  if (teacherLink) teacherLink.hidden = !canTeach;
   window.VisitorSession.renderIdentityName(authUserName, user?.name);
 }
 
@@ -27,7 +30,7 @@ async function checkHeaderAuth() {
     }
 
     const data = await response.json();
-    showHeaderUser(data.user || null, data.isZgcMember === true || data.user?.isZgcMember === true);
+    showHeaderUser(data.user || null, data.isZgcMember === true || data.user?.isZgcMember === true, data.teacherAccess === true);
   } catch {
     showHeaderUser(null);
   }
