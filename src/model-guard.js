@@ -5,9 +5,10 @@ const defaults = {
   question: { concurrent: 2, rpm: 20, tpm: 120000 },
   transcription: { concurrent: 2, rpm: 20, tpm: 0 },
   scoring: { concurrent: 2, rpm: 12, tpm: 300000 },
+  detection: { concurrent: 2, rpm: 12, tpm: 300000 },
 };
 const scopesFor = kind => kind === "scoring" ? [kind] : [kind, "internal"];
-const kindsFor = scope => scope === "internal" ? ["question", "transcription"] : [scope];
+const kindsFor = scope => scope === "internal" ? ["question", "transcription", "detection"] : [scope];
 
 class ModelGuard {
   constructor(queue, { now = Date.now, limits = defaults } = {}) {

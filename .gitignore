@@ -16,7 +16,11 @@ client-errors.jsonl
 .workbuddy/
 invitations/
 user-figures/
+ai-detections/
 not-empty-user.json
+
+# ZCode session-local state.
+.zcode/
 
 # Local scratch scripts and smoke-test residue from ad-hoc runs.
 /tmp/

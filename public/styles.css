@@ -289,7 +289,7 @@ button:disabled {
   flex: none;
   color: var(--muted);
   border-radius: 10px;
-  padding: 10px 11px;
+  padding: 10px 9px;
   text-decoration: none;
   font-size: 14px;
   font-weight: 650;

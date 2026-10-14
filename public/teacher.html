@@ -1,0 +1,52 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Teacher console | OScanner-Eng</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/intro.css"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/teacher.css"><link rel="stylesheet" href="/i18n.css"><link rel="stylesheet" href="/mobile-nav.css" />
+  </head><body><header class="docs-nav"><a class="brand" href="/leaderboard"><span class="brand-mark"><span>E</span></span><span>OScanner-Eng</span></a><div class="header-menu"><nav><a href="/leaderboard">Leaderboard</a><a href="/game">Game</a><a href="/examine">Examine</a><a href="/history">History</a><a href="/methodology">Rubric</a><a href="/prepare">Prepare</a><a href="/intro">Intro</a><a href="/invitation-codes" data-invitation-link hidden>Invitation</a><a href="/teacher" data-teacher-link aria-current="page">Teacher</a></nav><a class="header-login" data-header-login href="/auth/dingtalk">Sign in</a><div class="auth-chip" data-auth-chip hidden><span data-auth-user-name></span><button data-logout-button>Logout</button></div></div></header><main class="teacher-main" id="mainContent">
+    <section class="leaderboard-panel" id="teacherPanel" aria-labelledby="teacherTitle">
+      <div class="leaderboard-heading">
+        <div>
+          <h2 id="teacherTitle">Teacher console</h2>
+          <p id="teacherTopic">Weekly standings with answer playback, AI integrity flags, and CSV export.</p>
+        </div>
+        <div class="leaderboard-controls">
+          <label class="leaderboard-picker">
+            Challenge week
+            <select id="teacherWeek" aria-label="Choose a challenge week"></select>
+          </label>
+          <fieldset class="group-picker" id="teacherGroupPicker">
+            <legend>Group</legend>
+            <label>
+              <input type="radio" name="teacherGroup" value="g1" checked>
+              <span>Group 1</span>
+            </label>
+            <label>
+              <input type="radio" name="teacherGroup" value="g2">
+              <span>Group 2</span>
+            </label>
+          </fieldset>
+        </div>
+      </div>
+      <div class="teacher-export-bar">
+        <a class="codes-action" id="exportCurrent" download>Export current week</a>
+        <a class="codes-action" id="exportAll" download href="/api/teacher/export-all">Export all</a>
+      </div>
+      <div class="leaderboard-summary" id="teacherSummary" aria-live="polite"></div>
+      <ol class="leaderboard-list" id="teacherList" role="list" aria-live="polite">
+        <li class="leaderboard-loading">Loading leaderboard...</li>
+      </ol>
+      <footer class="leaderboard-footer">
+        <p>Your highest completed score is the one that counts.</p>
+      </footer>
+    </section>
+  </main><aside class="video-modal" id="videoModal" aria-live="polite" hidden>
+    <div class="video-modal-header">
+      <strong id="videoModalTitle">Saved answer</strong>
+      <button type="button" id="closeVideoModal" aria-label="Close video">Close</button>
+    </div>
+    <video id="historyVideo" controls playsinline></video>
+    <div class="video-modal-transcript" id="videoModalTranscript" hidden>
+      <span class="video-modal-transcript-label">Transcript</span>
+      <p id="videoModalTranscriptQuestion" hidden></p>
+      <p id="videoModalTranscriptText"></p>
+    </div>
+  </aside>
+  <script src="/mobile-nav.js"></script>
+  <script src="/i18n.js"></script><script src="/visitor-session.js"></script><script src="/header-auth.js"></script><script src="/teacher.js"></script></body></html>

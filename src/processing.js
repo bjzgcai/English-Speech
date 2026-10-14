@@ -35,7 +35,7 @@ class Semaphore {
     }
   }
 }
-const gates = { ffmpeg: new Semaphore(mediaConcurrency()), ...Object.fromEntries(["transcription", "scoring", "question"].map(kind => [kind, new Semaphore(modelConcurrency(kind))])) };
+const gates = { ffmpeg: new Semaphore(mediaConcurrency()), ...Object.fromEntries(["transcription", "scoring", "question", "detection"].map(kind => [kind, new Semaphore(modelConcurrency(kind))])) };
 let questionObserver = null;
 const delay = (ms, signal) => new Promise((resolve, reject) => {
   const timer = setTimeout(() => { signal?.removeEventListener("abort", abort); resolve(); }, ms);
@@ -100,7 +100,12 @@ async function modelFetch(url, options, kind, key = kind) {
   if (!task && !modelQueue && process.env.NODE_ENV === "test") return fetch(url, options);
   const cached = task?.checkpoint.network?.[key];
   if (cached) return new Response(cached, { status: 200, headers: { "Content-Type": "application/json" } });
-  const timeout = kind === "scoring" ? Number(process.env.EVAL_REQUEST_TIMEOUT_MS) || 600000 : kind === "question" ? 45000 : 120000;
+  // Multimodal detection sends base64 frames and can take much longer than a
+  // plain question-generation request; it must not inherit the question bucket.
+  const timeout = kind === "scoring" ? Number(process.env.EVAL_REQUEST_TIMEOUT_MS) || 600000
+    : kind === "question" ? 45000
+    : kind === "detection" ? Number(process.env.AI_DETECTION_TIMEOUT_MS) || 120000
+    : 120000;
   const guard = modelGuard(task?.queue);
   const signal = AbortSignal.any([options.signal, task?.signal, kind === "question" ? AbortSignal.timeout(timeout) : null].filter(Boolean));
   const reservedTokens = guard ? tokenReservation(options, kind) : 0;
