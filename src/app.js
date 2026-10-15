@@ -646,8 +646,27 @@ app.use((req, res, next) => {
   }
   next();
 });
+// Unauthenticated by design (page beacons fire before sign-in), so volume is
+// throttled per client address like the client-error log: each accepted event
+// costs an fsync'd JSONL append, and an unbounded flood would both fill the
+// disk and slow every read that scans the file.
+const analyticsEventsThrottle = createFailureLimiter({
+  // ~5 beacons per session; a whole class starting at once through one campus
+  // NAT address stays under this, while a scripted flood is shed in seconds.
+  limit: 240,
+  windowMs: 60 * 1000,
+  blockBaseMs: 1000,
+  blockMaxMs: 60 * 1000,
+});
+
 app.post("/api/analytics/events", (req, res) => {
   const allowed = new Set(["examine_enter", "examine_start", "examine_submit", "examine_complete", "examine_failed", "game_enter", "game_question", "game_submit", "game_complete", "game_failed", "privacy_accept", "invite_open", "invite_redeem_success", "invite_redeem_failed"]);
+  const address = clientIp(req);
+  if (analyticsEventsThrottle.check(address).blocked || analyticsEventsThrottle.fail(address).blocked) {
+    // Beacons are fire-and-forget (keepalive fetch), so a silent 204 is the
+    // cheapest way to shed the load without a browser console error.
+    return res.status(204).end();
+  }
   const items = Array.isArray(req.body?.events) ? req.body.events : [req.body];
   try {
     const identity = analyticsIdentity(req);
@@ -2108,8 +2127,23 @@ app.post("/auth/logout", (_req, res) => {
   res.json({ ok: true });
 });
 
+// Invitation codes grant full learner access without DingTalk, so minting
+// them is restricted to DingTalk-authenticated members. The OAuth app is
+// scoped to the configured organization (DINGTALK_CORP_ID), so completing
+// DingTalk sign-in already implies membership — there is no separate
+// per-user org check to perform. Set INVITER_OPEN_IDS (comma-separated) to
+// restrict minting further; unset means every org member may invite.
+const inviterOpenIds = new Set(
+  (process.env.INVITER_OPEN_IDS || "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean),
+);
 function requireZgcMember(req, res, next) {
   if (req.user?.identityType !== "dingtalk") return res.status(403).json({ error: "Only 中关村学院 DingTalk users may manage invitation codes." });
+  if (inviterOpenIds.size && !inviterOpenIds.has(safeText(req.user.openId))) {
+    return res.status(403).json({ error: "Invitation codes are managed by designated members." });
+  }
   next();
 }
 function ownerQuota(openId) {
@@ -3063,10 +3097,13 @@ app.get("/api/public-evaluations/:id/video", (req, res) => {
   res.sendFile(videoPath);
 });
 
-// The teacher console (/teacher) is limited to these DingTalk display names
-// (exact match after trimming, compared against the authenticated session
-// name). The public leaderboard never shows playback controls any more; the
-// media and transcript endpoints below reject everyone outside this list.
+// The teacher console (/teacher) is limited to these accounts. Authorization
+// is keyed on the DingTalk openId from the signed session — the display name
+// is user-changeable in DingTalk, so matching on it alone let any member
+// rename themselves into the console (playback of every learner's
+// recording). Names remain as a secondary, defense-in-depth check for openIds
+// not yet in the allow-list; remove TEACHER_NAMES once every teacher's openId
+// is confirmed.
 const TEACHER_NAMES = new Set([
   "王旭东",
   "邹欣",
@@ -3079,6 +3116,15 @@ const TEACHER_NAMES = new Set([
   "赵晨",
 ]);
 
+// Teacher openIds go here (TEACHER_OPEN_IDS in the environment is a
+// comma-separated override for the same list).
+const TEACHER_OPENIDS = new Set(
+  (process.env.TEACHER_OPEN_IDS || "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean),
+);
+
 // Guests who redeemed one of these invitation codes may also enter. The code
 // is resolved from the invitation record bound to the guest's openId.
 const TEACHER_INVITATION_CODES = new Set(["B19B59975BC0"]);
@@ -3090,13 +3136,32 @@ function guestInvitationCodeFor(openId) {
   return safeText(record?.code).toUpperCase();
 }
 
+// Server-side enrollment aid: when access is granted via the name fallback, the
+// stable openId is logged once per process so the operator can copy it into
+// TEACHER_OPEN_IDS and retire the name list.
+const teacherNameFallbackSeen = new Set();
 function canAccessTeacher(user, guestCode = null) {
   if (!user) return false;
   if (isGuest(user)) {
     const code = typeof guestCode === "string" ? guestCode : guestInvitationCodeFor(user.openId);
     return TEACHER_INVITATION_CODES.has(code.toUpperCase());
   }
-  return TEACHER_NAMES.has(safeText(user.name).trim());
+  const openId = safeText(user.openId);
+  // The openId is the stable, non-user-controllable key. Once any openId is
+  // enrolled, display names no longer grant access at all — otherwise renaming
+  // a DingTalk profile into the console would keep working. Until then, the
+  // name fallback keeps existing teacher sessions working and logs the
+  // openIds the operator should enroll.
+  if (TEACHER_OPENIDS.size) return TEACHER_OPENIDS.has(openId);
+  if (TEACHER_NAMES.has(safeText(user.name).trim())) {
+    const key = `${openId}:${safeText(user.name).trim()}`;
+    if (!teacherNameFallbackSeen.has(key)) {
+      teacherNameFallbackSeen.add(key);
+      console.warn(`[teacher-enroll] name-fallback access for ${safeText(user.name).trim()}: add openId ${openId} to TEACHER_OPEN_IDS.`);
+    }
+    return true;
+  }
+  return false;
 }
 
 // Resolves a leaderboard answer's playable media. A record qualifies only when
@@ -3231,7 +3296,11 @@ app.get("/api/teacher/leaderboard", requireVisitor, requireTeacher, (req, res) =
 });
 
 function csvCell(value) {
-  const text = String(value ?? "");
+  let text = String(value ?? "");
+  // Formula injection: learner-controlled names can start with =, +, -, or @
+  // and execute when a teacher opens the export in Excel. A leading apostrophe
+  // is the standard neutralizer; it displays as the literal text instead.
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
   return /["',\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
@@ -3412,6 +3481,26 @@ app.use((error, _req, res, next) => {
   next(error);
 });
 
+// The events log grows by every page beacon and is fully rescanned by the
+// admin statistics endpoints, so it is pruned on a long horizon: 180 days keeps
+// every digest window and first-seen computation the digests rely on, while
+// the file cannot grow without bound. Cheap (only runs when the file changed)
+// and off the request path.
+const EVENTS_RETENTION_DAYS = positiveInteger(process.env.ANALYTICS_EVENTS_RETENTION_DAYS, 180);
+let eventsPruneCheckedAt = 0;
+function pruneAnalyticsEvents() {
+  const now = Date.now();
+  if (now - eventsPruneCheckedAt < 6 * 3600 * 1000) return;
+  eventsPruneCheckedAt = now;
+  try {
+    const cutoff = new Date(now - EVENTS_RETENTION_DAYS * 24 * 3600 * 1000).toISOString();
+    updateJsonLines(analyticsEventsFile, (events) => {
+      const keep = events.filter((event) => Date.parse(event?.ts || "") >= Date.parse(cutoff));
+      return keep.length === events.length ? events : keep;
+    });
+  } catch { /* pruning must never interfere with serving */ }
+}
+
 function startServer() {
   if (!process.env.SESSION_SECRET && !process.env.DINGTALK_CLIENT_SECRET && !process.env.DINGTALK_APP_SECRET) {
     throw new Error("SESSION_SECRET is required when DingTalk credentials are absent.");
@@ -3422,15 +3511,18 @@ function startServer() {
   void processTeacherDetections().catch(() => {
     console.warn("AI detection catch-up is unavailable right now; the worker will retry.");
   });
+  pruneAnalyticsEvents();
   const timer = queueApi ? setInterval(() => {
     try { queueApi.project(); queueApi.queue.transaction(() => queueApi.queue.sweep()); }
     catch { console.error("Queue projection temporarily unavailable; retrying."); }
   }, 1000) : null;
   timer?.unref();
+  const eventsTimer = setInterval(pruneAnalyticsEvents, 6 * 3600 * 1000);
+  eventsTimer.unref();
   const server = app.listen(port, process.env.HOST || undefined, () => {
     console.log(`OScanner-Eng is running at http://localhost:${port}`);
   });
-  server.on("close", () => { clearInterval(timer); });
+  server.on("close", () => { clearInterval(timer); clearInterval(eventsTimer); });
   server.requestTimeout = 300000;
   server.headersTimeout = 15000;
   return server;

@@ -143,6 +143,65 @@ test("an invalid model verdict retries with backoff, then fails terminally", asy
   assert.equal(await processTeacherDetections(), 0);
 });
 
+test("a slow model caps in-flight claims so a backlog cannot pin every payload in memory", async () => {
+  // A bulk re-enqueue of many best answers must not claim them all at once:
+  // each claimed row pins its base64 payload until the model responds, and
+  // claiming everything in one pass OOM-killed the worker in production.
+  for (let index = 0; index < 6; index++) seedAnswer(`backlog-${index}`, `user-backlog-${index}`, 80 + index);
+  assert.equal(ensureTeacherDetections(), 6);
+
+  let resolving;
+  const gate = new Promise(resolve => { resolving = resolve; });
+  const started = [];
+  const originalModelFetch = processing.modelFetch;
+  processing.modelFetch = async () => {
+    started.push(Date.now());
+    await gate;
+    return new Response(JSON.stringify({ choices: [{ message: { content: '{"aiGenerated":false,"confidence":90,"reason":"ok"}' } }] }));
+  };
+  const pending = [processTeacherDetections()];
+  // Give the loop time to claim as many rows as it (incorrectly) could.
+  await new Promise(resolve => setTimeout(resolve, 50));
+  try {
+    assert.ok(started.length <= 2, `in-flight analyses were capped (claimed ${started.length})`);
+  } finally {
+    processing.modelFetch = originalModelFetch;
+    resolving();
+  }
+  await pending;
+});
+
+test("a claim left processing by a dead process is reclaimed after the stale window", async (t) => {
+  const best = "best-answer-stale";
+  seedAnswer(best, "user-stale", 88);
+  ensureTeacherDetections();
+
+  // Simulate the pre-fix failure shape: a worker died mid-analysis and its row
+  // is stuck in processing with an ISO-string claimedAt. The comparison must
+  // parse the timestamp, not coerce the string against a number.
+  const { updateJsonLines } = require("../src/storage");
+  updateJsonLines(config.aiDetectionsFile, rows => rows.map(row =>
+    row.id === best ? { ...row, state: "processing", attempts: 1, claimedAt: new Date(Date.now() - 10 * 60 * 1000).toISOString() } : row));
+
+  let analyzed = 0;
+  t.mock.method(processing, "modelFetch", async () => {
+    analyzed++;
+    return new Response(JSON.stringify({ choices: [{ message: { content: '{"aiGenerated":false,"confidence":90,"reason":"Recovered after a stale claim."}' } }] }));
+  });
+
+  assert.equal(await processTeacherDetections(), 1, "the stale claim was reclaimed and analyzed");
+  assert.equal(analyzed, 1);
+  assert.equal(latestRow(best).state, "completed");
+
+  // A recently claimed row is NOT stolen: another process may legitimately be
+  // analyzing it right now.
+  updateJsonLines(config.aiDetectionsFile, rows => rows.map(row =>
+    row.id === best ? { ...row, state: "processing", attempts: 2, claimedAt: new Date().toISOString() } : row));
+  const second = await processTeacherDetections();
+  assert.equal(latestRow(best).state, "processing", "a fresh claim is left alone");
+  assert.ok(second === 0 || analyzed === 1, "no second analysis of a fresh claim");
+});
+
 test("an answer with an audio artifact sends it as an input_audio part to the audio model", async (t) => {
   const best = "best-answer-5";
   seedAnswer(best, "user-f", 93);

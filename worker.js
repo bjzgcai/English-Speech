@@ -11,6 +11,11 @@ process.env.QUEUE_WORKER = "true";
 const { testHelpers: evaluation } = require("./src/app");
 
 const queue = new Queue(config.queueFile);
+// Tick-time model calls (detection catch-up, comment moderation) run outside a
+// job's AsyncLocalStorage context, so without this they bypass the shared
+// RPM/concurrency/circuit guard tables in queue.sqlite and can stampede the
+// internal gateway exactly like the 2026-10-13 detection outage.
+require("./src/processing").setModelQueue(queue);
 const active = new Map();
 const pipelineLimit = pipelineConcurrency();
 let stopping = false;
@@ -81,6 +86,20 @@ function tick() {
   queue.setting("workerResources", JSON.stringify({ ...resources(), pipelines: { limit: pipelineLimit, active: active.size }, rssBytes: process.memoryUsage().rss }));
   if (Date.now() - Number(queue.setting("lastPrune") || 0) > 3600000) {
     queue.run("DELETE FROM telemetry WHERE id NOT IN (SELECT id FROM telemetry ORDER BY id DESC LIMIT 10000)");
+    // Terminal jobs hold full payloads, results, and cached model responses but
+    // are never read again after projection; keep a week for debugging, then
+    // reclaim the space so queue.sqlite cannot grow with every answer ever
+    // evaluated (it was 21 MB within weeks of launch). projected=1 guards the
+    // pathological case of the web process being down for the whole window: an
+    // unprojected job still holds the only copy of its result.
+    queue.run("DELETE FROM jobs WHERE state IN ('completed','failed','canceled') AND projected=1 AND updated < ?", Date.now() - 7 * 24 * 3600000);
+    // Model-retry bookkeeping is only meaningful while a job can still run;
+    // the cancellations tombstone (a separate table) keeps a pruned job's
+    // submission ID rejected, so the attempts rows are dead weight.
+    queue.run("DELETE FROM attempts WHERE job NOT IN (SELECT id FROM jobs)");
+    // The admission a question setting was generated for no longer exists
+    // once its job is pruned, so the stored question is unreadable dead weight.
+    queue.run("DELETE FROM settings WHERE key LIKE 'question:%' AND key NOT IN (SELECT 'question:'||admission FROM jobs)");
     queue.setting("lastPrune", Date.now());
   }
   for (const [id, task] of active) {

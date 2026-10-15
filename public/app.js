@@ -1721,6 +1721,18 @@ function setPlayMode(route) {
 
 function setRoute(pathname) {
   const route = normalizeRoute(pathname);
+  // A pending preparation countdown or generating modal belongs to the
+  // examine/game page that opened it. Leaving that page (Back, a nav link, an
+  // identity change) must cancel it, or the expiring countdown would
+  // auto-start the camera over an unrelated page. An active recorder is
+  // exempt: its own guards manage the modal and the stream.
+  const preparing = (state.prepareCountdownResolve || !prepareModal.hidden)
+    && !(state.recorder && state.recorder.state !== "inactive");
+  if (preparing && route !== "/examine" && route !== "/game") {
+    state.prepareCountdownResolve?.("cancel");
+    closePrepareModal();
+    stopStream();
+  }
   const isHistory = route === "/history";
   const isLeaderboard = route === "/leaderboard";
   const isGame = route === "/game";
@@ -1881,6 +1893,10 @@ profileForm.addEventListener("submit", async (event) => {
     setStatus("Thinking time");
     const preparation = await waitForPreparationCountdown(data.question);
     if (preparation !== "record" || actionOwner !== state.authUser?.openId) return;
+    // The countdown may have resolved while the user navigated away; the
+    // camera must not start on a page the user never meant to record on.
+    const activeRoute = normalizeRoute(window.location.pathname);
+    if (activeRoute !== "/examine" && activeRoute !== "/game") return;
     await startRecording();
   } catch (error) {
     if (actionOwner !== state.authUser?.openId) return;
@@ -2070,7 +2086,36 @@ function isRecordingIncomplete(capturedSeconds, recordedSeconds) {
 
 async function finishRecording() {
   if (!state.recorder || state.recorder.state === "inactive") return;
-  const recordingOwner = state.authUser.openId;
+  const recordingOwner = state.authUser?.openId || null;
+  if (!recordingOwner) {
+    // The session dropped mid-recording, so nobody can own this answer. Stop
+    // the recorder and release the devices cleanly instead of throwing with
+    // the camera left on and chunks accumulating.
+    if (state.autoStopTimer) {
+      window.clearTimeout(state.autoStopTimer);
+      state.autoStopTimer = null;
+    }
+    const stopped = new Promise((resolve) => {
+      state.recorder.addEventListener("stop", resolve, { once: true });
+    });
+    state.recorder.stop();
+    await stopped;
+    recorderPanel.classList.remove("is-recording");
+    closePrepareModal();
+    recordingBadge.classList.remove("visible");
+    stopRecordingTimer();
+    stopStream();
+    await releaseWakeLock();
+    state.recorder = null;
+    state.chunks = [];
+    finishButton.textContent = "Finish and save";
+    logoutButton.disabled = false;
+    setDiscardAvailable(false);
+    setVideoLoading(false);
+    setStatus("Sign in required");
+    saveResult.textContent = "Your sign-in session was lost, so this recording could not be saved. Sign in and record the answer again.";
+    return;
+  }
   const recordingQuestionId = state.question.id;
   const recordingStartedAt = state.startedAt;
   const recordingChunks = state.chunks;
@@ -2117,6 +2162,11 @@ async function finishRecording() {
   state.saveAbortController = new AbortController();
   finishButton.disabled = true;
   finishButton.textContent = "Saving and evaluating…";
+  // Captured before stopRecordingTimer() clears recordingStartedAtMs: the
+  // shortfall check compares the file's real duration against this wall time.
+  const recordedSeconds = state.recordingStartedAtMs
+    ? (Date.now() - state.recordingStartedAtMs) / 1000
+    : null;
   stopRecordingTimer();
   setStatus("Saving");
   saveResult.textContent = "Finalizing recording, uploading it, and evaluating the answer...";
@@ -2154,7 +2204,6 @@ async function finishRecording() {
 
   // Scoring a fraction of the answer is worse than asking for a second take, so
   // verify the file before it is uploaded or counted as an attempt.
-  const recordedSeconds = state.recordingStartedAtMs ? (Date.now() - state.recordingStartedAtMs) / 1000 : null;
   const capturedSeconds = await measureCapturedSeconds(videoBlob);
   if (isRecordingIncomplete(capturedSeconds, recordedSeconds)) {
     state.activeSaveId = null;

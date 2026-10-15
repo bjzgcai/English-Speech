@@ -92,4 +92,13 @@ find "$backup_dir" -type f \
   \( -name 'recordings-*.tar.gz.age' -o -name 'recordings-*.tar.gz.age.sha256' \) \
   -mtime "+$backup_retention_days" -delete
 
+# Off-site copy: the archive lives on the same disk as the recordings, so
+# without a copy a single disk failure takes the data and every backup. The
+# hook is a drop-in command (rsync/rclone style) that receives the archive and
+# its checksum as arguments; unset means offloading is a manual step.
+if [[ -n "${BACKUP_OFFLOAD_COMMAND:-}" ]]; then
+  echo "Copying encrypted backup off-host..."
+  $BACKUP_OFFLOAD_COMMAND "$archive_file" "$archive_file.sha256"
+fi
+
 echo "Encrypted recording backup created: $archive_file"

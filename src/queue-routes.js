@@ -147,8 +147,11 @@ function registerQueueRoutes(app, deps) {
     if (!id) return res.status(400).json({ error: "X-Submission-Id must be a UUID v4." });
     const existing = queue.status(id, req.user.openId);
     if (existing) return res.status(existing.state === "canceled" ? 409 : terminal.has(existing.state) ? 200 : 202).json(existing);
-    if (queue.get("SELECT id FROM jobs WHERE id=?", id)) return res.status(409).json({ error: "Submission ID unavailable." });
-    if (readJsonLines(config.metadataFile).some(record => record.id === id) || queue.get("SELECT id FROM cancellations WHERE id=? AND owner=?", id, req.user.openId)) return res.status(409).json({ error: "Submission ID unavailable." });
+    // SUBMISSION_TAKEN is definitive: the browser can stop retrying and drop
+    // its retained draft. A collision with another owner's job, an already
+    // persisted answer, or a discard tombstone can never resolve by retrying.
+    if (queue.get("SELECT id FROM jobs WHERE id=?", id)) return res.status(409).json({ code: "SUBMISSION_TAKEN", error: "Submission ID unavailable." });
+    if (readJsonLines(config.metadataFile).some(record => record.id === id) || queue.get("SELECT id FROM cancellations WHERE id=? AND owner=?", id, req.user.openId)) return res.status(409).json({ code: "SUBMISSION_TAKEN", error: "Submission ID unavailable." });
     req.queueSubmission = id;
     next();
   });
