@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const config = require("./config");
-const { readJsonLines, updateJsonLines, appendJsonLine } = require("./storage");
+const { readJsonLines, updateJsonLines } = require("./storage");
 const { leaderboardForChallenge } = require("./game");
 const { chatCompletionWithFallback, openRouterChatCompletion, openRouterModelFor } = require("./model-fallback");
 
@@ -57,23 +57,42 @@ function bestAnswerIds(records) {
 }
 
 // Enqueues detection jobs for every current best answer that has no row yet.
-// Fire-and-forget by callers; safe to run repeatedly.
+// Fire-and-forget by callers; safe to run repeatedly. The check and the append
+// share one lock so two concurrent triggers (projection timer, teacher page
+// load, upload completion, boot catch-up) cannot both observe "no row" and
+// append duplicate rows.
 function ensureTeacherDetections() {
   const records = readJsonLines(config.metadataFile);
-  const known = detectionById();
   const queued = [];
-  for (const answerId of bestAnswerIds(records)) {
-    if (known.has(answerId)) continue;
-    const row = {
-      id: answerId,
-      state: "queued",
-      attempts: 0,
-      createdAt: new Date().toISOString(),
-    };
-    appendJsonLine(config.aiDetectionsFile, row);
-    queued.push(row);
-  }
+  const pending = bestAnswerIds(records);
+  if (!pending.size) return 0;
+  updateJsonLines(config.aiDetectionsFile, rows => {
+    const known = new Map();
+    for (const row of rows) known.set(row.id, row);
+    let next = rows;
+    for (const answerId of pending) {
+      if (known.has(answerId)) continue;
+      const row = {
+        id: answerId,
+        state: "queued",
+        attempts: 0,
+        createdAt: new Date().toISOString(),
+      };
+      next = next === rows ? [...rows] : next;
+      next.push(row);
+      known.set(answerId, row);
+      queued.push(row);
+    }
+    return next;
+  });
   return queued.length;
+}
+
+// claimedAt is an ISO 8601 string; parsing it keeps the stale-claim recovery
+// working regardless of how old rows were written.
+function claimAgeMs(row) {
+  const claimedAt = Date.parse(row.claimedAt || "");
+  return Number.isFinite(claimedAt) ? Date.now() - claimedAt : Infinity;
 }
 
 function claimJob() {
@@ -82,7 +101,7 @@ function claimJob() {
     const job = rows.find(row =>
       row.state === "queued" ||
       (row.state === "retry" && (!row.retryAt || row.retryAt <= Date.now())) ||
-      (row.state === "processing" && (!row.claimedAt || row.claimedAt <= Date.now() - STALE_PROCESSING_MS)));
+      (row.state === "processing" && claimAgeMs(row) >= STALE_PROCESSING_MS));
     if (!job) return rows;
     claimed = { ...job, state: "processing", attempts: (job.attempts || 0) + 1, claimedAt: new Date().toISOString() };
     return rows.map(row => row.id === job.id ? claimed : row);
@@ -196,9 +215,21 @@ function retryJob(job, error) {
   }));
 }
 
+// Each in-flight analysis pins its full request payload (base64 audio, frames,
+// stringified body — megabytes) until the model responds, and claims used to
+// race far ahead of the 2-slot model gate: a bulk re-enqueue claimed every
+// backlog row within seconds and OOM-killed the process. Claiming is capped per
+// process instead; the worker tick and the web projection timer re-enter and
+// drain the rest.
+const MAX_CONCURRENT_ANALYSES = 2;
+let analysesInFlight = 0;
+
 async function processOne() {
+  if (analysesInFlight >= MAX_CONCURRENT_ANALYSES) return false;
   const job = claimJob();
   if (!job) return false;
+  analysesInFlight += 1;
+  try {
   const records = readJsonLines(config.metadataFile);
   const record = records.find(item => item?.id === job.id);
   if (!record) {
@@ -277,11 +308,16 @@ async function processOne() {
     retryJob(job, error);
   }
   return true;
+  } finally {
+    analysesInFlight -= 1;
+  }
 }
 
 async function processTeacherDetections() {
   let processed = 0;
-  // A slow catch-up must not block the request that kicked it.
+  // A slow catch-up must not block the request that kicked it, and the
+  // in-flight cap means one pass drains at most MAX_CONCURRENT_ANALYSES rows;
+  // callers re-enter to work through the rest.
   while (await processOne()) processed++;
   return processed;
 }

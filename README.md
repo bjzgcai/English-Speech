@@ -87,12 +87,21 @@ Recording protection and production maintenance use:
 RECORDING_RETENTION_DAYS=0
 BACKUP_RETENTION_DAYS=30
 BACKUP_AGE_RECIPIENT=<public-age-recipient>
+RECORDING_BACKUP_ENABLED=true
 ```
 
 `RECORDING_RETENTION_DAYS=0` disables live-recording expiration, so videos and
 their extracted evaluation artifacts are preserved indefinitely. Encrypted
 backup snapshots expire independently according to `BACKUP_RETENTION_DAYS` (30
 days by default).
+
+`RECORDING_BACKUP_ENABLED=false` turns off the encrypted backup and generates
+the maintenance unit without its service stop/start steps: the nightly timer
+then runs only recording retention and the orphan sweep with the application
+and worker fully up, and deployment becomes the only source of restarts. The
+`age` command and `BACKUP_AGE_RECIPIENT` are required only while the backup is
+enabled; switching either way takes effect on the next `./deploy.sh`, which
+regenerates the unit.
 
 The browser never receives API keys. Question generation goes through `POST /api/generate-question`.
 
@@ -379,9 +388,12 @@ are available through `node scripts/access-browser-check.js` and
 
 The production service applies a `0077` umask. Persistent directories are mode
 `0700`, and data files are mode `0600`, limiting access to the service account.
-The daily recording-maintenance unit briefly stops the application, creates an
-encrypted backup, skips live-recording deletion when retention is disabled, and
-starts the application again.
+The daily recording-maintenance unit comes in two shapes, selected at deploy
+time by `RECORDING_BACKUP_ENABLED`. With the backup enabled (the default) it
+briefly stops the application, creates an encrypted backup, skips
+live-recording deletion when retention is disabled, and starts the application
+again. With the backup disabled it runs recording retention and the orphan
+upload sweep only, without stopping anything.
 
 `openId` remains the ownership field. Browser OAuth stores the application-scoped
 `openId` returned directly by DingTalk. H5 in-app login returns the organization's
@@ -412,10 +424,13 @@ printed public recipient into production's original
 `/srv/englisheval/shared/.env` as `BACKUP_AGE_RECIPIENT`. Never copy the identity
 file or a local `.env` to production.
 
-Production must have the `age` command installed. Deployment refuses to proceed
-without `age`, an explicit non-negative retention setting, and a native age recipient. The
-maintenance timer runs daily around 03:15 and writes encrypted snapshots to
-`/srv/englisheval/backups`. It never creates a plaintext archive.
+Production must have the `age` command installed when the recording backup is
+enabled. Deployment refuses to proceed without `age`, an explicit non-negative
+retention setting, and a native age recipient; with
+`RECORDING_BACKUP_ENABLED=false` only the retention setting is required. The
+maintenance timer runs daily around 03:15 and, with the backup enabled, writes
+encrypted snapshots to `/srv/englisheval/backups`. It never creates a
+plaintext archive.
 
 To test recovery, restore into a new empty staging directory rather than over
 the live persistent data:

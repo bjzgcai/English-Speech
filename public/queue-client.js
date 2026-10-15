@@ -248,14 +248,14 @@
             break;
           } catch (error) {
             if (error.code === "IDENTITY_CHANGED" || ![409, 429].includes(error.status)) throw error;
-            if (["ATTEMPT_QUOTA_EXCEEDED", "VIDEO_QUOTA_EXCEEDED"].includes(error.code)) throw error;
+            if (["ATTEMPT_QUOTA_EXCEEDED", "VIDEO_QUOTA_EXCEEDED", "SUBMISSION_TAKEN"].includes(error.code)) throw error;
             if (error.status === 409) {
               const existing = await request(`/api/jobs/${saved.id}`, { signal: combined }).catch(() => null);
               if (existing?.state === "canceled") throw new Error("This recording was discarded.");
               await admit(combined);
             }
             show({ state: "queued", delayed: "Waiting for an upload slot. Your recording is saved on this device." });
-            await sleep(5000 + Math.random() * 1000);
+            await sleep(Math.max((error.retryAfter || 5), 5) * 1000);
           }
         }
       }
@@ -265,10 +265,12 @@
       return await follow(existing.id, combined);
     } catch (error) {
       if (error.name !== "AbortError" && error.code !== "IDENTITY_CHANGED" && saved.owner === owner) {
-        show({ state: "draft", delayed: error.message });
+        const definitive = ["ATTEMPT_QUOTA_EXCEEDED", "VIDEO_QUOTA_EXCEEDED", "SUBMISSION_TAKEN"].includes(error.code);
+        show({ state: "draft", delayed: definitive ? "This recording can no longer be submitted." : error.message });
         const resume = mount().querySelector("[data-queue-resume]");
-        resume.hidden = false;
-        resume.onclick = () => send(saved).catch(() => {});
+        resume.hidden = definitive;
+        if (definitive) await draft("delete", undefined, saved.owner).catch(() => {});
+        else resume.onclick = () => send(saved).catch(() => {});
       }
       throw error;
     }
@@ -299,16 +301,41 @@
     if (submittingOwner !== owner) throw identityChanged();
     return send(saved, options);
   }
+  async function draftKeys() {
+    if (!window.indexedDB) return [];
+    const db = await new Promise((resolve, reject) => {
+      const open = indexedDB.open("englisheval-pending", 1);
+      open.onupgradeneeded = () => open.result.createObjectStore("recordings");
+      open.onsuccess = () => resolve(open.result);
+      open.onerror = () => reject(open.error);
+    });
+    try {
+      return await new Promise((resolve, reject) => {
+        const transaction = db.transaction("recordings", "readonly");
+        const request = transaction.objectStore("recordings").getAllKeys();
+        transaction.oncomplete = () => resolve(request.result || []);
+        transaction.onerror = () => reject(transaction.error);
+      });
+    } finally { db.close(); }
+  }
+
   async function restore() {
     await identity();
     const restoringOwner = owner;
+    // Shared machines accumulate drafts under past owners' keys; only the
+    // current owner's draft is ever read, so drop the rest instead of letting
+    // full videos linger in IndexedDB forever.
+    for (const key of await draftKeys()) {
+      if (key !== restoringOwner) await draft("delete", undefined, key).catch(() => {});
+    }
     const saved = await draft("get");
     if (restoringOwner !== owner) throw identityChanged();
     if (saved) {
-      // Stale drafts can reference expired jobs or questions. Do not surface
-      // an internal retry error on every page load; silently retry once and
-      // remove the draft if the server no longer accepts it.
-      await draft("delete", undefined, restoringOwner).catch(() => {});
+      // The upload was interrupted and the recording was retained on this
+      // device. Retry it once in the background: a definitive rejection (the
+      // server no longer accepts this submission) drops the draft for good,
+      // while a transient failure keeps it retained for another visit.
+      void send({ ...saved, retry: true }).catch(() => {});
       return;
     }
     const { admission } = await request("/api/admission");

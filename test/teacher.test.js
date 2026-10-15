@@ -179,3 +179,37 @@ test("a completed AI verdict marks the entry suspicious and flows into the CSV",
   const row = csv.split(/\r\n/).find(line => line.includes("王小明"));
   assert.ok(row && /,yes$/.test(row), "the suspicious answer is flagged in the CSV");
 });
+
+test("a formula-looking learner name is neutralized in the CSV export", async () => {
+  seedAnswer("student-4", "=HYPERLINK(\"http://evil.example\",\"x\")", 64);
+  const csv = await (await fetch(base + "/api/teacher/export?group=g1", { headers: sessionHeaders("王旭东") })).text();
+  const row = csv.split(/\r\n/).find(line => line.includes("HYPERLINK"));
+  // The dangerous leading "=" is prefixed with an apostrophe, so Excel shows
+  // the name as literal text instead of evaluating it as a formula.
+  assert.ok(row, "the crafted name is present in the export");
+  assert.match(row, /,"'=HYPERLINK/);
+});
+
+test("a non-teacher cannot rename themselves into the console once openIds are enrolled", async () => {
+  // With TEACHER_OPEN_IDS set, access is keyed on the stable openId; someone
+  // who renames their DingTalk display name to a teacher's name stays out.
+  // canAccessTeacher is exercised directly because the environment gate is
+  // read once at require time.
+  const { execFileSync } = require("node:child_process");
+  const probe = `
+    process.env.NODE_ENV = "test";
+    process.env.DATA_DIR = ${JSON.stringify(data)};
+    process.env.SESSION_SECRET = "teacher-openid-probe";
+    process.env.TEACHER_OPEN_IDS = "enrolled-teacher-openid";
+    const { testHelpers } = require(${JSON.stringify(path.join(__dirname, "..", "src", "app"))});
+    const named = testHelpers.canAccessTeacher({ openId: "someone-else", name: "王旭东", identityType: "dingtalk" });
+    const enrolled = testHelpers.canAccessTeacher({ openId: "enrolled-teacher-openid", name: "随便", identityType: "dingtalk" });
+    const guest = testHelpers.canAccessTeacher({ openId: "guest:abc", identityType: "guest" }, "B19B59975BC0");
+    console.log(JSON.stringify({ named, enrolled, guest }));
+  `;
+  const stdout = execFileSync("node", ["-e", probe], { cwd: path.join(__dirname, ".."), encoding: "utf8" });
+  const verdict = JSON.parse(stdout.trim().split("\n").pop());
+  assert.equal(verdict.named, false, "a teacher name with a foreign openId is rejected");
+  assert.equal(verdict.enrolled, true, "the enrolled openId passes regardless of display name");
+  assert.equal(verdict.guest, true, "the teacher invitation code guest keeps access");
+});

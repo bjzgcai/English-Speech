@@ -22,7 +22,20 @@
 - `public/`: browser UI and static assets.
 - `questions/metadata.jsonl`: persistent generated-question records.
 - `recordings/`: persistent answer metadata, videos, and extracted evaluation artifacts.
+- `analytics/events.jsonl`: page/event beacon log, throttled per client address on
+  `POST /api/analytics/events` and pruned to `ANALYTICS_EVENTS_RETENTION_DAYS` (default 180) by the
+  web process. `recordings/queue.sqlite` terminal jobs are pruned after 7 days by the worker's
+  hourly pass (jobs must reach `projected=1` first; `question:*` settings rows follow their jobs).
 - `deploy.sh`: versioned rsync/SSH deployment with shared production data and environment files.
+- Nightly maintenance (`scripts/maintain-recordings.sh`) runs the encrypted backup, recording
+  retention, and `scripts/sweep-orphaned-uploads.js` (crash-orphaned pending uploads and
+  `*.tmp` rewrite leftovers older than 24 h). The unit's shape is gated by `RECORDING_BACKUP_ENABLED`
+  (read by `deploy.sh` from the shared env when it generates the systemd unit): `true` (default)
+  keeps the stop-the-world backup window — the only reason the app restarts at night; `false`
+  installs a no-stop unit that runs retention and the sweep with the app live, so deploys are the
+  only restarts. Set `BACKUP_OFFLOAD_COMMAND` in the shared env to copy each encrypted archive
+  off-host (the archive and the recordings otherwise share one disk); it receives the archive path
+  and its `.sha256` path as arguments.
 
 ## Critical workflows to preserve
 
@@ -58,17 +71,22 @@
 ### Teacher console
 
 - `/teacher` (page `public/teacher.html`, route in `src/routes/pages.js`) is limited to an allow-list:
-  the DingTalk session names in `TEACHER_NAMES` (王旭东, 邹欣, 吴衍标, 高坤, 柳君丽, 胡辰, 何源, 董圣娇, 赵晨)
-  plus guests who redeemed an invitation code in `TEACHER_INVITATION_CODES` (`B19B59975BC0`).
-  `canAccessTeacher(user)` in `src/app.js` is the single gate; the page route redirects everyone else to
-  `/leaderboard`, the APIs return 403, and `/api/me` exposes `teacherAccess` so the nav menu item
-  (`data-teacher-link`) only renders for allow-listed sessions.
+  teacher openIds in `TEACHER_OPEN_IDS` (env, comma-separated) — plus, until any openId is enrolled, the
+  DingTalk session names in `TEACHER_NAMES` (王旭东, 邹欣, 吴衍标, 高坤, 柳君丽, 胡辰, 何源, 董圣娇, 赵晨)
+  as a transitional fallback — and guests who redeemed an invitation code in `TEACHER_INVITATION_CODES`
+  (`B19B59975BC0`). `canAccessTeacher(user)` in `src/app.js` is the single gate; once `TEACHER_OPEN_IDS`
+  is non-empty, display names no longer grant access (they are user-changeable in DingTalk), and each
+  name-fallback login logs `[teacher-enroll]` with the openId to enroll. The page route redirects
+  everyone else to `/leaderboard`, the APIs return 403, and `/api/me` exposes `teacherAccess` so the
+  nav menu item (`data-teacher-link`) only renders for allow-listed sessions.
 - The public `/leaderboard` never shows playback controls any more: `GET /api/game/leaderboard` always
   strips `answerId`/`mediaType`. Playback lives on `/teacher` via
   `GET /api/game/leaderboard-answers/:id/media|transcript`, gated by the same teacher allow-list.
 - `/teacher` serves weekly standings per group (g1/g2) with the best answer per learner, plus CSV export:
   `GET /api/teacher/export?group=&challengeId=` ("export current week") and `GET /api/teacher/export-all`
-  (both groups, every week with completed answers). CSVs are UTF-8 with BOM.
+  (both groups, every week with completed answers). CSVs are UTF-8 with BOM, and cells starting with
+  `=`, `+`, `-`, or `@` are apostrophe-prefixed so learner-controlled names cannot execute as Excel
+  formulas (`csvCell`).
 - The AI-suspicion flag is produced by `src/ai-detection.js`: a one-time background analysis of each
   learner's best answer, stored in `ai-detections/metadata.jsonl`. Any existing row — including a
   terminal `failed` one — suppresses re-enqueueing, so each answer is analyzed at most once. The verdict
@@ -85,6 +103,13 @@
   challenge week, the delete route schedules a per-user debounced re-check (60s,
   `scheduleBestAnswerRedetection`) so the promoted second-best take gets its one-time detection;
   takes that already have a verdict are never re-analyzed.
+- Detection runs in both the web process and the worker, with two safety valves: concurrent analyses
+  per process are capped (`MAX_CONCURRENT_ANALYSES` — claims used to race ahead of the 2-slot model
+  gate and OOM the process on a bulk re-enqueue), and a `processing` row whose claim is older than
+  5 minutes is reclaimed after a process died mid-analysis (the once-only rule would otherwise
+  suppress it forever — the cause of the 2026-10-13/14 manual requeue surgeries). The worker also
+  wires `setModelQueue` so tick-time detection/moderation calls participate in the shared
+  RPM/circuit guard tables.
 - Detection is an inference, not proof: the UI must keep saying "possibly AI-generated"/"疑似" rather
   than asserting cheating, mirroring the pronunciation-scoring caveat above.
 
