@@ -154,7 +154,7 @@ function assertNotPainted(label, node) {
     `${label}: still painted ${JSON.stringify(node)}`);
 }
 
-async function run(browser, base, route, width, mode) {
+async function run(browser, base, route, width, mode, sessionName = 'Modal Tester') {
   const context = await browser.newContext({
     viewport: { width, height: 900 },
     permissions: ['camera', 'microphone'],
@@ -180,7 +180,7 @@ async function run(browser, base, route, width, mode) {
   const label = `${route} @ ${width} [${mode}]`;
   await context.addCookies([{
     name: 'englisheval_session',
-    value: testHelpers.createSessionToken({ openId: `modal-${route}-${width}-${mode}`, name: 'Modal Tester' }),
+    value: testHelpers.createSessionToken({ openId: `modal-${route}-${width}-${mode}`, name: sessionName }),
     url: base,
   }]);
 
@@ -194,13 +194,31 @@ async function run(browser, base, route, width, mode) {
     });
   });
   await page.reload({ waitUntil: 'networkidle' });
-  if (route === '/game') {
+  if (route === '/game' || route === '/game/first-lesson') {
     await page.waitForFunction(() => {
       const t = document.querySelector('#gameTopicTitle');
       return t && t.textContent && !/Loading/.test(t.textContent);
     }, null, { timeout: 15000 });
   }
   await page.waitForFunction(() => !!document.querySelector('#useCamera'), null, { timeout: 10000 });
+
+  // The private make-up page is pinned to group 2's lesson 1: no group picker,
+  // and a link to that week's public standings.
+  if (route === '/game/first-lesson') {
+    const makeUp = await page.evaluate(() => ({
+      topic: document.querySelector('#gameTopicTitle').textContent,
+      week: document.querySelector('#gameWeekLabel').textContent,
+      groupPickerHidden: document.querySelector('#gameGroupPicker').hidden,
+      standingsHidden: document.querySelector('[data-first-lesson-standings]').hidden,
+      standingsHref: document.querySelector('[data-first-lesson-standings]').getAttribute('href'),
+    }));
+    assert.equal(makeUp.topic, 'Explaining an experimental figure', `${label}: wrong make-up topic`);
+    assert.match(makeUp.week, /Make-up lesson/, `${label}: the week label does not mark the make-up lesson`);
+    assert.equal(makeUp.groupPickerHidden, true, `${label}: the group picker is still offered`);
+    assert.equal(makeUp.standingsHidden, false, `${label}: the standings link is not shown`);
+    assert.equal(makeUp.standingsHref, '/leaderboard?group=g2&challengeId=weekly-2026-09-28-g2',
+      `${label}: the standings link points at the wrong week`);
+  }
 
   const wantCamera = mode === 'camera';
   const initial = await page.evaluate(() => ({
@@ -371,7 +389,13 @@ async function main() {
         for (const width of [1440, 390]) await run(browser, base, route, width, mode);
       }
     }
-    console.log('\nOK: the prepare modal renders on /game and /examine, camera and audio-only, at every viewport');
+    // The private make-up page runs the same recorder, but only for the
+    // learners it is assigned to (the name fallback the gate honours).
+    for (const learner of ['张鳐', '吴衍标']) {
+      await run(browser, base, '/game/first-lesson', 1440, 'camera', learner);
+    }
+    await run(browser, base, '/game/first-lesson', 1440, 'audio', '张鳐');
+    console.log('\nOK: the prepare modal renders on /game, /examine and the private /game/first-lesson make-up page, camera and audio-only, at every viewport');
   } finally {
     await browser.close();
     server.close();

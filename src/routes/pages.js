@@ -1,7 +1,7 @@
 const path = require("path");
 const { openApiFile, publicDir, rootDir } = require("../config");
 
-function registerPageRoutes(app, { requirePageAuth, requireTeacherPage }) {
+function registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requireCatchupPage }) {
   app.get("/openapi.yaml", (_req, res) => {
     res.type("application/yaml").sendFile(openApiFile);
   });
@@ -19,6 +19,9 @@ function registerPageRoutes(app, { requirePageAuth, requireTeacherPage }) {
 
   app.get("/", (_req, res) => res.redirect(302, "/leaderboard"));
   app.get(learnerRoutes, sendAppShell);
+  // Private make-up page for a single learner: allow-listed session only, and
+  // deliberately absent from every menu so it is reachable by direct URL.
+  app.get("/game/first-lesson", requireCatchupPage, sendAppShell);
   app.get("/admin", requirePageAuth, (_req, res) =>
     res.sendFile(path.join(rootDir, "views", "admin.html")),
   );

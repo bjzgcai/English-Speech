@@ -19,6 +19,8 @@ const state = {
   authUser: null,
   authReady: false,
   teacherAccess: false,
+  catchupAccess: false,
+  catchupMode: false,
   inAppAuthAttempted: false,
   privacyConsent: null,
   privacyConsentResolve: null,
@@ -122,6 +124,7 @@ const authChip = document.querySelector("#authChip");
 const authUserName = document.querySelector("#authUserName");
 const invitationLink = document.querySelector("[data-invitation-link]");
 const teacherLink = document.querySelector("[data-teacher-link]");
+const firstLessonStandingsLink = document.querySelector("[data-first-lesson-standings]");
 const logoutButton = document.querySelector("#logoutButton");
 const navLinks = document.querySelectorAll(".main-nav [data-route]");
 const videoModal = document.querySelector("#videoModal");
@@ -681,6 +684,10 @@ async function tryDingTalkInAppAuth(inAppAuth) {
       throw new Error(data.error || "DingTalk in-app authentication failed.");
     }
     await window.VisitorSession.announce();
+    // announce() dispatches the identity change, whose listener refreshes the
+    // access flags asynchronously; resolve them here too so the make-up gate does
+    // not read stale flags and bounce a learner who just signed in in-app.
+    await refreshAccessFlags();
     state.authUser = window.VisitorSession.user;
     state.authReady = true;
     updateAuthView();
@@ -698,6 +705,7 @@ async function checkAuth() {
     state.authUser = data.user || null;
     state.authReady = true;
     state.teacherAccess = data.teacherAccess === true;
+    state.catchupAccess = data.catchupAccess === true;
     state.dingTalkConfigured = data.configured;
     setStatus(!state.authUser || state.authUser.identityType === "guest" ? "Guest" : "Signed in");
     updateAuthView();
@@ -709,6 +717,20 @@ async function checkAuth() {
     state.authReady = true;
     updateAuthView();
     setRoute(window.location.pathname);
+  }
+}
+
+// The teacher console and the private make-up page are server-side allow-lists.
+// Re-read them after an identity change so a session that just signed in gains
+// (or loses) those pages without a reload.
+async function refreshAccessFlags() {
+  try {
+    const response = await window.VisitorSession.fetch("/api/me", { cache: "no-store" });
+    const data = await response.json();
+    state.teacherAccess = data.teacherAccess === true;
+    state.catchupAccess = data.catchupAccess === true;
+  } catch {
+    // Keep the previous flags; the next navigation re-reads them anyway.
   }
 }
 
@@ -1233,6 +1255,38 @@ async function deleteHistoryRecord(button) {
 const GAME_GROUP_TOKENS = ["g1", "g2"];
 const GAME_GROUP_STORAGE_KEY = "oscanner-game-group";
 
+// The private make-up page is pinned to one past week — group 2's lesson 1 task
+// ("Explaining an experimental figure"). It reuses the whole weekly-game flow in
+// game mode, but the group and challenge it asks the server for are fixed.
+const FIRST_LESSON_ROUTE = "/game/first-lesson";
+const FIRST_LESSON_GROUP = "g2";
+const FIRST_LESSON_CHALLENGE_ID = "weekly-2026-09-28-g2";
+
+// Both routes render the weekly game experience; the group picker, the fixed
+// task, and the question-generation endpoint all behave the same way.
+function isGameRoute(route) {
+  return route === "/game" || route === FIRST_LESSON_ROUTE;
+}
+
+function isFirstLessonRoute(route) {
+  return route === FIRST_LESSON_ROUTE;
+}
+
+// The client half of the make-up page's gate (the server half keeps unrelated
+// sessions out): while the session is missing or lacks the make-up flag the page
+// must not paint the lesson. public/app.js opens the sign-in modal and leaves the
+// page blank for an anonymous visitor; a signed-in session without the flag is
+// sent on to the public board.
+function firstLessonGated(route) {
+  return isFirstLessonRoute(route) && !state.catchupAccess;
+}
+
+// The group the current page belongs to. The make-up page is always group 2,
+// but that must not overwrite the learner's own group on the normal game page.
+function activeGameGroup() {
+  return state.catchupMode ? FIRST_LESSON_GROUP : state.gameGroup;
+}
+
 function normalizeGroupToken(value) {
   // Accepts "g2", "2", and "group 2" so hand-written links keep working.
   const token = typeof value === "number" ? String(value) : String(value ?? "");
@@ -1264,6 +1318,19 @@ function syncGroupPickers() {
       if (input.name === "gameGroup") input.disabled = Boolean(state.question);
     });
   });
+}
+
+// The make-up page belongs to a single group and a single past week, so its
+// group picker is hidden and its standings link is offered instead. Every other
+// route restores the normal picker.
+function syncCatchupMode(route) {
+  const catchup = isFirstLessonRoute(route);
+  state.catchupMode = catchup;
+  if (firstLessonStandingsLink) firstLessonStandingsLink.hidden = !catchup;
+  [gameGroupPicker, leaderboardGroupPicker].forEach((picker) => {
+    if (picker) picker.hidden = catchup && picker === gameGroupPicker;
+  });
+  return catchup;
 }
 
 function writeGameGroupToUrl() {
@@ -1302,7 +1369,9 @@ function formatChallengeRange(challenge) {
 
 function showGameChallenge(challenge) {
   state.gameChallenge = challenge;
-  gameWeekLabel.textContent = formatChallengeRange(challenge);
+  gameWeekLabel.textContent = state.catchupMode
+    ? `Make-up lesson · ${formatChallengeRange(challenge)}`
+    : formatChallengeRange(challenge);
   if (challenge?.lessonNumber && challenge?.unitNumber) {
     gameLessonMeta.textContent = `Unit ${challenge.unitNumber} · Lesson ${challenge.lessonNumber} · ${challenge.instructor || ""}`.trim();
     gameLessonMeta.hidden = false;
@@ -1311,7 +1380,7 @@ function showGameChallenge(challenge) {
   }
   gameTopicTitle.textContent = challenge.title;
   gameTopicQuestion.textContent = challenge.question;
-  if (!state.question && normalizeRoute(window.location.pathname) === "/game") {
+  if (!state.question && isGameRoute(normalizeRoute(window.location.pathname))) {
     questionText.textContent = challenge.question;
     questionMeta.textContent = `Target: within ${challenge.expectedDurationSeconds} seconds.`;
     renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, challenge.figure, { allowUpload: true });
@@ -1357,7 +1426,7 @@ async function loadLeaderboard(challengeId) {
   leaderboardSummary.textContent = "Loading weekly standings...";
   leaderboardList.innerHTML = '<li class="leaderboard-loading">Loading leaderboard...</li>';
   try {
-    const params = new URLSearchParams({ group: state.gameGroup });
+    const params = new URLSearchParams({ group: activeGameGroup() });
     if (challengeId) params.set("challengeId", challengeId);
     const query = `?${params.toString()}`;
     const response = await window.VisitorSession.fetch(`/api/game/leaderboard${query}`, { cache: "no-store" });
@@ -1380,8 +1449,12 @@ async function loadLeaderboard(challengeId) {
 }
 
 async function fetchGameChallengeCatalog() {
+  const params = new URLSearchParams({ group: activeGameGroup() });
+  // The make-up page asks for its fixed past week; the normal game page always
+  // receives whatever week is current.
+  if (state.catchupMode) params.set("challengeId", FIRST_LESSON_CHALLENGE_ID);
   const response = await window.VisitorSession.fetch(
-    `/api/game/challenge?group=${encodeURIComponent(state.gameGroup)}`,
+    `/api/game/challenge?${params.toString()}`,
     { cache: "no-store" },
   );
   const data = await response.json();
@@ -1420,7 +1493,9 @@ async function loadLeaderboardPage() {
       return;
     }
 
-    const previousSelection = leaderboardWeek.value;
+    // ?challengeId= lets the make-up page link straight to a past week's board.
+    const requestedWeek = new URLSearchParams(window.location.search).get("challengeId");
+    const previousSelection = requestedWeek || leaderboardWeek.value;
     leaderboardWeek.innerHTML = state.gameChallenges
       .map((challenge, index) => {
         const prefix = index === 0 ? "Current: " : "";
@@ -1702,11 +1777,15 @@ function normalizeRoute(pathname) {
 }
 
 function setPlayMode(route) {
-  const isGame = route === "/game";
+  const isGame = isGameRoute(route);
   gameOverview.hidden = !isGame;
   roleField.hidden = isGame;
   nameField.hidden = isGame;
-  playTitle.textContent = isGame ? "Academic English Weekly" : "Examine";
+  playTitle.textContent = isFirstLessonRoute(route)
+    ? "Academic English Weekly · Make-up lesson"
+    : isGame
+      ? "Academic English Weekly"
+      : "Examine";
   profileHeading.textContent = isGame ? "Enter this week's task" : "Candidate profile";
   profileHeading.closest(".section-heading").hidden = isGame;
   profileSummary.textContent = isGame
@@ -1739,6 +1818,16 @@ function setPlayMode(route) {
   }
 }
 
+// The make-up page shows nothing but its sign-in modal until the session is
+// resolved: the shared link must not leak the lesson, the group picker, or a
+// half-loaded task to whoever opens it.
+function blankViews() {
+  playView.hidden = true;
+  leaderboardView.hidden = true;
+  historyView.hidden = true;
+  loginPanel.hidden = true;
+}
+
 function setRoute(pathname) {
   const route = normalizeRoute(pathname);
   // A pending preparation countdown or generating modal belongs to the
@@ -1748,14 +1837,15 @@ function setRoute(pathname) {
   // exempt: its own guards manage the modal and the stream.
   const preparing = (state.prepareCountdownResolve || !prepareModal.hidden)
     && !(state.recorder && state.recorder.state !== "inactive");
-  if (preparing && route !== "/examine" && route !== "/game") {
+  if (preparing && route !== "/examine" && !isGameRoute(route)) {
     state.prepareCountdownResolve?.("cancel");
     closePrepareModal();
     stopStream();
   }
+  syncCatchupMode(route);
   const isHistory = route === "/history";
   const isLeaderboard = route === "/leaderboard";
-  const isGame = route === "/game";
+  const isGame = isGameRoute(route);
 
   playView.hidden = isHistory || isLeaderboard;
   leaderboardView.hidden = !isLeaderboard;
@@ -1775,6 +1865,20 @@ function setRoute(pathname) {
     if (isActive) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
+
+  // /game/first-lesson is shared as a bare URL, so an anonymous visitor is told
+  // how to get in — blank page plus the sign-in modal — rather than quietly
+  // bounced to the board. Once the session carries the make-up flag the lesson
+  // paints normally; a signed-in session without it goes to the public board.
+  if (firstLessonGated(route)) {
+    if (state.authReady && window.VisitorSession.hasAccess) {
+      window.location.replace("/leaderboard");
+      return;
+    }
+    blankViews();
+    if (state.authReady) void window.VisitorSession.ensureAccess();
+    return;
+  }
 
   if (isHistory) {
     setStatus("History");
@@ -1881,7 +1985,7 @@ profileForm.addEventListener("submit", async (event) => {
   if (!mediaReady) return;
 
   state.profile = getProfileFromForm();
-  const isGame = normalizeRoute(window.location.pathname) === "/game";
+  const isGame = isGameRoute(normalizeRoute(window.location.pathname));
   setStatus("Generating");
   showGeneratingModal();
   prepareModalTitle.textContent = isGame ? "Preparing the weekly task..." : "Preparing your question...";
@@ -1897,7 +2001,14 @@ profileForm.addEventListener("submit", async (event) => {
     const response = await window.VisitorSession.fetch(isGame ? "/api/game/question" : "/api/generate-question", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(isGame ? { group: state.gameGroup } : { profile: state.profile }),
+      body: JSON.stringify(isGame
+        ? {
+          group: activeGameGroup(),
+          // The make-up page answers a fixed past week; every other game page
+          // lets the server resolve this week's challenge.
+          ...(state.catchupMode ? { challengeId: FIRST_LESSON_CHALLENGE_ID } : {}),
+        }
+        : { profile: state.profile }),
     });
     const data = await response.json();
 
@@ -1916,7 +2027,7 @@ profileForm.addEventListener("submit", async (event) => {
     // The countdown may have resolved while the user navigated away; the
     // camera must not start on a page the user never meant to record on.
     const activeRoute = normalizeRoute(window.location.pathname);
-    if (activeRoute !== "/examine" && activeRoute !== "/game") return;
+    if (activeRoute !== "/examine" && !isGameRoute(activeRoute)) return;
     await startRecording();
   } catch (error) {
     if (actionOwner !== state.authUser?.openId) return;
@@ -2357,7 +2468,7 @@ async function discardCurrentAnswer() {
     state.discardRequested = false;
     evaluationResult.innerHTML = "";
     syncGroupPickers();
-    if (normalizeRoute(window.location.pathname) === "/game" && state.gameChallenge) {
+    if (isGameRoute(normalizeRoute(window.location.pathname)) && state.gameChallenge) {
       showGameChallenge(state.gameChallenge);
     } else {
       questionText.textContent = "Enter a profile, then generate one question.";
@@ -2460,6 +2571,9 @@ window.addEventListener("visitoridentitychange", (event) => {
   updateAuthView();
   setStatus(state.authUser?.identityType === "guest" ? "Guest" : "Signed in");
   if (window.VisitorSession.hasAccess) window.EvaluationQueue.restore().catch(() => {});
+  // Repaint for the new identity: redeeming an invitation code here can unlock
+  // the make-up page, and logging out must blank it again.
+  void refreshAccessFlags().then(() => setRoute(window.location.pathname));
 });
 
 privacyPolicyAgree.addEventListener("change", updatePrivacyAcceptButton);
@@ -2592,7 +2706,9 @@ closeVideoModal.addEventListener("click", closeHistoryVideo);
 
 window.addEventListener("popstate", () => {
   if ((state.recorder && state.recorder.state !== "inactive") || state.activeSaveId) {
-    const activeRoute = state.activeMode === "/game" ? "/game" : "/examine";
+    // Restore the page that owns the in-flight recording, including the private
+    // make-up page, before offering to discard it.
+    const activeRoute = isGameRoute(state.activeMode) ? state.activeMode : "/examine";
     window.history.pushState({}, "", activeRoute);
     setRoute(activeRoute);
     openDiscardModal();

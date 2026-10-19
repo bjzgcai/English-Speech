@@ -43,6 +43,7 @@ const {
 } = require("./experience-ratings");
 const {
   availableChallenges,
+  challengeForIndex,
   challengeQuestion,
   currentChallenge,
   leaderboardForChallenge,
@@ -621,6 +622,23 @@ function requireTeacherPage(req, res, next) {
     req.user = user;
     return next();
   }
+  return res.redirect(302, "/leaderboard");
+}
+
+// /game/first-lesson is a private make-up page for its assigned learners. It is
+// not linked from any menu, and every API the page uses is gated on its own, so
+// the page shell is served to an anonymous visitor: the browser then opens the
+// sign-in modal over a blank page instead of bouncing to the public board, which
+// read as a broken link. A signed-in session that is not allow-listed is still
+// quietly sent back to the board.
+function requireCatchupPage(req, res, next) {
+  let user = null;
+  try { user = visitorAccess.resolveVisitor(req, res); } catch { /* Sessions unconfigured: the shell explains that on its own. */ }
+  if (user && visitorAccess.hasAccess(req, user) && canAccessCatchup(user)) {
+    req.user = user;
+    return next();
+  }
+  if (!user) return next();
   return res.redirect(302, "/leaderboard");
 }
 
@@ -2358,6 +2376,7 @@ app.get("/api/me", (req, res) => {
     identityType: user?.identityType || null,
     isZgcMember: user?.isZgcMember === true,
     teacherAccess: hasAccess && canAccessTeacher(user),
+    catchupAccess: hasAccess && canAccessCatchup(user),
     accessMode: hasAccess ? user.identityType === "dingtalk" ? "dingtalk" : "invitation" : null,
   });
 });
@@ -2589,8 +2608,29 @@ function gameChallengeForClient(challenge) {
 
 app.get("/api/game/challenge", (req, res) => {
   const group = normalizeGameGroup(safeText(req.query.group));
-  const challenge = currentChallenge(new Date(), group);
+  const requestedId = safeText(req.query.challengeId);
   res.set("Cache-Control", "no-store");
+  if (requestedId) {
+    // Past weeks are only reachable through the private make-up page, and only
+    // for the pinned challenge; this is not a general challenge picker.
+    let allowed = false;
+    try {
+      const user = visitorAccess.resolveVisitor(req, res);
+      allowed = visitorAccess.hasAccess(req, user) && canAccessCatchup(user);
+    } catch { allowed = false; }
+    if (!allowed) {
+      return res.status(403).json({ error: "This make-up lesson is only available to its assigned learner." });
+    }
+    if (!isCatchupChallengeId(requestedId)) {
+      return res.status(400).json({ error: "Choose an available weekly challenge." });
+    }
+    return res.json({
+      challenge: gameChallengeForClient(CATCHUP_CHALLENGE),
+      challenges: [gameChallengeForClient(CATCHUP_CHALLENGE)],
+      group: CATCHUP_CHALLENGE.group,
+    });
+  }
+  const challenge = currentChallenge(new Date(), group);
   res.json({
     challenge: gameChallengeForClient(challenge),
     challenges: availableChallenges(new Date(), 10, group).map(gameChallengeForClient),
@@ -2619,9 +2659,15 @@ app.get("/api/game/leaderboard", (req, res) => {
   const group = normalizeGameGroup(safeText(req.query.group));
   const challenges = availableChallenges(new Date(), 10, group);
   const requestedId = safeText(req.query.challengeId);
-  const challenge = requestedId
+  let challenge = requestedId
     ? challenges.find((item) => matchesChallengeId(item, requestedId))
     : challenges[0];
+  // The private make-up board must stay viewable after its week drops out of
+  // the ten-week public selector window, so the pinned challenge is also
+  // resolvable by id.
+  if (!challenge && requestedId && isCatchupChallengeId(requestedId)) {
+    challenge = CATCHUP_CHALLENGE;
+  }
   if (!challenge) {
     return res.status(400).json({ error: "Choose an available weekly challenge." });
   }
@@ -2668,7 +2714,21 @@ const requireAdmission = queueApi?.required || ((_req, _res, next) => next());
 
 app.post("/api/game/question", requireVisitor, requirePrivacyConsent, requireAttemptQuota, requireAdmission, (req, res) => {
   const group = normalizeGameGroup(safeText(req.body?.group));
-  const challenge = currentChallenge(new Date(), group);
+  const requestedId = safeText(req.body?.challengeId);
+  let challenge;
+  if (requestedId) {
+    // Only the private make-up page may ask for a past week, and only for the
+    // pinned challenge it is built around.
+    if (!canAccessCatchup(req.user)) {
+      return res.status(403).json({ error: "This make-up lesson is only available to its assigned learner." });
+    }
+    if (!isCatchupChallengeId(requestedId)) {
+      return res.status(400).json({ error: "Choose an available weekly challenge." });
+    }
+    challenge = CATCHUP_CHALLENGE;
+  } else {
+    challenge = currentChallenge(new Date(), group);
+  }
   const profile = {
     name: safeText(req.user.name, "DingTalk user"),
     role: "Academic English weekly course task",
@@ -3188,6 +3248,54 @@ function canAccessTeacher(user, guestCode = null) {
   return false;
 }
 
+// 张鳐 joined the second class group late, and 吴衍标 plays the lesson as well,
+// so both still need group 2's lesson 1. The /game page always serves the
+// current week, so that past task is reachable only through the private
+// /game/first-lesson page, which is pinned to this fixed challenge (the g2
+// slot-0 task, "Explaining an experimental figure"). Learner-supplied challenge
+// ids are rejected against this constant.
+const CATCHUP_CHALLENGE = challengeForIndex(0, "g2");
+// Display names are the transitional fallback, exactly like the teacher list:
+// remove a name once its openId is enrolled below.
+const CATCHUP_NAMES = new Set(["张鳐", "吴衍标"]);
+// CATCHUP_OPEN_IDS in the environment is a comma-separated list of the openIds
+// allowed into the make-up page.
+const CATCHUP_OPENIDS = new Set(
+  (process.env.CATCHUP_OPEN_IDS || "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean),
+);
+
+// Same contract as the teacher gate: the openId is the stable, non-user-
+// controllable key, and once any openId is enrolled the name no longer grants
+// access — otherwise renaming a DingTalk profile would be enough to reach
+// another learner's page. Until then the name fallback keeps the session
+// working and logs the openId the operator should enroll.
+const catchupNameFallbackSeen = new Set();
+function canAccessCatchup(user) {
+  if (!user) return false;
+  const openId = safeText(user.openId);
+  if (!openId) return false;
+  if (CATCHUP_OPENIDS.size) return CATCHUP_OPENIDS.has(openId);
+  const name = safeText(user.name).trim();
+  if (CATCHUP_NAMES.has(name)) {
+    const key = `${openId}:${name}`;
+    if (!catchupNameFallbackSeen.has(key)) {
+      catchupNameFallbackSeen.add(key);
+      console.warn(`[catchup-enroll] name-fallback access for ${name}: add openId ${openId} to CATCHUP_OPEN_IDS.`);
+    }
+    return true;
+  }
+  return false;
+}
+
+// The pinned make-up challenge is the only past week a catch-up session may
+// name, matched by canonical id or any of its schedule-era legacy aliases.
+function isCatchupChallengeId(challengeId) {
+  return matchesChallengeId(CATCHUP_CHALLENGE, challengeId);
+}
+
 // Resolves a leaderboard answer's playable media. A record qualifies only when
 // it is a completed weekly-challenge answer (the same records the leaderboard
 // is built from) with a stored recording file.
@@ -3489,7 +3597,7 @@ app.get("/api/user-figures/:name", requireVisitor, (req, res) => {
   res.sendFile(figurePath);
 });
 
-registerPageRoutes(app, { requirePageAuth, requireTeacherPage });
+registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requireCatchupPage });
 
 app.use((error, _req, res, next) => {
   if (error instanceof multer.MulterError) {
@@ -3581,6 +3689,8 @@ module.exports = {
     mediaCompleteness,
     leaderboardAnswerMedia,
     canAccessTeacher,
+    canAccessCatchup,
+    catchupChallenge: CATCHUP_CHALLENGE,
     guestInvitationCodeFor,
     modelMessageText,
     normalizeEvaluation,

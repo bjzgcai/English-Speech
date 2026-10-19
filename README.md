@@ -154,6 +154,29 @@ Guest cookie or DingTalk OAuth -> effective owner -> versioned privacy consent
     -> persist result -> show owner-filtered history
 ```
 
+### Weekly game and the private make-up page
+
+`/game` always serves the **current** week: `POST /api/game/question` resolves
+the week from the clock (`currentChallenge`) and the selected class group
+(`?group=g1|g2`). The public leaderboard can display any of the last ten weeks,
+so a past week is answerable only through `/game/first-lesson` — a private
+make-up page pinned to group 2's lesson 1 (`weekly-2026-09-28-g2`, "Explaining
+an experimental figure"). It is deliberately absent from every menu and serves
+the app shell to the allow-listed session and to anonymous visitors. A visitor
+without a session gets a blank page and the sign-in modal — the link is pasted
+around directly, so a silent bounce to `/leaderboard` read as a broken link —
+while a signed-in session that is not allow-listed is still redirected to
+`/leaderboard`. The lesson itself paints only once `/api/me` reports
+`catchupAccess`, and every API the page calls is gated on its own.
+
+Access follows the teacher-console contract: `CATCHUP_OPEN_IDS` (comma-separated
+openIds) is authoritative once non-empty, and until then the built-in names
+`张鳐` and `吴衍标` grant access while each login logs `[catchup-enroll]` with the
+openId to enroll. The `challengeId` parameter on `GET /api/game/challenge` and
+`POST /api/game/question` is rejected for every other session, and the learner's
+answer is stored under the pinned challenge id, which is what puts his score on
+the group 2 lesson 1 board.
+
 ## Audio, transcript, and evaluation workflow
 
 Qwen ASR is the transcription component; it does not assign evaluation scores.

@@ -99,9 +99,27 @@ async function main() {
       await page.evaluate(() => VisitorSession.refresh());
       assert.equal(new URL(page.url()).pathname, "/leaderboard");
       assert.equal(await page.locator("#historyList").innerText(), "");
+      // Below 820px the header menu holding #loginButton is collapsed, so open it
+      // first; the desktop layout exposes the same entry directly.
+      if (await page.locator(".mobile-menu-toggle").isVisible()) await page.locator(".mobile-menu-toggle").click();
       await page.locator("#loginButton").click();
       await page.locator(".access-dialog").waitFor();
       await page.keyboard.press("Escape");
+
+      // The private make-up link is shared as a bare URL. Without a session the
+      // page must stay blank with the sign-in modal on top, instead of silently
+      // bouncing to the board (which read as a broken link), and the lesson must
+      // not paint for an anonymous visitor.
+      await page.goto(base + "/game/first-lesson?group=g2");
+      await page.locator(".access-dialog").waitFor();
+      assert.equal(new URL(page.url()).pathname, "/game/first-lesson");
+      assert.equal(await page.locator("#playView").isVisible(), false);
+      assert.equal(await page.locator("#leaderboardView").isVisible(), false);
+      assert.equal(await page.locator("#historyView").isVisible(), false);
+      assert.equal(await page.locator("#gameTopicTitle").isVisible(), false);
+      await page.screenshot({ path: `/tmp/englisheval-first-lesson-${viewport.width}.png` });
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector("dialog"));
 
       await page.route("**/api/me", route => route.fulfill({ status: 503, json: { error: "Session unavailable" } }));
       await page.goto(base + "/leaderboard");
