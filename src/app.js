@@ -46,6 +46,7 @@ const {
   challengeQuestion,
   currentChallenge,
   leaderboardForChallenge,
+  matchesChallengeId,
   normalizeGameGroup,
 } = require("./game");
 const {
@@ -1553,6 +1554,17 @@ function transcriptionMimeType(audioPath) {
   return path.extname(audioPath).toLowerCase() === ".wav" ? "audio/wav" : "audio/mpeg";
 }
 
+// A parseable-but-empty model response (all-zero rubric, no feedback, no
+// summary) otherwise becomes a "completed" 0 despite a scorable transcript —
+// the false zero on cf578a72 (2026-10-12) came from exactly that shape.
+function evaluationResponseLooksScored(rawEvaluation) {
+  if (!rawEvaluation || typeof rawEvaluation !== "object") return false;
+  const dimensions = Object.values(rawEvaluation.rubric || {});
+  const hasScore = dimensions.some((dimension) => Number(dimension?.score) > 0);
+  const hasFeedback = dimensions.some((dimension) => safeText(dimension?.feedback));
+  return hasScore || hasFeedback || Boolean(safeText(rawEvaluation.summary));
+}
+
 function isRetryableTranscriptionError(error) {
   return error?.retryable === true || /upstream_error|BytesIO object|fetch failed/i.test(
     String(error?.message || error),
@@ -1902,35 +1914,47 @@ async function evaluateAnswer({
 
     // Queue waits do not spend the upstream deadline; modelFetch times each attempt.
     const requestSignal = config.queueEnabled ? undefined : AbortSignal.timeout(requestTimeoutMs);
-    const { response, model: usedModel } = await chatCompletionWithFallback({
-      url: internalLlmChatCompletionsUrl,
-      headers,
-      body: {
-        model: internalLlmEvalModel,
-        max_tokens: 16384,
-        temperature: 0.1,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a strict but fair English speaking evaluator. You produce calibrated JSON scores and concise coaching feedback.",
-          },
-          {
-            role: "user",
-            content,
-          },
-        ],
-      },
-      kind: "scoring",
-      fallbackModel: openRouterEvalModelName(),
-      internalSignal: requestSignal,
-      fallbackSignal: requestSignal,
-    });
 
-    const payload = await response.json();
-    const outputText = modelMessageText(payload.choices?.[0].message);
-    return normalizeEvaluation(extractJsonObject(outputText), {
+    // One retry: an empty rubric is a model hiccup, not a real zero, and the
+    // transcript precheck above already established scorable speech. Each
+    // attempt goes through the shared fallback chain so the retry still
+    // respects the model guard tables.
+    const evaluationAttempts = 2;
+    let parsed = null;
+    let usedModel = internalLlmEvalModel;
+    for (let attempt = 1; attempt <= evaluationAttempts; attempt += 1) {
+      const { response, model } = await chatCompletionWithFallback({
+        url: internalLlmChatCompletionsUrl,
+        headers,
+        body: {
+          model: internalLlmEvalModel,
+          max_tokens: 16384,
+          temperature: 0.1,
+          response_format: { type: "json_object" },
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a strict but fair English speaking evaluator. You produce calibrated JSON scores and concise coaching feedback.",
+            },
+            { role: "user", content },
+          ],
+        },
+        kind: "scoring",
+        fallbackModel: openRouterEvalModelName(),
+        internalSignal: requestSignal,
+        fallbackSignal: requestSignal,
+      });
+      usedModel = model;
+      const payload = await response.json();
+      const outputText = modelMessageText(payload.choices?.[0].message);
+      parsed = extractJsonObject(outputText);
+      if (evaluationResponseLooksScored(parsed) || attempt === evaluationAttempts) break;
+      console.warn(
+        `[evaluation] model returned an empty rubric (attempt ${attempt}/${evaluationAttempts}); retrying.`,
+      );
+    }
+    return normalizeEvaluation(parsed, {
       visualAvailable: framePaths.length > 0,
       hasScorableSpeech: transcriptHasScorableSpeech,
       transcript,
@@ -2596,7 +2620,7 @@ app.get("/api/game/leaderboard", (req, res) => {
   const challenges = availableChallenges(new Date(), 10, group);
   const requestedId = safeText(req.query.challengeId);
   const challenge = requestedId
-    ? challenges.find((item) => item.id === requestedId)
+    ? challenges.find((item) => matchesChallengeId(item, requestedId))
     : challenges[0];
   if (!challenge) {
     return res.status(400).json({ error: "Choose an available weekly challenge." });
@@ -3278,7 +3302,7 @@ function resolveTeacherChallenge(query) {
   const challenges = availableChallenges(new Date(), 10, group);
   const requestedId = safeText(query.challengeId);
   const challenge = requestedId
-    ? challenges.find((item) => item.id === requestedId)
+    ? challenges.find((item) => matchesChallengeId(item, requestedId))
     : challenges[0];
   return { group, challenges, challenge };
 }
@@ -3347,7 +3371,7 @@ app.get("/api/teacher/export-all", requireVisitor, requireTeacher, (_req, res) =
     ...availableChallenges(new Date(), 200, "g2"),
   ]
     .filter((challenge) => records.some((record) =>
-      record?.question?.challengeId === challenge.id &&
+      matchesChallengeId(challenge, record?.question?.challengeId) &&
       record?.evaluation?.status === "completed" &&
       Number.isFinite(Number(record?.evaluation?.overallScore))))
     .sort((left, right) => left.startsAt.localeCompare(right.startsAt) || left.group.localeCompare(right.group));
@@ -3536,7 +3560,6 @@ module.exports = {
     processMedia,
     convertToMp4,
     normalizeRecording,
-    evaluateSavedVideo,
     buildEvaluationPrompt,
     adminTokensMatch,
     buildAdminStatistics,
@@ -3546,6 +3569,7 @@ module.exports = {
     discardPersistedAnswer,
     deleteOwnedRecording,
     evaluateAnswer,
+    evaluateSavedVideo,
     extractJsonObject,
     evaluationTimeoutMessage,
     hasScorableEnglishSpeech,

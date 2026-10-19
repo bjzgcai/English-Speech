@@ -12,15 +12,27 @@ function leaderboardAnswerMediaType(filename) {
 }
 // Academic English weekly course: lesson 1 launches Monday 2026-09-28 (UTC+8) and
 // spans two weeks. As a one-time handover, lesson 1 was extended by 24 hours (to
-// 2026-10-13 00:00 UTC+8) and lesson 2 starts then, running to the next Monday
-// boundary (2026-10-19 00:00 UTC+8). From lesson 2's end onward each lesson runs
-// one week, Monday to Monday. After lesson 16 the schedule wraps around (mod 16).
+// 2026-10-13 00:00 UTC+8) and lesson 2 starts then, running to 2026-10-20 00:00
+// UTC+8 (one extra day so lesson 2 stays live through Monday 2026-10-19). From
+// 2026-10-26 onward the weekly topic switch is scheduled at Monday 12:00 (noon)
+// UTC+8: lesson 3 runs to 2026-10-26 12:00 UTC+8 and every later lesson runs one
+// week from one Monday noon to the next. After lesson 16 the schedule wraps
+// around (mod 16).
 const COURSE_ANCHOR_MS = Date.parse("2026-09-28T00:00:00+08:00");
 const LESSON_COUNT = 16;
 const LAUNCH_END_MS = COURSE_ANCHOR_MS + 2 * WEEK_MS;
 // One-time handover on 2026-10-12: previous lesson extended to 24:00, current
-// lesson starts 2026-10-13 00:00 UTC+8. Later lessons keep their Monday slots.
+// lesson starts 2026-10-13 00:00 UTC+8.
 const HANDOVER_EXTENSION_MS = 24 * 60 * 60 * 1000;
+const HANDOVER_END_MS = LAUNCH_END_MS + HANDOVER_EXTENSION_MS;
+// Lesson 2 keeps running until the end of Monday 2026-10-19 (23:59:59.999
+// UTC+8); its exclusive end boundary is midnight going into 2026-10-20.
+const LAST_MIDNIGHT_BOUNDARY_MS = HANDOVER_END_MS + 7 * 24 * 60 * 60 * 1000;
+// Weekly topic updates move to Monday 12:00 (noon) UTC+8 from 2026-10-26
+// onward. The noon boundary keeps the same calendar date as the old midnight
+// boundary, so date-keyed challenge IDs (`weekly-YYYY-MM-DD`) stay stable.
+const FIRST_NOON_BOUNDARY_MS =
+  LAST_MIDNIGHT_BOUNDARY_MS + 6 * 24 * 60 * 60 * 1000 + 12 * 60 * 60 * 1000;
 
 // The course runs two parallel class groups over the same weekly lesson slots.
 // Group 1 ("g1") keeps the original topic order; Group 2 ("g2") walks the same
@@ -30,6 +42,21 @@ const DEFAULT_GAME_GROUP = "g1";
 const GAME_GROUPS = Object.freeze({
   g1: Object.freeze(Array.from({ length: LESSON_COUNT }, (_, index) => index)),
   g2: Object.freeze([6, 7, 12, 13, 8, 9, 10, 11, 4, 5, 0, 1, 2, 3, 14, 15]),
+});
+
+// Challenge ids are derived from each slot's start date, so the schedule
+// adjustments (the one-time handover extension and the later move to Monday
+// noon switches) also changed some ids. Answers submitted under the older
+// schedules carry those legacy ids and would otherwise disappear from every
+// board and export. Each legacy id maps to the canonical slot it was
+// submitted in (its question matches that slot's weekly topic).
+const LEGACY_CHALLENGE_SLOT_IDS = Object.freeze({
+  // Lesson 2 before the handover extension moved its start to 2026-10-13.
+  "weekly-2026-10-12": 1,
+  "weekly-2026-10-12-g2": 1,
+  // Lesson 3 before lesson 2 gained its extra day (canonical id weekly-2026-10-20).
+  "weekly-2026-10-19": 2,
+  "weekly-2026-10-19-g2": 2,
 });
 
 function normalizeGameGroup(value) {
@@ -256,18 +283,22 @@ const structuralGuide = Object.freeze([
 
 // Lesson-slot index: slot 0 is the two-week launch lesson (2026-09-28 to
 // 2026-10-13 00:00 UTC+8 after the one-time handover extension); slot 1 runs
-// 2026-10-13 to 2026-10-19; every later slot is one week starting Monday.
-// Times before the launch clamp to slot 0.
+// 2026-10-13 00:00 to 2026-10-20 00:00 UTC+8; slot 2 runs to the first Monday
+// noon boundary (2026-10-26 12:00 UTC+8); every later slot is one week starting
+// Monday 12:00 (noon) UTC+8. Times before the launch clamp to slot 0.
 function challengeIndexAt(now = new Date()) {
   const t = Math.max(0, now.getTime());
-  if (t < LAUNCH_END_MS + HANDOVER_EXTENSION_MS) return 0;
-  return 1 + Math.floor((t - LAUNCH_END_MS) / WEEK_MS);
+  if (t < HANDOVER_END_MS) return 0;
+  if (t < LAST_MIDNIGHT_BOUNDARY_MS) return 1;
+  if (t < FIRST_NOON_BOUNDARY_MS) return 2;
+  return 3 + Math.floor((t - FIRST_NOON_BOUNDARY_MS) / WEEK_MS);
 }
 
 function slotStartMs(index) {
   if (index <= 0) return COURSE_ANCHOR_MS;
-  if (index === 1) return LAUNCH_END_MS + HANDOVER_EXTENSION_MS;
-  return COURSE_ANCHOR_MS + (index + 1) * WEEK_MS;
+  if (index === 1) return HANDOVER_END_MS;
+  if (index === 2) return LAST_MIDNIGHT_BOUNDARY_MS;
+  return FIRST_NOON_BOUNDARY_MS + (index - 3) * WEEK_MS;
 }
 
 function slotEndMs(index) {
@@ -288,9 +319,14 @@ function challengeForIndex(index, group = DEFAULT_GAME_GROUP) {
   const id = normalizedGroup === DEFAULT_GAME_GROUP
     ? `weekly-${dateKey}`
     : `weekly-${dateKey}-${normalizedGroup}`;
+  const aliasIds = Object.entries(LEGACY_CHALLENGE_SLOT_IDS)
+    .filter(([legacyId, legacySlotIndex]) =>
+      legacySlotIndex === slotIndex && legacyIdGroup(legacyId) === normalizedGroup)
+    .map(([legacyId]) => legacyId);
 
   return {
     id,
+    aliasIds,
     group: normalizedGroup,
     topicIndex,
     lessonNumber: slotIndex + 1,
@@ -334,12 +370,23 @@ function challengeQuestion(challenge) {
   };
 }
 
+function legacyIdGroup(legacyId) {
+  return /-g[1-9]$/.test(legacyId) ? legacyId.slice(-2) : DEFAULT_GAME_GROUP;
+}
+
+// Records may carry a canonical challenge id or one of its schedule-era
+// legacy ids; boards, exports, and API resolution must accept both.
+function matchesChallengeId(challenge, challengeId) {
+  if (typeof challengeId !== "string" || !challengeId) return false;
+  return challengeId === challenge?.id || Boolean(challenge?.aliasIds?.includes(challengeId));
+}
+
 function leaderboardForChallenge(records, challenge, viewerOpenId, identities = new Map()) {
   const bestByUser = new Map();
 
   records.forEach((record) => {
     if (
-      record?.question?.challengeId !== challenge.id ||
+      !matchesChallengeId(challenge, record?.question?.challengeId) ||
       record?.evaluation?.status !== "completed" ||
       !Number.isFinite(Number(record?.evaluation?.overallScore))
     ) {
@@ -410,6 +457,7 @@ module.exports = {
   currentChallenge,
   leaderboardForChallenge,
   leaderboardAnswerMediaType,
+  matchesChallengeId,
   normalizeGameGroup,
   structuralGuide,
   weeklyTopics,

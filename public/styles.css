@@ -543,6 +543,12 @@ h1 {
   object-fit: contain;
 }
 
+/* Upload-only slots (text-only lessons before the learner attaches a figure)
+   show controls and tip without an image. */
+.task-figure img[hidden] {
+  display: none;
+}
+
 .task-figure figcaption {
   color: var(--muted);
   font-size: 12px;

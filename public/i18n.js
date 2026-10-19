@@ -103,11 +103,14 @@
     "Task figure": "任务配图",
     "Use my own figure": "使用我自己的配图",
     "Reset to sample figure": "恢复默认配图",
+    "Remove my figure": "移除我的配图",
     "Your figure": "您的配图",
     "That file type is not supported. Choose a PNG, JPG, or WebP image.": "不支持该文件类型，请选择 PNG、JPG 或 WebP 图片。",
     "That image is too large. Choose an image of 5 MB or less.": "图片过大，请选择 5 MB 以内的图片。",
     "Tip: preparing with your own chart or diagram? Click the button, choose a PNG, JPG, or WebP image (up to 5 MB), and it replaces the sample figure — your answer will be evaluated against the figure you uploaded.":
       "提示：想用自己的图表作答？点击按钮，选择 PNG、JPG 或 WebP 图片（5 MB 以内）即可替换示意图——系统会按您上传的图片来评估。",
+    "Tip: this topic has no sample figure. Preparing with your own chart or diagram? Click the button, choose a PNG, JPG, or WebP image (up to 5 MB), and your answer will be evaluated against the figure you uploaded.":
+      "提示：本主题没有示例配图。想结合自己的图表或示意图作答？点击按钮，选择 PNG、JPG 或 WebP 图片（5 MB 以内），系统将结合您上传的图片进行评分。",
     "Illustrative figure — synthetic data": "示意图 — 合成数据",
     "Illustrative figure - synthetic data": "示意图 - 合成数据",
     "Try again during the week. Only your highest completed evaluation appears on the board.":

@@ -8,6 +8,7 @@ const {
   challengeQuestion,
   currentChallenge,
   leaderboardForChallenge,
+  matchesChallengeId,
   normalizeGameGroup,
   weeklyTopics,
 } = require("../src/game");
@@ -54,12 +55,34 @@ test("lesson 2 starts 2026-10-13 after the handover and lessons run weekly there
   const lesson2 = challengeForIndex(1);
   assert.equal(lesson2.id, "weekly-2026-10-13");
   assert.equal(lesson2.startsAt, "2026-10-12T16:00:00.000Z");
-  // Lesson 2 still ends at the next Monday boundary (2026-10-19 00:00 UTC+8).
-  assert.equal(lesson2.endsAt, "2026-10-18T16:00:00.000Z");
+  // Lesson 2 is extended through the end of Monday 2026-10-19 (23:59:59.999
+  // UTC+8); its exclusive end boundary is midnight going into 2026-10-20.
+  assert.equal(lesson2.endsAt, "2026-10-19T16:00:00.000Z");
   assert.equal(lesson2.title, "Structuring an academic presentation");
   assert.equal(lesson2.lessonNumber, 2);
 
   assert.equal(currentChallenge(new Date("2026-10-13T00:00:00+08:00")).id, "weekly-2026-10-13");
+
+  // Lesson 2 stays live all day Monday 2026-10-19, including noon and the
+  // final minute before midnight.
+  assert.equal(currentChallenge(new Date("2026-10-19T11:59:59+08:00")).id, "weekly-2026-10-13");
+  assert.equal(currentChallenge(new Date("2026-10-19T12:00:00+08:00")).id, "weekly-2026-10-13");
+  assert.equal(currentChallenge(new Date("2026-10-19T23:59:59+08:00")).id, "weekly-2026-10-13");
+
+  // Lesson 3 goes live at midnight into 2026-10-20 and runs to the first
+  // Monday-noon switch (2026-10-26 12:00 UTC+8).
+  const lesson3 = currentChallenge(new Date("2026-10-20T00:00:00+08:00"));
+  assert.equal(lesson3.id, "weekly-2026-10-20");
+  assert.equal(lesson3.startsAt, "2026-10-19T16:00:00.000Z");
+  assert.equal(lesson3.endsAt, "2026-10-26T04:00:00.000Z");
+
+  // From lesson 3's end onward, weekly switches land at Monday 12:00 exactly:
+  // lesson 3 is still live just before noon and lesson 4 appears at 12:00.
+  assert.equal(currentChallenge(new Date("2026-10-26T11:59:59+08:00")).id, "weekly-2026-10-20");
+  const lesson4 = currentChallenge(new Date("2026-10-26T12:00:00+08:00"));
+  assert.equal(lesson4.id, "weekly-2026-10-26");
+  assert.equal(lesson4.startsAt, "2026-10-26T04:00:00.000Z");
+  assert.equal(lesson4.endsAt, "2026-11-02T04:00:00.000Z");
 
   const lesson16 = challengeForIndex(15);
   assert.equal(lesson16.id, "weekly-2027-01-18");
@@ -75,6 +98,9 @@ test("after lesson 16 the schedule wraps around to lesson 1", () => {
   assert.equal(wrapped.title, "Introducing yourself as a researcher");
   assert.equal(wrapped.lessonNumber, 1);
   assert.equal(currentChallenge(new Date("2027-01-25T12:00:00+08:00")).topicIndex, 0);
+  // Noon boundary applies to later weeks too: the outgoing lesson stays live
+  // until 12:00 (noon) UTC+8 on switch Monday.
+  assert.equal(currentChallenge(new Date("2027-01-25T11:59:59+08:00")).topicIndex, 15);
 });
 
 test("available challenges list the current lesson first, then past lessons", () => {
@@ -85,7 +111,7 @@ test("available challenges list the current lesson first, then past lessons", ()
   const challenges = availableChallenges(new Date("2026-10-21T12:00:00+08:00"), 3);
   assert.deepEqual(
     challenges.map((challenge) => challenge.id),
-    ["weekly-2026-10-19", "weekly-2026-10-13", "weekly-2026-09-28"],
+    ["weekly-2026-10-20", "weekly-2026-10-13", "weekly-2026-09-28"],
   );
 });
 
@@ -185,6 +211,47 @@ test("leaderboard exposes the best attempt's recording for playback", () => {
     { rank: 2, name: "Mateo Silva", score: 64, attempts: 2, isViewer: false, answerId: "record-audio", mediaType: "audio" },
     { rank: 3, name: "No Recording", score: 55, attempts: 1, isViewer: true, answerId: undefined, mediaType: undefined },
   ]);
+});
+
+test("schedule-era legacy challenge ids still appear on their canonical board", () => {
+  const lesson2 = challengeForIndex(1, "g2");
+  assert.equal(lesson2.id, "weekly-2026-10-13-g2");
+  assert.deepEqual(lesson2.aliasIds, ["weekly-2026-10-12-g2"]);
+
+  const lesson3 = challengeForIndex(2, "g2");
+  assert.equal(lesson3.id, "weekly-2026-10-20-g2");
+  assert.deepEqual(lesson3.aliasIds, ["weekly-2026-10-19-g2"]);
+
+  // The default group keeps un-suffixed legacy ids only.
+  assert.deepEqual(challengeForIndex(1).aliasIds, ["weekly-2026-10-12"]);
+  assert.deepEqual(challengeForIndex(2).aliasIds, ["weekly-2026-10-19"]);
+  assert.deepEqual(challengeForIndex(0).aliasIds, []);
+
+  const leaderboard = leaderboardForChallenge(
+    [
+      {
+        id: "legacy-1",
+        openId: "user-a",
+        user: { name: "张鳐" },
+        finishedAt: "2026-10-11T23:27:48.005Z",
+        question: { challengeId: "weekly-2026-10-12-g2" },
+        evaluation: { status: "completed", overallScore: 69 },
+      },
+    ],
+    lesson2,
+    null,
+  );
+  assert.equal(leaderboard.participantCount, 1);
+  assert.equal(leaderboard.entries[0].name, "张鳐");
+
+  assert.equal(matchesChallengeId(lesson2, "weekly-2026-10-13-g2"), true);
+  assert.equal(matchesChallengeId(lesson2, "weekly-2026-10-12-g2"), true);
+  // Group-scoped aliases never leak across groups.
+  assert.equal(matchesChallengeId(lesson2, "weekly-2026-10-12"), false);
+  assert.equal(matchesChallengeId(challengeForIndex(1), "weekly-2026-10-12-g2"), false);
+  assert.equal(matchesChallengeId(lesson2, "weekly-2026-09-28-g2"), false);
+  assert.equal(matchesChallengeId(lesson2, ""), false);
+  assert.equal(matchesChallengeId(lesson2, undefined), false);
 });
 
 test("leaderboard always shows the real name; stored actualName wins over the record name", () => {
@@ -288,7 +355,7 @@ test("available challenges and leaderboards stay inside one group", () => {
   const now = new Date("2026-10-21T12:00:00+08:00");
   assert.deepEqual(
     availableChallenges(now, 3, "g2").map((challenge) => challenge.id),
-    ["weekly-2026-10-19-g2", "weekly-2026-10-13-g2", "weekly-2026-09-28-g2"],
+    ["weekly-2026-10-20-g2", "weekly-2026-10-13-g2", "weekly-2026-09-28-g2"],
   );
 
   const first = challengeForIndex(0, "g1");

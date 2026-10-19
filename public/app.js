@@ -768,7 +768,9 @@ function showGeneratingModal() {
 
 function showCountdownModal(question) {
   prepareDialog.classList.toggle("audio-only", !state.useCamera);
-  prepareDialog.classList.toggle("no-figure", !question?.figure?.src);
+  // The upload slot is always offered now, so the countdown keeps the figure
+  // row even on text-only lessons.
+  prepareDialog.classList.remove("no-figure");
   state.mediaRetryPending = false;
   state.mediaRetryAction = null;
   restoreRecorderPanel();
@@ -776,7 +778,7 @@ function showCountdownModal(question) {
   prepareModalKicker.textContent = "";
   prepareModalTitle.textContent = question.question;
   prepareModalMessage.replaceChildren();
-  renderTaskFigure(prepareFigure, prepareFigureImage, prepareFigureCaption, question?.figure);
+  renderTaskFigure(prepareFigure, prepareFigureImage, prepareFigureCaption, question?.figure, { allowUpload: true });
   prepareSpinner.hidden = true;
   preparePreviewWrap.hidden = !state.useCamera || !state.stream;
   prepareCameraGuidance.hidden = false;
@@ -995,7 +997,7 @@ function setQuestion(question) {
   syncGroupPickers();
   questionText.textContent = question.question;
   questionMeta.textContent = "";
-  renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, question?.figure);
+  renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, question?.figure, { allowUpload: true });
   saveResult.textContent = "";
   evaluationResult.innerHTML = "";
 }
@@ -1003,6 +1005,7 @@ function setQuestion(question) {
 const CUSTOM_FIGURE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const MAX_CUSTOM_FIGURE_BYTES = 5 * 1024 * 1024;
 const FIGURE_TIP_TEXT = "Tip: preparing with your own chart or diagram? Click the button, choose a PNG, JPG, or WebP image (up to 5\u00a0MB), and it replaces the sample figure \u2014 your answer will be evaluated against the figure you uploaded.";
+const FIGURE_TIP_NO_SAMPLE_TEXT = "Tip: this topic has no sample figure. Preparing with your own chart or diagram? Click the button, choose a PNG, JPG, or WebP image (up to 5\u00a0MB), and your answer will be evaluated against the figure you uploaded.";
 
 function setCustomFigure(file) {
   if (!CUSTOM_FIGURE_MIME_TYPES.has(file.type)) {
@@ -1034,8 +1037,10 @@ function taskFigureFor(figureEl) {
 }
 
 function refreshTaskFigures() {
-  renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, taskFigureFor(questionFigure));
-  renderTaskFigure(prepareFigure, prepareFigureImage, prepareFigureCaption, taskFigureFor(prepareFigure));
+  const questionState = taskFigureFor(questionFigure);
+  const prepareState = taskFigureFor(prepareFigure);
+  renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, questionState?.figure, questionState);
+  renderTaskFigure(prepareFigure, prepareFigureImage, prepareFigureCaption, prepareState?.figure, prepareState);
 }
 
 let figureTipRestoreTimer = null;
@@ -1047,9 +1052,11 @@ function showFigureTipError(message) {
   if (figureTipRestoreTimer) window.clearTimeout(figureTipRestoreTimer);
   figureTipRestoreTimer = window.setTimeout(() => {
     for (const tip of document.querySelectorAll("[data-figure-tip]")) {
-      tip.textContent = FIGURE_TIP_TEXT;
       tip.classList.remove("figure-tip-error");
     }
+    // Re-render instead of hardcoding one tip text: the sample-figure and
+    // no-sample-figure slots restore different variants.
+    refreshTaskFigures();
   }, 5000);
 }
 
@@ -1071,11 +1078,13 @@ function setupFigureControls(figureEl) {
 setupFigureControls(questionFigure);
 setupFigureControls(prepareFigure);
 
-// Weekly task figures are optional: hide the slot (and its "Task figure" label,
-// which sits directly above it) whenever the challenge has no figure, so the
-// nine text-only lessons keep their current layout. When the learner replaced
-// the figure, the uploaded image takes precedence over the default asset.
-function renderTaskFigure(figureEl, imageEl, captionEl, figure) {
+// Weekly task figures are optional: figure-less lessons show no default image.
+// Every topic still offers the upload slot, so the learner can attach their own
+// figure — on lessons with a default asset the upload replaces it, on text-only
+// lessons it simply becomes the task figure the answer is evaluated against.
+// A null figure with allowUpload=false (generating, device setup, empty route)
+// still hides the whole slot.
+function renderTaskFigure(figureEl, imageEl, captionEl, figure, { allowUpload = false } = {}) {
   if (!figureEl || !imageEl) return;
   // The "Task figure" label lives inside the figure element.
   const labelEl = figureEl.querySelector(".task-figure-label");
@@ -1085,29 +1094,40 @@ function renderTaskFigure(figureEl, imageEl, captionEl, figure) {
   const toggleLabel = (visible) => {
     if (labelEl) labelEl.hidden = !visible;
   };
-  taskFigures.set(figureEl, figure || null);
+  taskFigures.set(figureEl, { figure: figure || null, allowUpload });
   const baseSrc = typeof figure?.src === "string" ? figure.src.trim() : "";
-  // A null figure means this state has no figure at all (generating, device
-  // setup). The replacement only stands in for a figure that is actually shown.
-  const custom = baseSrc ? state.customFigure : null;
+  // An upload-enabled slot offers the learner's own figure even when the lesson
+  // ships no default asset; the upload takes precedence either way.
+  const custom = baseSrc || allowUpload ? state.customFigure : null;
   const src = custom?.url || baseSrc;
   if (!src) {
     imageEl.removeAttribute("src");
     imageEl.alt = "";
+    imageEl.hidden = true;
     if (captionEl) captionEl.textContent = "";
     toggleLabel(false);
-    if (controls) controls.hidden = true;
-    if (tipEl) tipEl.hidden = true;
-    figureEl.hidden = true;
+    if (controls) controls.hidden = !allowUpload;
+    if (tipEl) {
+      tipEl.textContent = allowUpload ? FIGURE_TIP_NO_SAMPLE_TEXT : "";
+      tipEl.hidden = !allowUpload;
+    }
+    figureEl.hidden = !allowUpload;
     return;
   }
+  imageEl.hidden = false;
   imageEl.src = src;
   imageEl.alt = custom ? custom.name : (typeof figure.alt === "string" ? figure.alt : "");
   if (captionEl) captionEl.textContent = custom ? "Your figure" : (typeof figure.caption === "string" ? figure.caption : "");
   toggleLabel(true);
   if (controls) controls.hidden = false;
-  if (resetButton) resetButton.hidden = !custom;
-  if (tipEl) tipEl.hidden = false;
+  if (resetButton) {
+    resetButton.hidden = !custom;
+    resetButton.textContent = baseSrc ? "Reset to sample figure" : "Remove my figure";
+  }
+  if (tipEl) {
+    tipEl.textContent = baseSrc ? FIGURE_TIP_TEXT : FIGURE_TIP_NO_SAMPLE_TEXT;
+    tipEl.hidden = false;
+  }
   figureEl.hidden = false;
 }
 
@@ -1294,7 +1314,7 @@ function showGameChallenge(challenge) {
   if (!state.question && normalizeRoute(window.location.pathname) === "/game") {
     questionText.textContent = challenge.question;
     questionMeta.textContent = `Target: within ${challenge.expectedDurationSeconds} seconds.`;
-    renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, challenge.figure);
+    renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, challenge.figure, { allowUpload: true });
   }
 }
 
