@@ -52,21 +52,31 @@
 
 ### Invitation share link
 
-- An inviter copies a shareable link from `/invitation-codes` and sends it to the invitee. The link is
-  `<share-service-url>/invite#code=<CODE>`; the code rides in the fragment so it never reaches the server
-  logs or the `Referer` header. `invitationShareUrl(req, code)` in `src/app.js` is the single source of that
-  URL and is used by the QR route, the create response, and the list response (`shareUrl` per record).
-- The QR payload and the copied link must stay byte-identical, or a scan and a paste would stop being
-  interchangeable. `test/invitation.test.js` asserts both against `APP_BASE_URL`.
+- `/invitation-codes` is limited to DingTalk administrators in `INVITER_OPEN_IDS` when that stable-ID
+  allow-list is configured; otherwise the display-name fallback is 吴衍标, 邹欣, 王旭东, 符积高. The page route,
+  every management API, and the header link all use the same `hasInvitationAdminAccess` gate.
+- A legacy single-use code creates one account. A shared QR campaign creates one stable campaign code and up
+  to the administrator-selected `max_uses` (maximum 9,999) independent `campaign-account` records, each with
+  its own personal code. Duplicate names are allowed; the personal code is the account key. Campaign seat
+  allocation and the capacity check happen under the invitations JSONL file lock.
+- `start_time` and `end_time` gate only new campaign registrations. `start_time` is inclusive and
+  `end_time` exclusive; personal codes continue to restore existing accounts after the campaign ends.
+- A shareable link is `<share-service-url>/invite#code=<CODE>`. Personal login links add `&name=<NAME>` and
+  auto-sign the holder into that account. All credentials ride in the fragment so they never reach server
+  logs or the `Referer` header. `invitationShareUrl(req, code, name?)` in `src/app.js` is the single source
+  of both URLs, used by QR routes, create/list responses, the administrator account list, and
+  `GET /api/me/login-link`.
+- The campaign QR payload and copied campaign link must stay byte-identical, or a scan and a paste would stop
+  being interchangeable. `test/invitation.test.js` asserts QR bytes and the 200-seat concurrency boundary
+  against `APP_BASE_URL`.
 - Opening the link must land on the invitation path only. `VisitorSession.ensureAccess` hides the DingTalk
-  sign-in whenever `window.__invitationCode` is set (or `invitationOnly` is passed), prefills the code, focuses
-  the name field, and shows an explainer instead of the "or use an invitation code" divider. Every other entry
-  point keeps offering DingTalk — do not hide it globally.
-- `public/invite.js` strips the fragment with `replaceState` once the code is in memory. A full page reload
-  after that therefore arrives without a code and shows the ordinary dialog; the in-page "Enter invitation
-  code" fallback still stays invitation-only.
-- The link is offered for used codes too: the same guest recovers their identity on another browser by
-  re-entering the name bound to the code.
+  sign-in whenever `window.__invitationCode` is set (or `invitationOnly` is passed), prefills code/name, and
+  shows an explainer instead of the "or use an invitation code" divider. Every other entry point keeps
+  offering DingTalk — do not hide it globally.
+- `public/invite.js` strips the fragment with `replaceState` once code/name are in memory. A code-only link
+  asks for a name; a personal code+name link redeems immediately and falls back to the prefilled form if the
+  link is invalid. Every invitation guest can click their displayed header name to copy the personal link;
+  campaign creators can also retrieve it from the campaign's registered-learner list.
 
 ### Teacher console
 

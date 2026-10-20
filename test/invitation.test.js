@@ -16,8 +16,26 @@ const { readJsonLines } = require('../src/storage');
 let server, base;
 test.before(async () => { server = await listenForTest(app); base = `http://127.0.0.1:${server.address().port}`; });
 test.after(async () => { await new Promise(resolve => server.close(resolve)); fs.rmSync(data, { recursive: true, force: true }); });
-function member(owner = 'inviter') { return { Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId: owner, name: 'Member' })}`, 'X-Expected-Owner': owner }; }
+function member(owner = 'inviter', name = '王旭东') { return { Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId: owner, name })}`, 'X-Expected-Owner': owner }; }
 async function issue() { const response = await fetch(base + '/api/invitation-codes', { method: 'POST', headers: member() }); assert.equal(response.status, 201); return response.json(); }
+function campaignBody(overrides = {}) {
+  return {
+    name: 'Autumn English Test',
+    max_uses: 200,
+    start_time: new Date(Date.now() - 60_000).toISOString(),
+    end_time: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    ...overrides,
+  };
+}
+async function issueCampaign(owner = 'inviter', overrides = {}) {
+  const response = await fetch(base + '/api/invitation-campaigns', {
+    method: 'POST',
+    headers: { ...member(owner), 'Content-Type': 'application/json' },
+    body: JSON.stringify(campaignBody(overrides)),
+  });
+  assert.equal(response.status, 201);
+  return response.json();
+}
 function redeem(code, name = 'Alice', cookie = '') { return fetch(base + '/api/invitation/redeem', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ code, name }) }); }
 function cookies(response) { return response.headers.getSetCookie().map(value => value.split(';')[0]).join('; '); }
 function claims(id) { return readJsonLines(invitationsMetadataFile).filter(row => row.id === id && row.usedAt); }
@@ -160,6 +178,151 @@ test('the stored name is returned and visible to the invitation owner', async ()
   const stranger = await (await fetch(base + '/api/invitation-codes', { headers: member('other') })).json();
   assert.equal(stranger.codes.some(entry => entry.id === record.id), false);
   assert.equal((await fetch(base + `/api/invitation-codes/${record.id}`, { method: 'DELETE', headers: member() })).status, 409);
+});
+test('a campaign owns one reusable QR and only its creator can inspect registrations', async () => {
+  const { record } = await issueCampaign();
+  assert.equal(record.max_uses, 200);
+  assert.equal(record.registered, 0);
+  assert.equal(record.status, 'open');
+  assert.equal(record.shareUrl, `https://english.example.test/service/invite#code=${record.code}`);
+
+  const route = base + `/api/invitation-campaigns/${record.id}/qr`;
+  assert.equal((await fetch(route)).status, 401);
+  assert.equal((await fetch(route, { headers: member('other') })).status, 404);
+  const qr = await fetch(route, { headers: member() });
+  assert.equal(qr.status, 200);
+  assert.deepEqual(
+    Buffer.from(await qr.arrayBuffer()),
+    await QRCode.toBuffer(record.shareUrl, { type: 'png', width: 480, margin: 4, errorCorrectionLevel: 'M' }),
+  );
+
+  const listed = await (await fetch(base + '/api/invitation-campaigns', { headers: member() })).json();
+  assert.equal(listed.campaigns.some(entry => entry.id === record.id), true);
+  const hidden = await (await fetch(base + '/api/invitation-campaigns', { headers: member('other') })).json();
+  assert.equal(hidden.campaigns.some(entry => entry.id === record.id), false);
+  assert.equal((await fetch(base + `/api/invitation-campaigns/${record.id}/accounts`, { headers: member('other') })).status, 404);
+});
+test('only the designated DingTalk administrators may open invitation management', async () => {
+  for (const [index, name] of ['吴衍标', '邹欣', '王旭东', '符积高'].entries()) {
+    const headers = member(`admin-${index}`, name);
+    assert.equal((await fetch(base + '/api/invitation-campaigns', { headers })).status, 200, name);
+    assert.equal((await fetch(base + '/invitation-codes', { headers, redirect: 'manual' })).status, 200, name);
+  }
+  const denied = member('unexpected-member', '普通成员');
+  assert.equal((await fetch(base + '/api/invitation-campaigns', { headers: denied })).status, 403);
+  const page = await fetch(base + '/invitation-codes', { headers: denied, redirect: 'manual' });
+  assert.equal(page.status, 302);
+  assert.equal(page.headers.get('location'), '/leaderboard');
+});
+test('campaign creation validates its name, seat count, and registration window', async () => {
+  const create = body => fetch(base + '/api/invitation-campaigns', {
+    method: 'POST',
+    headers: { ...member('validation-owner'), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  let response = await create(campaignBody({ name: '   ' }));
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).code, 'CAMPAIGN_NAME_REQUIRED');
+  response = await create(campaignBody({ max_uses: 10000 }));
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).code, 'CAMPAIGN_WINDOW_INVALID');
+  const start = new Date(Date.now() + 60_000).toISOString();
+  const end = new Date(Date.now() + 120_000).toISOString();
+  response = await create(campaignBody({ start_time: end, end_time: start }));
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).code, 'CAMPAIGN_WINDOW_INVALID');
+  response = await create(campaignBody({ start_time: 'not-a-date' }));
+  assert.equal(response.status, 400);
+  const withoutLimit = campaignBody();
+  delete withoutLimit.max_uses;
+  const defaultCampaign = await create(withoutLimit);
+  assert.equal(defaultCampaign.status, 201);
+  assert.equal((await defaultCampaign.json()).record.max_uses, 200);
+  const maximum = await create(campaignBody({ max_uses: 9999 }));
+  assert.equal(maximum.status, 201);
+  assert.equal((await maximum.json()).record.max_uses, 9999);
+});
+test('a campaign enforces its start and end times for new accounts', async () => {
+  const upcoming = await issueCampaign('window-owner', {
+    start_time: new Date(Date.now() + 60_000).toISOString(),
+    end_time: new Date(Date.now() + 120_000).toISOString(),
+  });
+  const early = await redeem(upcoming.record.code, 'Early');
+  assert.equal(early.status, 403);
+  assert.equal((await early.json()).code, 'INVITATION_NOT_STARTED');
+
+  const expired = await issueCampaign('window-owner', {
+    start_time: new Date(Date.now() - 120_000).toISOString(),
+    end_time: new Date(Date.now() - 60_000).toISOString(),
+  });
+  const late = await redeem(expired.record.code, 'Late');
+  assert.equal(late.status, 403);
+  assert.equal((await late.json()).code, 'INVITATION_EXPIRED');
+});
+test('a campaign seat creates a personal code, allows duplicate names, and survives campaign expiry', async () => {
+  const { record } = await issueCampaign('personal-owner', { max_uses: 2 });
+  const first = await redeem(record.code, '同名用户');
+  const second = await redeem(record.code, '同名用户');
+  assert.equal(first.status, 201);
+  assert.equal(second.status, 201);
+  const firstBody = await first.json();
+  const secondBody = await second.json();
+  assert.notEqual(firstBody.user.openId, secondBody.user.openId);
+  assert.match(firstBody.loginUrl, /#code=[0-9A-F]+&name=/);
+  assert.match(secondBody.loginUrl, /#code=[0-9A-F]+&name=/);
+  assert.notEqual(firstBody.loginUrl, secondBody.loginUrl);
+
+  const full = await redeem(record.code, 'Third');
+  assert.equal(full.status, 409);
+  assert.equal((await full.json()).code, 'INVITATION_FULL');
+
+  // Ends the campaign after both accounts exist. New registrations stop, but
+  // each account's personal code remains a valid login credential.
+  const stored = readJsonLines(invitationsMetadataFile).find(row => row.id === record.id);
+  fs.appendFileSync(invitationsMetadataFile, JSON.stringify({
+    ...stored,
+    end_time: new Date(Date.now() - 1_000).toISOString(),
+  }) + '\n');
+  assert.equal((await redeem(record.code, 'Another')).status, 403);
+  const personalCode = new URL(firstBody.loginUrl).hash.split('&').find(part => part.startsWith('#code=')).slice(6);
+  const returning = await redeem(personalCode, '同名用户');
+  assert.equal(returning.status, 200);
+  assert.equal((await returning.json()).user.openId, firstBody.user.openId);
+  const wrongName = await redeem(personalCode, 'Wrong Name');
+  assert.equal(wrongName.status, 409);
+  assert.equal((await wrongName.json()).code, 'INVITATION_NAME_MISMATCH');
+
+  const ownLink = await fetch(base + '/api/me/login-link', { headers: { Cookie: cookies(await redeem(personalCode, '同名用户')) } });
+  assert.equal(ownLink.status, 200);
+  assert.equal((await ownLink.json()).url, firstBody.loginUrl);
+
+  const accounts = await fetch(base + `/api/invitation-campaigns/${record.id}/accounts`, { headers: member('personal-owner') });
+  assert.equal(accounts.status, 200);
+  const accountRows = (await accounts.json()).accounts;
+  assert.equal(accountRows.length, 2);
+  assert.deepEqual(accountRows.map(row => row.name), ['同名用户', '同名用户']);
+  assert.deepEqual(new Set(accountRows.map(row => row.loginUrl)), new Set([firstBody.loginUrl, secondBody.loginUrl]));
+});
+test('200 concurrent campaign registrations claim exactly 200 seats', async () => {
+  const { record } = await issueCampaign('capacity-owner');
+  const responses = await Promise.all(Array.from({ length: 200 }, (_, index) =>
+    redeem(record.code, `Learner ${index}`)
+  ));
+  assert.equal(responses.filter(response => response.status === 201).length, 200);
+  const bodies = await Promise.all(responses.filter(response => response.status === 201).map(response => response.json()));
+  assert.equal(new Set(bodies.map(body => body.user.openId)).size, 200);
+  assert.equal(new Set(bodies.map(body => body.loginUrl)).size, 200);
+  assert.equal(claims(record.id).length, 0, 'campaign claims use account rows rather than mutating the campaign row');
+  assert.equal(readJsonLines(invitationsMetadataFile).filter(row => row.kind === 'campaign-account' && row.campaignId === record.id).length, 200);
+
+  const overflow = await redeem(record.code, 'Learner 201');
+  assert.equal(overflow.status, 409);
+  assert.equal((await overflow.json()).code, 'INVITATION_FULL');
+  const listed = await (await fetch(base + '/api/invitation-campaigns', { headers: member('capacity-owner') })).json();
+  const listedCampaign = listed.campaigns.find(entry => entry.id === record.id);
+  assert.equal(listedCampaign.registered, 200);
+  assert.equal(listedCampaign.remaining, 0);
+  assert.equal(listedCampaign.status, 'full');
 });
 test('each DingTalk member can generate at most 100 invitation codes', async () => {
   const owner = 'quota-owner';

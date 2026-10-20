@@ -112,12 +112,25 @@ test("comment moderation uses a guarded model kind and hides the original blocke
 });
 
 test("in-app and existing signed sessions can manage their own invitations", async () => {
-  const response = await call("legacy-signed-owner", "/api/invitation-codes", {});
+  const manage = owner => fetch(base + "/api/invitation-codes", {
+    method: "POST",
+    headers: {
+      Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId: owner, name: "王旭东" })}`,
+      "X-Expected-Owner": owner,
+    },
+  });
+  const listMine = owner => fetch(base + "/api/invitation-codes", {
+    headers: {
+      Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId: owner, name: "王旭东" })}`,
+      "X-Expected-Owner": owner,
+    },
+  });
+  const response = await manage("legacy-signed-owner");
   assert.equal(response.status, 201);
   const { record } = await response.json();
-  const own = await (await call("legacy-signed-owner", "/api/invitation-codes")).json();
+  const own = await (await listMine("legacy-signed-owner")).json();
   assert.ok(own.codes.some(row => row.id === record.id));
-  const other = await (await call("other-signed-owner", "/api/invitation-codes")).json();
+  const other = await (await listMine("other-signed-owner")).json();
   assert.ok(other.codes.every(row => row.id !== record.id));
 });
 

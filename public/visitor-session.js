@@ -22,7 +22,7 @@
   // Desktop reveals the full name on hover, touch on tap/click (see .identity-name in
   // access-modal.css). The chip keeps the short preview either way, so the navigation
   // beside it is never squeezed out while the full name is open.
-  function renderIdentityName(element, name) {
+  function renderIdentityName(element, name, { activate = null } = {}) {
     if (!element) return;
     const full = typeof name === "string" ? name.trim() : "";
     const short = truncateName(full);
@@ -30,9 +30,10 @@
     element.dataset.fullName = full;
     element.textContent = short;
     element.classList.toggle("is-truncated", short !== full);
+    element.classList.toggle("can-copy-login", typeof activate === "function");
     if (full) element.setAttribute("aria-label", full);
     else element.removeAttribute("aria-label");
-    if (short === full) {
+    if (short === full && typeof activate !== "function") {
       element.dataset.expanded = "false";
       element.removeAttribute("role");
       element.removeAttribute("tabindex");
@@ -41,10 +42,16 @@
     }
     element.setAttribute("role", "button");
     element.setAttribute("tabindex", "0");
-    element.setAttribute("aria-expanded", element.dataset.expanded === "true" ? "true" : "false");
+    if (typeof activate === "function") element.removeAttribute("aria-expanded");
+    else element.setAttribute("aria-expanded", element.dataset.expanded === "true" ? "true" : "false");
+    element._identityActivate = typeof activate === "function" ? activate : null;
     if (element.dataset.nameBound === "true") return;
     element.dataset.nameBound = "true";
     const toggle = () => {
+      if (element._identityActivate) {
+        element._identityActivate();
+        return;
+      }
       const expanded = element.dataset.expanded === "true";
       element.dataset.expanded = expanded ? "false" : "true";
       element.setAttribute("aria-expanded", expanded ? "false" : "true");
@@ -55,6 +62,59 @@
       event.preventDefault();
       toggle();
     });
+  }
+
+  function showLoginLinkToast(message, error = false) {
+    document.querySelector(".identity-copy-toast")?.remove();
+    const toast = document.createElement("div");
+    toast.className = `identity-copy-toast${error ? " error" : ""}`;
+    toast.setAttribute("role", error ? "alert" : "status");
+    toast.textContent = message;
+    document.body.append(toast);
+    setTimeout(() => toast.remove(), 4200);
+  }
+
+  function showManualLoginLink(url) {
+    document.querySelector(".identity-link-dialog")?.remove();
+    const dialog = document.createElement("dialog");
+    dialog.className = "access-dialog identity-link-dialog";
+    dialog.innerHTML = '<form method="dialog"><h2>Your personal login link</h2><p>Copy this link and use it to sign in from another browser.</p><input readonly spellcheck="false" autocomplete="off"><button class="access-submit">Close</button></form>';
+    const field = dialog.querySelector("input");
+    field.value = url;
+    field.addEventListener("focus", () => field.select());
+    dialog.querySelector("form").addEventListener("submit", event => {
+      event.preventDefault();
+      dialog.close();
+    });
+    dialog.addEventListener("close", () => dialog.remove(), { once: true });
+    document.body.append(dialog);
+    dialog.showModal();
+    field.focus();
+    field.select();
+  }
+
+  let loginLinkPending = false;
+  async function copyLoginLink() {
+    if (loginLinkPending || current?.user?.identityType !== "guest") return;
+    loginLinkPending = true;
+    const nameElement = document.querySelector(".identity-name.can-copy-login");
+    nameElement?.classList.add("is-busy");
+    try {
+      const response = await request("/api/me/login-link");
+      const data = await response.json();
+      if (!response.ok || !data.url) throw new Error(data.error || "Unable to create your login link.");
+      try {
+        await navigator.clipboard.writeText(data.url);
+        showLoginLinkToast("Login link copied. Use it to sign in from another browser.");
+      } catch {
+        showManualLoginLink(data.url);
+      }
+    } catch (error) {
+      showLoginLinkToast(error.message || "Unable to copy your login link.", true);
+    } finally {
+      loginLinkPending = false;
+      nameElement?.classList.remove("is-busy");
+    }
   }
 
   function update(data) {
@@ -243,6 +303,7 @@
         const previousFocus = document.activeElement;
         const login = dialog.querySelector(".access-login");
         if (window.__invitationCode) dialog.querySelector("[name=code]").value = window.__invitationCode;
+        if (window.__invitationName) dialog.querySelector("[name=name]").value = window.__invitationName;
         login.href = `/auth/dingtalk?redirect=${encodeURIComponent(location.pathname + location.search)}`;
         login.hidden = codeOnly || current?.configured === false;
         if (login.hidden) {
@@ -251,7 +312,9 @@
         }
         if (codeOnly) {
           const intro = dialog.querySelector(".access-intro");
-          intro.textContent = "Your invitation code is already filled in. Add your name to continue.";
+          intro.textContent = window.__invitationName
+            ? "Your code and name are already filled in. Continue to sign in."
+            : "Your invitation code is already filled in. Add your name to continue.";
           intro.hidden = false;
         }
         let busy = false;
@@ -336,7 +399,10 @@
         document.body.append(dialog);
         dialog.showModal();
         // The code came in with the link, so the name is the only field left to fill.
-        if (codeOnly) nameInput.focus();
+        if (codeOnly) {
+          if (window.__invitationName) dialog.querySelector(".access-submit").focus();
+          else nameInput.focus();
+        }
       });
     })().finally(() => { accessPending = null; });
     return accessPending;
@@ -352,5 +418,5 @@
   });
   channel?.addEventListener("message", () => refresh().catch(() => {}));
   window.addEventListener("focus", () => refresh().catch(() => {}));
-  window.VisitorSession = { fetch: request, refresh, announce, ensureAccess, redeem, renderIdentityName, truncateName, NAME_MAX_LENGTH, NAME_PREVIEW_LENGTH, get hasAccess() { return current?.hasAccess === true; }, get user() { return current?.user; } };
+  window.VisitorSession = { fetch: request, refresh, announce, ensureAccess, redeem, renderIdentityName, copyLoginLink, truncateName, NAME_MAX_LENGTH, NAME_PREVIEW_LENGTH, get hasAccess() { return current?.hasAccess === true; }, get user() { return current?.user; } };
 })();

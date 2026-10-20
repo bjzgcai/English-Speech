@@ -18,7 +18,7 @@ const { readJsonLines } = require('../src/storage');
 let server, base;
 test.before(async () => { server = await listenForTest(app); base = `http://127.0.0.1:${server.address().port}`; });
 test.after(async () => { await new Promise(resolve => server.close(resolve)); fs.rmSync(data, { recursive: true, force: true }); });
-function member(owner) { return { Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId: owner, name: 'Member' })}`, 'X-Expected-Owner': owner }; }
+function member(owner) { return { Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId: owner, name: '王旭东' })}`, 'X-Expected-Owner': owner }; }
 async function issue(owner) { const response = await fetch(base + '/api/invitation-codes', { method: 'POST', headers: member(owner) }); assert.equal(response.status, 201); return response.json(); }
 function redeem(code, name, ip, cookie = '') {
   return fetch(base + '/api/invitation/redeem', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, 'X-Real-IP': ip }, body: JSON.stringify({ code, name }) });

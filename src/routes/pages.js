@@ -1,7 +1,7 @@
 const path = require("path");
 const { openApiFile, publicDir, rootDir } = require("../config");
 
-function registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requireCatchupPage }) {
+function registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requireCatchupPage, requireInvitationAdminPage }) {
   app.get("/openapi.yaml", (_req, res) => {
     res.type("application/yaml").sendFile(openApiFile);
   });
@@ -25,7 +25,7 @@ function registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requireC
   app.get("/admin", requirePageAuth, (_req, res) =>
     res.sendFile(path.join(rootDir, "views", "admin.html")),
   );
-  app.get("/invitation-codes", requirePageAuth, (_req, res) =>
+  app.get("/invitation-codes", requireInvitationAdminPage, (_req, res) =>
     res.sendFile(path.join(publicDir, "invitation-codes.html")),
   );
   app.get("/teacher", requireTeacherPage, (_req, res) =>

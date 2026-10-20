@@ -54,6 +54,30 @@
 .identity-name { display: inline-block; min-width: 0; font-weight: 800; white-space: nowrap; vertical-align: middle; }
 .auth-chip .identity-name { padding: 6px 11px; border-radius: 999px; background: #f1effb; color: #5144c5; font-size: 13px; }
 .identity-name.is-truncated { position: relative; cursor: pointer; }
+.identity-name.can-copy-login { cursor: pointer; text-decoration: underline dotted 1px currentColor; text-underline-offset: 3px; }
+.identity-name.can-copy-login:hover { background: #e7e4fb; }
+.identity-name.can-copy-login.is-busy { opacity: .62; cursor: wait; }
+.identity-link-dialog { display: grid; gap: 12px; }
+.identity-link-dialog form { display: grid; gap: 12px; }
+.identity-link-dialog h2 { margin: 0; }
+.identity-link-dialog p { margin: 0; color: #535066; }
+.identity-link-dialog input { width: 100%; box-sizing: border-box; padding: 11px 12px; border: 1px solid #aaa5be; border-radius: 5px; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.identity-copy-toast {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  z-index: 1200;
+  max-width: min(92vw, 520px);
+  transform: translateX(-50%);
+  border: 1px solid #b9ddca;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgb(25 24 40 / 18%);
+  padding: 11px 18px;
+  color: #176b53;
+  font: 700 14px/1.45 system-ui, sans-serif;
+}
+.identity-copy-toast.error { border-color: #f0c4c8; color: #aa2439; }
 .identity-name.is-truncated::after {
   content: attr(data-full-name);
   position: absolute;

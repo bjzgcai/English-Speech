@@ -18,6 +18,7 @@ const state = {
   wakeLock: null,
   authUser: null,
   authReady: false,
+  invitationAdminAccess: false,
   teacherAccess: false,
   catchupAccess: false,
   catchupMode: false,
@@ -615,8 +616,12 @@ function updateAuthView() {
   playView.hidden = route === "/history" || route === "/leaderboard";
   leaderboardView.hidden = route !== "/leaderboard";
   historyView.hidden = route !== "/history";
-  window.VisitorSession.renderIdentityName(authUserName, state.authUser?.name);
-  if (invitationLink) invitationLink.hidden = !(state.authUser?.identityType === "dingtalk");
+  const canCopyLoginLink = window.VisitorSession.hasAccess && state.authUser?.identityType === "guest";
+  authUserName.title = canCopyLoginLink ? "Click to copy your personal login link" : "";
+  window.VisitorSession.renderIdentityName(authUserName, state.authUser?.name, {
+    activate: canCopyLoginLink ? window.VisitorSession.copyLoginLink : null,
+  });
+  if (invitationLink) invitationLink.hidden = !state.invitationAdminAccess;
   // Strictly allow-listed server-side; the flag comes from /api/me.
   if (teacherLink) teacherLink.hidden = !state.teacherAccess;
   nameInput.value = state.authUser?.name || "";
@@ -705,6 +710,7 @@ async function checkAuth() {
     const data = await response.json();
     state.authUser = data.user || null;
     state.authReady = true;
+    state.invitationAdminAccess = data.invitationAdminAccess === true;
     state.teacherAccess = data.teacherAccess === true;
     state.catchupAccess = data.catchupAccess === true;
     state.dingTalkConfigured = data.configured;
@@ -728,6 +734,7 @@ async function refreshAccessFlags() {
   try {
     const response = await window.VisitorSession.fetch("/api/me", { cache: "no-store" });
     const data = await response.json();
+    state.invitationAdminAccess = data.invitationAdminAccess === true;
     state.teacherAccess = data.teacherAccess === true;
     state.catchupAccess = data.catchupAccess === true;
   } catch {
@@ -2750,7 +2757,10 @@ window.addEventListener("visitoridentitychange", (event) => {
   if (window.VisitorSession.hasAccess) window.EvaluationQueue.restore().catch(() => {});
   // Repaint for the new identity: redeeming an invitation code here can unlock
   // the make-up page, and logging out must blank it again.
-  void refreshAccessFlags().then(() => setRoute(window.location.pathname));
+  void refreshAccessFlags().then(() => {
+    updateAuthView();
+    setRoute(window.location.pathname);
+  });
 });
 
 privacyPolicyAgree.addEventListener("change", updatePrivacyAcceptButton);

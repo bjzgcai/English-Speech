@@ -1,5 +1,8 @@
-const invitationCode = new URLSearchParams(location.hash.slice(1)).get("code");
+const invitationParams = new URLSearchParams(location.hash.slice(1));
+const invitationCode = invitationParams.get("code");
+const invitationName = invitationParams.get("name");
 if (invitationCode) window.__invitationCode = invitationCode;
+if (invitationName) window.__invitationName = invitationName;
 // The code rides in the fragment so it never reaches the server or the referrer;
 // once it is in memory the address bar no longer needs it.
 if (location.hash) history.replaceState(null, "", location.pathname + location.search);
@@ -17,8 +20,29 @@ if (invitationCode) {
   document.querySelector("#invite-code-value").textContent = invitationCode;
   document.querySelector("#invite-code-line").hidden = false;
 }
+if (invitationName) {
+  document.querySelector("#invite-name-value").textContent = invitationName;
+  document.querySelector("#invite-name-line").hidden = false;
+}
 enter.addEventListener("click", enterInvitation);
 async function start() {
+  if (invitationCode && invitationName) {
+    enter.disabled = true;
+    enter.textContent = "Signing you in...";
+    try {
+      // A copied personal link is a bearer credential for one account. Redeem it
+      // immediately, then fall back to the prefilled form if the link was edited
+      // or the account can no longer be restored.
+      await window.VisitorSession.redeem(invitationCode, invitationName);
+      location.replace("/game");
+    } catch {
+      await window.VisitorSession.ensureAccess({ force: true, invitationOnly: true });
+    } finally {
+      enter.disabled = false;
+      enter.textContent = "Enter invitation code";
+    }
+    return;
+  }
   if (invitationCode) {
     enter.disabled = true;
     try {

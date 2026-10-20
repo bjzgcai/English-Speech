@@ -415,6 +415,53 @@
     // Invitation codes page
     "Access management": "权限管理",
     "Create and track single-use access codes.": "创建并跟踪一次性访问码。",
+    "Create a shared QR for up to 200 learners, or issue a single-use code.":
+      "创建一个最多供 200 名学习者使用的共享二维码，或生成一次性邀请码。",
+    "Create a shared QR for any class size up to 9,999 learners, or issue a single-use code.":
+      "创建适用于任意班级规模的共享二维码（最多 9,999 人），或生成一次性邀请码。",
+    "Create QR campaign": "创建活动二维码",
+    "Shared QR campaign": "共享二维码活动",
+    "One QR, 200 independent learner accounts": "一个二维码，200 个独立学习者账户",
+    "One QR, independent learner accounts": "一个二维码，创建多个独立学习者账户",
+    "Every person scans the same QR, enters a name, and receives a personal login link.":
+      "每个人扫描同一个二维码、填写姓名，并生成自己的专属登录链接。",
+    "Campaign name": "活动名称",
+    "Seat limit": "名额上限",
+    "Registration starts": "开放注册时间",
+    "Registration ends": "注册截止时间",
+    "Asia/Shanghai": "北京时间",
+    "Generate campaign QR": "生成活动二维码",
+    "Registration QR": "注册二维码",
+    "Campaign link": "活动链接",
+    "Copy campaign link": "复制活动链接",
+    "Campaigns": "活动",
+    "Shared QR campaigns": "共享二维码活动",
+    "Campaign": "活动",
+    "Registered": "已注册",
+    "Registration window": "注册时间",
+    "No QR campaigns yet.": "还没有活动二维码。",
+    "Registered learners": "已注册学习者",
+    "Copy login link": "复制登录链接",
+    "Legacy access": "原有访问方式",
+    "Single-use invitation codes": "一次性邀请码",
+    "These codes continue to open exactly one learner account.":
+      "这些邀请码仍然只能创建一个学习者账户。",
+    "Generate single-use code": "生成一次性邀请码",
+    "No single-use invitation codes yet.": "还没有一次性邀请码。",
+    "Upcoming": "未开始",
+    "Open": "开放中",
+    "Full": "已满",
+    "Ended": "已结束",
+    "Campaign created. Share the QR with your invited learners.":
+      "活动已创建，把二维码分享给受邀学习者即可。",
+    "Campaign link copied. Share it with all invited learners.":
+      "活动链接已复制，可以发给所有受邀学习者。",
+    "Personal login link copied.": "个人登录链接已复制。",
+    "Login link copied. Use it to sign in from another browser.":
+      "登录链接已复制，可在其他浏览器中打开登录。",
+    "Your personal login link": "你的个人登录链接",
+    "Copy this link and use it to sign in from another browser.":
+      "复制此链接，即可在其他浏览器中登录。",
     "Generate code": "生成邀请码",
     "Share invitation": "分享邀请",
     "Copy QR code": "复制二维码",
@@ -435,6 +482,8 @@
     "Enter invitation code": "输入邀请码",
     "One invitation code opens one learner account. Use the same name every time to keep your evaluation history.":
       "一个邀请码对应一个学习者账号。每次使用相同的名字，才能保留你的评估历史。",
+    "After joining, open the link from your name in the page header and keep your personal login link private. It restores this account in another browser.":
+      "加入后请点击页头姓名复制个人登录链接，并妥善保管。它可以在其他浏览器中恢复当前账户。",
 
     // Invitation share link and invitation-code sign-in
     "Invitation link": "邀请链接",
@@ -449,6 +498,8 @@
     "Sign in with your invitation code": "使用邀请码登录",
     "Your invitation code is already filled in. Add your name to continue.":
       "邀请码已自动填入，填写你的名字即可继续。",
+    "Your code and name are already filled in. Continue to sign in.":
+      "邀请码和姓名已自动填入，点击继续即可登录。",
     "Invitation code": "邀请码",
     "Your name": "你的名字",
     "Continue": "继续",

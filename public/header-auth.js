@@ -5,19 +5,22 @@ const logoutButton = document.querySelector("[data-logout-button]");
 const invitationLink = document.querySelector("[data-invitation-link]");
 const teacherLink = document.querySelector("[data-teacher-link]");
 
-function showHeaderUser(user, memberFlag = user?.isZgcMember, canTeach = false) {
-  const isSignedIn = Boolean(user) && user.identityType !== "guest";
+function showHeaderUser(user, canTeach = false, canInvite = false) {
   const hasAccess = window.VisitorSession.hasAccess;
   // An invited guest is signed in too: hide the sign-in entry and offer logout.
   headerLogin.hidden = hasAccess;
   authChip.hidden = !hasAccess;
   logoutButton.hidden = !hasAccess;
-  // Keep the management entry discoverable for signed-in DingTalk users; the
-  // API still enforces the organization-member check before allowing access.
-  if (invitationLink) invitationLink.hidden = !(isSignedIn && user?.identityType === "dingtalk");
+  // Only designated administrators see the invitation-management entry. The
+  // page route and every API enforce the same allow-list server-side.
+  if (invitationLink) invitationLink.hidden = !canInvite;
   // The teacher console link is strictly allow-listed server-side too.
   if (teacherLink) teacherLink.hidden = !canTeach;
-  window.VisitorSession.renderIdentityName(authUserName, user?.name);
+  const canCopyLoginLink = hasAccess && user?.identityType === "guest";
+  if (authUserName) authUserName.title = canCopyLoginLink ? "Click to copy your personal login link" : "";
+  window.VisitorSession.renderIdentityName(authUserName, user?.name, {
+    activate: canCopyLoginLink ? window.VisitorSession.copyLoginLink : null,
+  });
 }
 
 async function checkHeaderAuth() {
@@ -30,7 +33,7 @@ async function checkHeaderAuth() {
     }
 
     const data = await response.json();
-    showHeaderUser(data.user || null, data.isZgcMember === true || data.user?.isZgcMember === true, data.teacherAccess === true);
+    showHeaderUser(data.user || null, data.teacherAccess === true, data.invitationAdminAccess === true);
   } catch {
     showHeaderUser(null);
   }

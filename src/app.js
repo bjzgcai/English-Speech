@@ -10,7 +10,7 @@ const { parseTree } = require("jsonc-parser");
 const config = require("./config");
 const processing = require("./processing");
 const { inspectMedia, convertToMp4, normalizeRecording, processMedia, audioMetrics: deriveAudioMetrics, preparedMediaExists } = require("./media");
-const { appendJsonLine, readJsonLines, updateJsonLines } = require("./storage");
+const { appendJsonLine, readJsonLines, updateJsonLines, withFileLock } = require("./storage");
 const { clientIp, createFailureLimiter } = require("./rate-limit");
 const { securityHeaders } = require("./security");
 const { createQuestionService } = require("./questions");
@@ -92,6 +92,11 @@ const MAX_OWNER_VIDEOS = 10;
 const INVITATION_NAME_MAX_LENGTH = 30;
 // A lifetime cap per DingTalk member: deleting a code does not restore the quota.
 const MAX_INVITATION_CODES_PER_INVITER = 100;
+// A shared campaign keeps one stable QR code while each learner receives an
+// independent personal code. Administrators choose the seat limit per campaign.
+const DEFAULT_CAMPAIGN_USES = 200;
+const MAX_CAMPAIGN_USES = 9999;
+const MAX_CAMPAIGN_NAME_LENGTH = 80;
 // Redeeming is unauthenticated, so failed attempts are throttled twice: once per
 // client address (code enumeration) and once per invitation record (guessing the
 // name that unlocks a used code). Overridable so tests can tighten the budgets.
@@ -389,9 +394,11 @@ function shareServiceUrl(req) {
 // The shareable invitation link an inviter sends to their invitee. The code rides
 // in the fragment so it never reaches the server logs or the Referer header, and
 // the QR route encodes the exact same URL so a link and a scan stay interchangeable.
-function invitationShareUrl(req, code) {
+function invitationShareUrl(req, code, name = "") {
   const url = new URL("invite", shareServiceUrl(req));
-  url.hash = new URLSearchParams({ code }).toString();
+  const fragment = new URLSearchParams({ code });
+  if (safeText(name)) fragment.set("name", safeText(name));
+  url.hash = fragment.toString();
   return url.toString();
 }
 
@@ -2195,24 +2202,45 @@ app.post("/auth/logout", (_req, res) => {
   res.json({ ok: true });
 });
 
-// Invitation codes grant full learner access without DingTalk, so minting
-// them is restricted to DingTalk-authenticated members. The OAuth app is
-// scoped to the configured organization (DINGTALK_CORP_ID), so completing
-// DingTalk sign-in already implies membership — there is no separate
-// per-user org check to perform. Set INVITER_OPEN_IDS (comma-separated) to
-// restrict minting further; unset means every org member may invite.
+// Invitation codes grant full learner access without DingTalk, so minting them
+// is restricted to designated DingTalk administrators. Stable openIds from
+// INVITER_OPEN_IDS take precedence when configured; until those are enrolled,
+// the display-name fallback keeps the current administrator accounts working.
+const DEFAULT_INVITATION_ADMIN_NAMES = ["吴衍标", "邹欣", "王旭东", "符积高"];
 const inviterOpenIds = new Set(
   (process.env.INVITER_OPEN_IDS || "")
     .split(",")
     .map((id) => id.trim())
     .filter(Boolean),
 );
+const invitationAdminNames = new Set(
+  (process.env.INVITATION_ADMIN_NAMES || DEFAULT_INVITATION_ADMIN_NAMES.join(","))
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean),
+);
+function hasInvitationAdminAccess(user) {
+  if (!user || user.identityType !== "dingtalk") return false;
+  if (inviterOpenIds.size) return inviterOpenIds.has(safeText(user.openId));
+  return invitationAdminNames.has(safeText(user.name).trim());
+}
 function requireZgcMember(req, res, next) {
   if (req.user?.identityType !== "dingtalk") return res.status(403).json({ error: "Only 中关村学院 DingTalk users may manage invitation codes." });
-  if (inviterOpenIds.size && !inviterOpenIds.has(safeText(req.user.openId))) {
-    return res.status(403).json({ error: "Invitation codes are managed by designated members." });
+  if (!hasInvitationAdminAccess(req.user)) {
+    return res.status(403).json({ error: "Invitation codes are managed by designated administrators." });
   }
   next();
+}
+function requireInvitationAdminPage(req, res, next) {
+  const user = readSession(req);
+  if (!safeText(user?.openId)) {
+    const redirectPath = normalizeRedirectPath(req.originalUrl || req.url);
+    return res.redirect(302, `/auth/dingtalk?redirect=${encodeURIComponent(redirectPath)}`);
+  }
+  const normalized = { ...user, identityType: "dingtalk" };
+  if (!hasInvitationAdminAccess(normalized)) return res.redirect(302, "/leaderboard");
+  req.user = normalized;
+  return next();
 }
 function ownerQuota(openId) {
   const byId = new Map(readJsonLines(metadataFile).filter(r => recordOpenId(r) === openId).map(record => [record.id, record]));
@@ -2240,21 +2268,155 @@ function invitationRecords() {
     return rightCreated - leftCreated;
   });
 }
+function campaignAccountRecords(campaignId, records = invitationRecords()) {
+  return records
+    .filter((record) => record.kind === "campaign-account" && record.campaignId === campaignId && record.usedAt)
+    .sort((left, right) => (Date.parse(left.createdAt || '') || 0) - (Date.parse(right.createdAt || '') || 0));
+}
+function campaignStatus(record, accounts, now = Date.now()) {
+  const start = Date.parse(record?.start_time || "");
+  const end = Date.parse(record?.end_time || "");
+  if (Number.isFinite(start) && now < start) return "upcoming";
+  if (Number.isFinite(end) && now >= end) return "expired";
+  if (accounts.length >= Number(record?.max_uses || 0)) return "full";
+  return "open";
+}
+function campaignPayload(req, record, records = invitationRecords()) {
+  const accounts = campaignAccountRecords(record.id, records);
+  const maxUses = Number(record.max_uses) || 0;
+  return {
+    id: record.id,
+    kind: "campaign",
+    name: record.name,
+    code: record.code,
+    codePreview: record.codePreview,
+    max_uses: maxUses,
+    registered: accounts.length,
+    remaining: Math.max(0, maxUses - accounts.length),
+    start_time: record.start_time,
+    end_time: record.end_time,
+    inviterName: record.inviterName,
+    createdAt: record.createdAt,
+    status: campaignStatus(record, accounts),
+    shareUrl: invitationShareUrl(req, record.code),
+  };
+}
+function invitationCodeNotIn(records) {
+  const hashes = new Set(records.map((record) => record.hash).filter(Boolean));
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const code = crypto.randomBytes(6).toString("hex").toUpperCase();
+    const hash = crypto.createHash("sha256").update(code).digest("hex");
+    if (!hashes.has(hash)) return { code, hash };
+  }
+  throw new Error("Unable to allocate a unique invitation code.");
+}
 function invitationNameHash(name) {
   return crypto.createHash("sha256").update(String(name).trim().toLocaleLowerCase()).digest("hex");
 }
 // Every code an inviter ever generated counts, including deleted and redeemed
 // ones, so the quota cannot be reset by deleting unused codes.
 function invitationQuotaFor(openId) {
-  const issued = invitationRecords().filter((record) => record.inviterOpenId === openId).length;
+  // Personal campaign accounts reuse the invitations file but are not codes the
+  // inviter generated, so they must never consume the legacy one-off quota.
+  const issued = invitationRecords().filter((record) =>
+    record.inviterOpenId === openId && record.kind !== "campaign-account"
+  ).length;
   return { issued, limit: MAX_INVITATION_CODES_PER_INVITER, remaining: Math.max(0, MAX_INVITATION_CODES_PER_INVITER - issued) };
 }
+app.get("/api/invitation-campaigns", requireAuth, requireZgcMember, (req, res) => {
+  const records = invitationRecords();
+  res.json({
+    campaigns: records
+      .filter((record) => record.kind === "campaign" && record.inviterOpenId === req.user.openId && !record.deletedAt)
+      .map((record) => campaignPayload(req, record, records)),
+  });
+});
+app.post("/api/invitation-campaigns", requireAuth, requireZgcMember, (req, res) => {
+  const name = safeText(req.body?.name).trim();
+  if (!name) {
+    return res.status(400).json({ code: "CAMPAIGN_NAME_REQUIRED", error: "A campaign name is required." });
+  }
+  if (name.length > MAX_CAMPAIGN_NAME_LENGTH) {
+    return res.status(400).json({ code: "CAMPAIGN_NAME_TOO_LONG", error: `The campaign name must be ${MAX_CAMPAIGN_NAME_LENGTH} characters or fewer.` });
+  }
+  const maxUses = Number(req.body?.max_uses ?? DEFAULT_CAMPAIGN_USES);
+  if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > MAX_CAMPAIGN_USES) {
+    return res.status(400).json({ code: "CAMPAIGN_WINDOW_INVALID", error: `The seat limit must be between 1 and ${MAX_CAMPAIGN_USES}.` });
+  }
+  const startMs = Date.parse(req.body?.start_time || "");
+  const endMs = Date.parse(req.body?.end_time || "");
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || startMs >= endMs) {
+    return res.status(400).json({ code: "CAMPAIGN_WINDOW_INVALID", error: "start_time must be earlier than end_time." });
+  }
+  const quota = invitationQuotaFor(req.user.openId);
+  if (quota.remaining <= 0) {
+    return res.status(429).json({
+      code: "INVITATION_QUOTA_EXCEEDED",
+      error: `You have reached the limit of ${MAX_INVITATION_CODES_PER_INVITER} invitation codes.`,
+      quota,
+    });
+  }
+  const records = invitationRecords();
+  const { code, hash } = invitationCodeNotIn(records);
+  const record = {
+    id: crypto.randomUUID(),
+    kind: "campaign",
+    name,
+    code,
+    hash,
+    codePreview: code.slice(-4),
+    max_uses: maxUses,
+    start_time: new Date(startMs).toISOString(),
+    end_time: new Date(endMs).toISOString(),
+    inviterOpenId: req.user.openId,
+    inviterName: req.user.name,
+    createdAt: new Date().toISOString(),
+    deletedAt: null,
+  };
+  appendJsonLine(invitationsMetadataFile, record);
+  const created = [...records, record];
+  res.status(201).json({ record: campaignPayload(req, record, created) });
+});
+app.get("/api/invitation-campaigns/:id/accounts", requireAuth, requireZgcMember, (req, res) => {
+  const records = invitationRecords();
+  const campaign = records.find((record) =>
+    record.id === req.params.id && record.kind === "campaign" &&
+    record.inviterOpenId === req.user.openId && !record.deletedAt
+  );
+  if (!campaign) return res.status(404).json({ error: "Invitation campaign not found." });
+  res.json({
+    accounts: campaignAccountRecords(campaign.id, records).map((account) => ({
+      id: account.id,
+      name: account.guestName,
+      createdAt: account.createdAt || account.usedAt,
+      loginUrl: invitationShareUrl(req, account.code, account.guestName),
+    })),
+  });
+});
+app.get("/api/invitation-campaigns/:id/qr", requireAuth, requireZgcMember, async (req, res, next) => {
+  const record = invitationRecords().find((item) =>
+    item.id === req.params.id && item.kind === "campaign" &&
+    item.inviterOpenId === req.user.openId && !item.deletedAt
+  );
+  if (!record?.code) return res.status(404).json({ error: "Invitation campaign not found." });
+  try {
+    const png = await QRCode.toBuffer(invitationShareUrl(req, record.code), {
+      type: "png",
+      width: 480,
+      margin: 4,
+      errorCorrectionLevel: "M",
+    });
+    res.set({ "Content-Type": "image/png", "Cache-Control": "no-store" }).send(png);
+  } catch (error) { next(error); }
+});
 app.get("/api/invitation-codes", requireAuth, requireZgcMember, (req, res) => {
   res.json({
-    codes: invitationRecords().filter(x => x.inviterOpenId === req.user.openId && !x.deletedAt).map(({ hash, guestNameHash, ...x }) => ({
-      ...x,
-      shareUrl: x.code ? invitationShareUrl(req, x.code) : null,
-    })),
+    codes: invitationRecords()
+      .filter(x => x.inviterOpenId === req.user.openId && !x.deletedAt && x.kind !== "campaign" && x.kind !== "campaign-account")
+      .map(({ hash, guestNameHash, ...x }) => ({
+        ...x,
+        shareUrl: x.code ? invitationShareUrl(req, x.code) : null,
+      })),
     quota: invitationQuotaFor(req.user.openId),
   });
 });
@@ -2267,8 +2429,8 @@ app.post("/api/invitation-codes", requireAuth, requireZgcMember, (req, res) => {
       quota,
     });
   }
-  const code = crypto.randomBytes(6).toString("hex").toUpperCase();
-  const record = { id: crypto.randomUUID(), code, hash: crypto.createHash("sha256").update(code).digest("hex"), codePreview: code.slice(-4), inviterOpenId: req.user.openId, inviterName: req.user.name, createdAt: new Date().toISOString(), usedAt: null, usedBy: null, deletedAt: null };
+  const { code, hash } = invitationCodeNotIn(invitationRecords());
+  const record = { id: crypto.randomUUID(), code, hash, codePreview: code.slice(-4), inviterOpenId: req.user.openId, inviterName: req.user.name, createdAt: new Date().toISOString(), usedAt: null, usedBy: null, deletedAt: null };
   appendJsonLine(invitationsMetadataFile, record);
   res.status(201).json({ code, record: { ...record, hash: undefined, shareUrl: invitationShareUrl(req, code) } });
 });
@@ -2317,11 +2479,87 @@ app.post("/api/invitation/redeem", (req, res) => {
   if (owner) {
     redeemCodeThrottle.reset(record.id);
     visitorAccess.setGuestSession(res, record.usedBy);
-    return res.json({ ok: true, user: { openId: record.usedBy, identityType: "guest", name: record.guestName || `Guest ${record.usedBy.slice(6, 14)}` } });
+    return res.json({
+      ok: true,
+      user: { openId: record.usedBy, identityType: "guest", name: record.guestName || `Guest ${record.usedBy.slice(6, 14)}` },
+      loginUrl: record.guestName ? invitationShareUrl(req, record.code, record.guestName) : null,
+    });
   }
   const codeVerdict = redeemCodeThrottle.check(record.id);
   if (codeVerdict.blocked) return redeemThrottled(res, codeVerdict, "INVITATION_NAME_LOCKED", "Too many incorrect names for this invitation. Please try again later.");
   if (name.length > INVITATION_NAME_MAX_LENGTH) return deny(400, { code: "INVITATION_NAME_TOO_LONG", error: `The invitation name must be ${INVITATION_NAME_MAX_LENGTH} characters or fewer.` });
+  if (record.kind === "campaign") {
+    if (!name.trim()) return deny(400, { code: "INVITATION_NAME_REQUIRED", error: "A name is required." });
+    const normalized = name.trim();
+    const guestNameHash = invitationNameHash(normalized);
+    let claim = null;
+    let claimError = null;
+    withFileLock(invitationsMetadataFile, () => {
+      const records = readJsonLines(invitationsMetadataFile);
+      const campaign = records
+        .filter((item) => item.id === record.id && item.kind === "campaign")
+        .pop();
+      if (!campaign || campaign.deletedAt) {
+        claimError = { status: 400, body: { error: "Invalid invitation code." } };
+        return;
+      }
+      const now = Date.now();
+      const start = Date.parse(campaign.start_time || "");
+      const end = Date.parse(campaign.end_time || "");
+      if (now < start) {
+        claimError = {
+          status: 403,
+          body: { code: "INVITATION_NOT_STARTED", error: "This invitation campaign has not started yet.", start_time: campaign.start_time },
+        };
+        return;
+      }
+      if (now >= end) {
+        claimError = {
+          status: 403,
+          body: { code: "INVITATION_EXPIRED", error: "This invitation campaign has ended.", end_time: campaign.end_time },
+        };
+        return;
+      }
+      if (campaignAccountRecords(campaign.id, records).length >= Number(campaign.max_uses)) {
+        claimError = {
+          status: 409,
+          body: { code: "INVITATION_FULL", error: "This invitation campaign has reached its registration limit." },
+        };
+        return;
+      }
+      const allocation = invitationCodeNotIn(records);
+      const createdAt = new Date(now).toISOString();
+      const guestId = `guest:${crypto.randomUUID()}`;
+      claim = {
+        id: crypto.randomUUID(),
+        kind: "campaign-account",
+        campaignId: campaign.id,
+        code: allocation.code,
+        hash: allocation.hash,
+        codePreview: allocation.code.slice(-4),
+        inviterOpenId: campaign.inviterOpenId,
+        inviterName: campaign.inviterName,
+        guestName: normalized,
+        guestNameHash,
+        usedAt: createdAt,
+        usedBy: guestId,
+        createdAt,
+      };
+      // Append-only keeps a 9,999-seat campaign from rewriting the whole JSONL
+      // for every registration. The surrounding file lock still makes the
+      // capacity check and append one atomic operation.
+      appendJsonLine(invitationsMetadataFile, claim);
+    });
+    if (claimError) return res.status(claimError.status).json(claimError.body);
+    if (!claim) return res.status(503).json({ error: "Unable to reserve an invitation seat." });
+    redeemCodeThrottle.reset(claim.id);
+    visitorAccess.setGuestSession(res, claim.usedBy);
+    return res.status(201).json({
+      ok: true,
+      user: { openId: claim.usedBy, identityType: "guest", name: claim.guestName },
+      loginUrl: invitationShareUrl(req, claim.code, claim.guestName),
+    });
+  }
   if (record.usedAt) {
     if (!record.guestName) return deny(409, { code: "INVITATION_NAME_REQUIRED", error: "Enter the original invitation name to continue." });
     if (!name) return deny(409, { code: "INVITATION_NAME_REQUIRED", error: "Enter the original invitation name to continue." });
@@ -2333,7 +2571,11 @@ app.post("/api/invitation/redeem", (req, res) => {
     }
     redeemCodeThrottle.reset(record.id);
     visitorAccess.setGuestSession(res, record.usedBy);
-    return res.json({ ok: true, user: { openId: record.usedBy, identityType: "guest", name: record.guestName } });
+    return res.json({
+      ok: true,
+      user: { openId: record.usedBy, identityType: "guest", name: record.guestName },
+      loginUrl: invitationShareUrl(req, record.code, record.guestName),
+    });
   }
   if (!name.trim()) return deny(400, { code: "INVITATION_NAME_REQUIRED", error: "A name is required." });
   const guestId = `guest:${crypto.randomUUID()}`;
@@ -2342,7 +2584,11 @@ app.post("/api/invitation/redeem", (req, res) => {
   appendJsonLine(invitationsMetadataFile, { ...record, usedAt: new Date().toISOString(), usedBy: guestId, guestName: normalized, guestNameHash });
   redeemCodeThrottle.reset(record.id);
   visitorAccess.setGuestSession(res, guestId);
-  res.json({ ok: true, user: { openId: guestId, identityType: "guest", name: normalized } });
+  res.json({
+    ok: true,
+    user: { openId: guestId, identityType: "guest", name: normalized },
+    loginUrl: invitationShareUrl(req, record.code, normalized),
+  });
 });
 
 app.get("/api/v1/users", requirePartnerApiKey, (req, res) => {
@@ -2401,9 +2647,24 @@ app.get("/api/me", (req, res) => {
     user,
     identityType: user?.identityType || null,
     isZgcMember: user?.isZgcMember === true,
+    invitationAdminAccess: hasAccess && hasInvitationAdminAccess(user),
     teacherAccess: hasAccess && canAccessTeacher(user),
     catchupAccess: hasAccess && canAccessCatchup(user),
     accessMode: hasAccess ? user.identityType === "dingtalk" ? "dingtalk" : "invitation" : null,
+  });
+});
+app.get("/api/me/login-link", requireVisitor, (req, res) => {
+  if (req.user.identityType !== "guest") {
+    return res.json({ applicable: false, url: null });
+  }
+  const record = invitationRecords()
+    .filter((item) => item.usedBy === req.user.openId && item.guestName && item.code)
+    .sort((left, right) => (Date.parse(right.createdAt || right.usedAt || '') || 0) - (Date.parse(left.createdAt || left.usedAt || '') || 0))
+    .at(0);
+  if (!record) return res.status(404).json({ error: "No invitation login link is available for this account." });
+  res.json({
+    applicable: true,
+    url: invitationShareUrl(req, record.code, record.guestName),
   });
 });
 
@@ -3633,7 +3894,7 @@ app.get("/api/user-figures/:name", requireVisitor, (req, res) => {
   res.sendFile(figurePath);
 });
 
-registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requireCatchupPage });
+registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requireCatchupPage, requireInvitationAdminPage });
 
 app.use((error, _req, res, next) => {
   if (error instanceof multer.MulterError) {
