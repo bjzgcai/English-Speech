@@ -179,6 +179,10 @@ function registerQueueRoutes(app, deps) {
     }
     const id = req.queueSubmission;
     const standalone = !req.ownedQuestion;
+    if (!standalone && req.ownedQuestion.question.requiresFigureUpload === true && !figureFile) {
+      fs.rmSync(videoFile.path, { force: true });
+      return res.status(400).json({ error: "Upload one figure before saving this answer." });
+    }
     if (figureFile && !standalone && !isSupportedUserFigure(figureFile)) {
       fs.rmSync(figureFile.path, { force: true });
       fs.rmSync(videoFile.path, { force: true });

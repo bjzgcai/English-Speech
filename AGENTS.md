@@ -46,7 +46,7 @@
 - Keep question generation behind both `requireAuth` and the current versioned privacy consent. Never trust a client-supplied candidate name over the authenticated DingTalk name.
 - Persist every generated or fallback question with its owner before recording. `POST /api/save-answer` must only accept a `questionId` owned by the authenticated `openId`.
 - Preserve the browser flow: authenticate, accept privacy terms, generate a question, prepare, record camera and microphone, finish/upload, evaluate, and show owner-filtered history.
-- Keep the two-minute recording/evaluation limit and reject uploads interrupted by a required camera or microphone track. Validate accepted media and normalize stored recordings to MP4.
+- Keep the 3:30 recording/evaluation limit for browser-recorded Game and Examine answers (standalone uploads remain at 2:00), and reject uploads interrupted by a required camera or microphone track. Validate accepted media and normalize stored recordings to MP4.
 - Save the recording even if downstream evaluation fails, recording the evaluation failure in metadata rather than losing the user's answer.
 - Keep recording history and video access filtered by the signed-in `openId`; never publicly serve the recordings directory.
 

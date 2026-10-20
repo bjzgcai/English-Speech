@@ -131,7 +131,7 @@ authentication, question-generation, recording, or evaluation code changes.
    question is returned with the error.
 5. After a short preparation countdown, the browser records camera and
    microphone together with `MediaRecorder`. Recording stops when the user
-   selects **Finish and save**, when the two-minute limit is reached, or when a
+   selects **Finish and save**, when the three-minute-thirty-second limit is reached, or when a
    required media device is interrupted. An interrupted incomplete recording is
    not uploaded.
 6. The browser uploads the finalized recording and its `questionId` to
@@ -185,7 +185,7 @@ the question and rubric, and sampled video frames.
 
 ```text
 Recorded video
-    -> validate media and limit evaluation to two minutes
+    -> validate media; limit recorded answers to 3:30 and standalone uploads to 2:00
     -> FFmpeg extracts mono 16 kHz audio
     -> reject missing, silent, or extremely quiet audio
     -> Qwen ASR transcribes English speech to text
@@ -346,7 +346,7 @@ time is the resumed portion, while stage measurements preserve already recorded
 resource time. Never use this option with the production database.
 
 Run `node scripts/full-browser-check.js --full-duration` with Playwright installed
-for desktop/mobile recording, two-minute auto-stop, upload, scoring, playback,
+for desktop/mobile recording, three-minute-thirty-second auto-stop, upload, scoring, playback,
 share-image export, game, history, feedback and comments. Model responses are
 deterministic in this browser test. The other browser scripts cover queue recovery,
 guest/DingTalk identity changes and administrator monitoring.
@@ -405,7 +405,7 @@ For browser integration checks, install Chromium with `npx playwright install ch
 and run `npm run test:browser`. The browser checks start `npm run dev` on an isolated
 port with temporary data, synthetic identities and local model responses. Use
 `node scripts/full-browser-check.js --full-duration` to also wait for the real
-two-minute browser recording cutoff. Additional access and draft-restoration checks
+three-minute-thirty-second browser recording cutoff. Additional access and draft-restoration checks
 are available through `node scripts/access-browser-check.js` and
 `node scripts/guest-browser-check.js`.
 

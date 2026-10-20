@@ -519,6 +519,104 @@ h1 {
   text-transform: none;
 }
 
+/* Long fixed tasks use a structured, scannable presentation while the stored
+   question remains the exact prose sent to the evaluator. */
+.question-prompt.structured-question {
+  display: grid;
+  gap: 10px;
+  max-width: 780px;
+  margin-top: 12px;
+  text-align: left;
+}
+
+.question-prompt[hidden] {
+  display: none;
+}
+
+.prompt-lead,
+.prompt-close {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 550;
+  line-height: 1.5;
+}
+
+.prompt-close {
+  color: var(--ink);
+}
+
+.prompt-beats {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.prompt-beat {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 11px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid rgba(101, 88, 232, 0.14);
+  border-radius: 14px;
+  background: rgba(246, 244, 255, 0.86);
+}
+
+.prompt-beat-index {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.prompt-beat-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.prompt-beat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.prompt-beat-head strong {
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.prompt-beat-time {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--accent-dark);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.prompt-beat-body {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 /* Weekly task figures: optional per lesson, so the nine text-only lessons keep
    their original layout. Constrained height keeps the camera preview visible. */
 .task-figure {
@@ -1399,6 +1497,14 @@ input[readonly] {
   font-family: "Arial Rounded MT Bold", "Avenir Next", "Trebuchet MS", sans-serif;
   font-weight: 700;
   text-wrap: balance;
+}
+
+#questionText.is-structured-question {
+  max-width: 760px;
+  font-size: clamp(22px, 2.5vw, 32px);
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  text-wrap: pretty;
 }
 
 .video-frame {
@@ -2595,6 +2701,8 @@ video {
   width: min(620px, 100%);
   max-height: calc(100dvh - 36px);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   border: 2px solid var(--line);
   border-radius: var(--radius-large);
   background: var(--panel);
@@ -2610,6 +2718,7 @@ video {
   grid-template-areas:
     "kicker kicker"
     "question question"
+    "prompt prompt"
     "message message"
     "figure figure"
     "preview countdown"
@@ -2624,6 +2733,7 @@ video {
   grid-template-areas:
     "kicker kicker"
     "question question"
+    "prompt prompt"
     "message message"
     "preview countdown"
     "guidance actions";
@@ -2653,11 +2763,15 @@ video {
   grid-template-areas:
     "kicker kicker"
     "question question"
+    "prompt prompt"
     "message message"
     "figure figure"
     "countdown actions";
   grid-template-columns: minmax(0, 1fr) 220px;
-  align-content: center;
+  /* `center` shifts overflow above the scroll origin when the prompt + figure
+     exceed the dialog height, clipping content that cannot be scrolled back
+     into view. Start at the top so every line remains reachable. */
+  align-content: start;
   min-height: 0;
   padding: clamp(28px, 4vw, 42px);
   gap: 16px 28px;
@@ -2667,6 +2781,7 @@ video {
   grid-template-areas:
     "kicker kicker"
     "question question"
+    "prompt prompt"
     "message message"
     "countdown actions";
 }
@@ -2757,6 +2872,25 @@ video {
   text-wrap: pretty;
 }
 
+.prepare-dialog.is-recording #questionText.is-structured-question {
+  font-size: clamp(20px, 2.2vw, 27px);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+}
+
+.prepare-dialog.is-recording #questionPrompt {
+  margin-top: 8px;
+}
+
+.prepare-dialog.is-recording #questionPrompt .prompt-beat {
+  padding: 7px 9px;
+}
+
+.prepare-dialog.is-recording #questionPrompt .prompt-beat-body {
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
 /* Keep the task figure compact while answering so the camera preview and
    controls stay on screen; it scrolls with the dialog rather than pushing them. */
 .prepare-dialog.is-recording .task-figure img {
@@ -2780,6 +2914,9 @@ video {
   .prepare-dialog.is-recording .question-block {
     grid-area: question;
     padding-bottom: 16px;
+    max-height: min(30dvh, 270px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   /* The timer bar belongs inside the dialog, as its first row — absolutely
@@ -2825,6 +2962,27 @@ video {
   font-size: clamp(25px, 3vw, 38px);
   line-height: 1.08;
   text-wrap: balance;
+}
+
+.prepare-dialog.is-countdown h2.is-structured-question {
+  font-size: clamp(20px, 2.2vw, 28px);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.prepare-dialog.is-countdown .modal-question-prompt {
+  grid-area: prompt;
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+}
+
+.modal-question-prompt .prompt-beat {
+  padding: 8px 10px;
+}
+
+.modal-question-prompt .prompt-beat-body {
+  font-size: 13px;
 }
 
 .prepare-dialog.is-countdown #prepareModalMessage {
@@ -3462,6 +3620,37 @@ video {
     font-size: clamp(26px, 8vw, 38px);
   }
 
+  #questionText.is-structured-question {
+    font-size: clamp(20px, 5.4vw, 27px);
+    line-height: 1.14;
+  }
+
+  .question-prompt.structured-question {
+    gap: 9px;
+  }
+
+  .prompt-beat {
+    grid-template-columns: 27px minmax(0, 1fr);
+    gap: 9px;
+    padding: 9px 10px;
+  }
+
+  .prompt-beat-index {
+    width: 26px;
+    height: 26px;
+  }
+
+  .prompt-beat-head {
+    align-items: flex-start;
+  }
+
+  .prompt-beat-head strong,
+  .prompt-beat-body,
+  .prompt-lead,
+  .prompt-close {
+    font-size: 13px;
+  }
+
   .history-collapse summary {
     grid-template-columns: minmax(0, 1fr) 28px;
   }
@@ -3515,11 +3704,6 @@ video {
 
   .game-topic h2 {
     font-size: 27px;
-  }
-
-  .game-topic > p:last-child {
-    font-size: 13px;
-    line-height: 1.4;
   }
 
   .game-rule {
@@ -3721,6 +3905,18 @@ video {
     text-wrap: pretty;
   }
 
+  .prepare-dialog.is-countdown h2.is-structured-question {
+    font-size: clamp(18px, 5vw, 22px);
+  }
+
+  .prepare-dialog.is-countdown .modal-question-prompt {
+    gap: 8px;
+  }
+
+  .prepare-dialog.is-countdown .modal-question-prompt .prompt-beat {
+    padding: 8px 9px;
+  }
+
   .prepare-dialog.is-countdown #prepareModalMessage {
     max-width: none;
     font-size: 13px;
@@ -3829,6 +4025,17 @@ video {
     letter-spacing: 0;
     overflow-wrap: anywhere;
     text-wrap: pretty;
+  }
+
+  .prepare-dialog.is-countdown h2.is-structured-question,
+  .prepare-dialog.is-recording #questionText.is-structured-question {
+    font-size: clamp(18px, 5vw, 22px);
+    line-height: 1.16;
+  }
+
+  .prepare-dialog.is-countdown .modal-question-prompt .prompt-beat-body,
+  .prepare-dialog.is-recording #questionPrompt .prompt-beat-body {
+    font-size: 12.5px;
   }
 
   .prepare-dialog.is-countdown #prepareModalMessage {

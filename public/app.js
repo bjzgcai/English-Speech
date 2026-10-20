@@ -40,7 +40,7 @@ const state = {
   experienceRatingSubmitting: false,
 };
 
-const MAX_RECORDING_MS = 2 * 60 * 1000;
+const MAX_RECORDING_MS = 3 * 60 * 1000 + 30 * 1000;
 const PREPARE_COUNTDOWN_SECONDS = 120;
 const dimensionDetails = {
   "Pronunciation / intelligibility":
@@ -82,6 +82,7 @@ const recordingElapsed = document.querySelector("#recordingElapsed");
 const recordingRemaining = document.querySelector("#recordingRemaining");
 const recordingProgress = document.querySelector("#recordingProgress");
 const questionText = document.querySelector("#questionText");
+const questionPrompt = document.querySelector("#questionPrompt");
 const questionMeta = document.querySelector("#questionMeta");
 const saveResult = document.querySelector("#saveResult");
 const evaluationResult = document.querySelector("#evaluationResult");
@@ -99,7 +100,6 @@ const gameOverview = document.querySelector("#gameOverview");
 const gameWeekLabel = document.querySelector("#gameWeekLabel");
 const gameGroupPicker = document.querySelector("#gameGroupPicker");
 const gameTopicTitle = document.querySelector("#gameTopicTitle");
-const gameTopicQuestion = document.querySelector("#gameTopicQuestion");
 const profileHeading = document.querySelector("#profileHeading");
 const profileSummary = document.querySelector("#profileSummary");
 const roleField = document.querySelector("#roleField");
@@ -139,6 +139,7 @@ const prepareDialog = prepareModal.querySelector(".prepare-dialog");
 const prepareSpinner = document.querySelector("#prepareSpinner");
 const prepareModalKicker = document.querySelector("#prepareModalKicker");
 const prepareModalTitle = document.querySelector("#prepareModalTitle");
+const prepareModalPrompt = document.querySelector("#prepareModalPrompt");
 const prepareModalMessage = document.querySelector("#prepareModalMessage");
 const countdownDisplay = document.querySelector("#countdownDisplay");
 const countdownSeconds = document.querySelector("#countdownSeconds");
@@ -777,6 +778,8 @@ function showGeneratingModal() {
   renderTaskFigure(prepareFigure, prepareFigureImage, prepareFigureCaption, null);
   prepareModalKicker.textContent = "Generating";
   prepareModalTitle.textContent = "Preparing your question...";
+  prepareModalTitle.classList.remove("is-structured-question");
+  clearQuestionDetails(prepareModalPrompt);
   prepareModalMessage.textContent = "Please wait while the assessment question is generated.";
   prepareSpinner.hidden = false;
   preparePreviewWrap.hidden = !state.useCamera || !state.stream;
@@ -798,9 +801,13 @@ function showCountdownModal(question) {
   restoreRecorderPanel();
   prepareDialog.classList.add("is-countdown");
   prepareModalKicker.textContent = "";
-  prepareModalTitle.textContent = question.question;
+  renderQuestionHeading(prepareModalTitle, question);
+  renderQuestionDetails(prepareModalPrompt, question?.question, { hideWhenPlain: true });
   prepareModalMessage.replaceChildren();
-  renderTaskFigure(prepareFigure, prepareFigureImage, prepareFigureCaption, question?.figure, { allowUpload: true });
+  renderTaskFigure(prepareFigure, prepareFigureImage, prepareFigureCaption, question?.figure, {
+    allowUpload: true,
+    required: question?.requiresFigureUpload === true,
+  });
   prepareSpinner.hidden = true;
   preparePreviewWrap.hidden = !state.useCamera || !state.stream;
   prepareCameraGuidance.hidden = false;
@@ -839,6 +846,8 @@ function showMediaRequiredModal(error, retryAction = "record") {
   renderTaskFigure(prepareFigure, prepareFigureImage, prepareFigureCaption, null);
   prepareModalKicker.textContent = "Devices required";
   prepareModalTitle.textContent = "Turn on your camera and microphone to continue";
+  prepareModalTitle.classList.remove("is-structured-question");
+  clearQuestionDetails(prepareModalPrompt);
   prepareModalMessage.textContent =
     "OScanner-Eng needs both devices to record and evaluate your answer. Allow camera and microphone access in your browser, then try again.";
   prepareSpinner.hidden = true;
@@ -866,6 +875,8 @@ function showIncompleteRecordingModal(capturedSeconds) {
   renderTaskFigure(prepareFigure, prepareFigureImage, prepareFigureCaption, null);
   prepareModalKicker.textContent = "Recording interrupted";
   prepareModalTitle.textContent = "Only part of your answer was recorded";
+  prepareModalTitle.classList.remove("is-structured-question");
+  clearQuestionDetails(prepareModalPrompt);
   prepareModalMessage.textContent =
     "Your recording stopped early, so the rest of your answer was never captured. Nothing was uploaded and no attempt was used.";
   prepareSpinner.hidden = true;
@@ -1014,12 +1025,114 @@ function getSupportedMimeType() {
   return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
 }
 
+// The course's long research prompt is stored as one canonical string so the
+// evaluator receives the exact instructions. The browser adds presentation
+// structure only, turning the numbered beats into scannable cards.
+function parseFiveBeatQuestion(value) {
+  const paragraphs = String(value || "")
+    .trim()
+    .split(/\n\s*\n/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const beatIndex = paragraphs.findIndex(
+    (part) => /^1\.\s+/m.test(part) && /^5\.\s+/m.test(part),
+  );
+  if (beatIndex < 0) return null;
+
+  const beats = paragraphs[beatIndex]
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(/^(\d+)\.\s+(.+?):\s*(.+)$/s);
+      if (!match) return null;
+      const timing = match[3].match(/\(~?\s*(\d+)\s*s\)/i);
+      const body = match[3]
+        .replace(/\(~?\s*\d+\s*s\)/i, "")
+        .replace(/\s+/g, " ")
+        .replace(/\s+([.,;:!?])/g, "$1")
+        .trim();
+      return {
+        number: Number(match[1]),
+        title: match[2].trim(),
+        seconds: timing ? Number(timing[1]) : null,
+        body,
+      };
+    })
+    .filter(Boolean);
+
+  if (beats.length !== 5 || beats.some((beat, index) => beat.number !== index + 1)) {
+    return null;
+  }
+  return {
+    intro: paragraphs.slice(0, beatIndex).join("\n\n"),
+    beats,
+    closing: paragraphs.slice(beatIndex + 1).join("\n\n"),
+  };
+}
+
+function promptDetailsMarkup(parsed) {
+  return `
+    ${parsed.intro ? `<p class="prompt-lead">${escapeHtml(parsed.intro)}</p>` : ""}
+    <ol class="prompt-beats" aria-label="Five speaking beats">
+      ${parsed.beats.map((beat) => `
+        <li class="prompt-beat">
+          <span class="prompt-beat-index" aria-hidden="true">${beat.number}</span>
+          <span class="prompt-beat-copy">
+            <span class="prompt-beat-head">
+              <strong>${escapeHtml(beat.title)}</strong>
+              ${beat.seconds ? `<span class="prompt-beat-time">~${beat.seconds}s</span>` : ""}
+            </span>
+            <span class="prompt-beat-body">${escapeHtml(beat.body)}</span>
+          </span>
+        </li>
+      `).join("")}
+    </ol>
+    ${parsed.closing ? `<p class="prompt-close">${escapeHtml(parsed.closing)}</p>` : ""}
+  `;
+}
+
+function renderQuestionDetails(element, value, { hideWhenPlain = false } = {}) {
+  if (!element) return null;
+  const parsed = parseFiveBeatQuestion(value);
+  element.classList.toggle("structured-question", Boolean(parsed));
+  if (!parsed) {
+    element.textContent = String(value || "");
+    element.hidden = hideWhenPlain;
+    return null;
+  }
+  element.innerHTML = promptDetailsMarkup(parsed);
+  element.hidden = false;
+  return parsed;
+}
+
+function renderQuestionHeading(element, question, fallbackTitle = "Your speaking task") {
+  if (!element) return null;
+  const parsed = parseFiveBeatQuestion(question?.question);
+  element.classList.toggle("is-structured-question", Boolean(parsed));
+  element.textContent = parsed
+    ? question?.challengeTitle || question?.title || fallbackTitle
+    : question?.question || "";
+  return parsed;
+}
+
+function clearQuestionDetails(element) {
+  if (!element) return;
+  element.replaceChildren();
+  element.classList.remove("structured-question");
+  element.hidden = true;
+}
+
 function setQuestion(question) {
   state.question = question;
   syncGroupPickers();
-  questionText.textContent = question.question;
+  renderQuestionHeading(questionText, question);
+  renderQuestionDetails(questionPrompt, question?.question, { hideWhenPlain: true });
   questionMeta.textContent = "";
-  renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, question?.figure, { allowUpload: true });
+  renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, question?.figure, {
+    allowUpload: true,
+    required: question?.requiresFigureUpload === true,
+  });
   saveResult.textContent = "";
   evaluationResult.innerHTML = "";
 }
@@ -1028,6 +1141,7 @@ const CUSTOM_FIGURE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp
 const MAX_CUSTOM_FIGURE_BYTES = 5 * 1024 * 1024;
 const FIGURE_TIP_TEXT = "Tip: preparing with your own chart or diagram? Click the button, choose a PNG, JPG, or WebP image (up to 5\u00a0MB), and it replaces the sample figure \u2014 your answer will be evaluated against the figure you uploaded.";
 const FIGURE_TIP_NO_SAMPLE_TEXT = "Tip: this topic has no sample figure. Preparing with your own chart or diagram? Click the button, choose a PNG, JPG, or WebP image (up to 5\u00a0MB), and your answer will be evaluated against the figure you uploaded.";
+const FIGURE_TIP_REQUIRED_TEXT = "Required: upload one figure for this research statement. Choose a PNG, JPG, or WebP image up to 5\u00a0MB; your answer will be evaluated against this figure.";
 
 function setCustomFigure(file) {
   if (!CUSTOM_FIGURE_MIME_TYPES.has(file.type)) {
@@ -1061,8 +1175,20 @@ function taskFigureFor(figureEl) {
 function refreshTaskFigures() {
   const questionState = taskFigureFor(questionFigure);
   const prepareState = taskFigureFor(prepareFigure);
-  renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, questionState?.figure, questionState);
-  renderTaskFigure(prepareFigure, prepareFigureImage, prepareFigureCaption, prepareState?.figure, prepareState);
+  renderTaskFigure(
+    questionFigure,
+    questionFigureImage,
+    questionFigureCaption,
+    questionState?.figure,
+    questionState || {},
+  );
+  renderTaskFigure(
+    prepareFigure,
+    prepareFigureImage,
+    prepareFigureCaption,
+    prepareState?.figure,
+    prepareState || {},
+  );
 }
 
 let figureTipRestoreTimer = null;
@@ -1106,17 +1232,18 @@ setupFigureControls(prepareFigure);
 // lessons it simply becomes the task figure the answer is evaluated against.
 // A null figure with allowUpload=false (generating, device setup, empty route)
 // still hides the whole slot.
-function renderTaskFigure(figureEl, imageEl, captionEl, figure, { allowUpload = false } = {}) {
+function renderTaskFigure(figureEl, imageEl, captionEl, figure, { allowUpload = false, required = false } = {}) {
   if (!figureEl || !imageEl) return;
   // The "Task figure" label lives inside the figure element.
   const labelEl = figureEl.querySelector(".task-figure-label");
   const controls = figureEl.querySelector("[data-figure-controls]");
+  const replaceButton = figureEl.querySelector("[data-figure-replace]");
   const resetButton = figureEl.querySelector("[data-figure-reset]");
   const tipEl = figureEl.querySelector("[data-figure-tip]");
   const toggleLabel = (visible) => {
     if (labelEl) labelEl.hidden = !visible;
   };
-  taskFigures.set(figureEl, { figure: figure || null, allowUpload });
+  taskFigures.set(figureEl, { figure: figure || null, allowUpload, required });
   const baseSrc = typeof figure?.src === "string" ? figure.src.trim() : "";
   // An upload-enabled slot offers the learner's own figure even when the lesson
   // ships no default asset; the upload takes precedence either way.
@@ -1130,9 +1257,14 @@ function renderTaskFigure(figureEl, imageEl, captionEl, figure, { allowUpload = 
     toggleLabel(false);
     if (controls) controls.hidden = !allowUpload;
     if (tipEl) {
-      tipEl.textContent = allowUpload ? FIGURE_TIP_NO_SAMPLE_TEXT : "";
+      tipEl.textContent = required
+        ? FIGURE_TIP_REQUIRED_TEXT
+        : allowUpload
+          ? FIGURE_TIP_NO_SAMPLE_TEXT
+          : "";
       tipEl.hidden = !allowUpload;
     }
+    if (replaceButton) replaceButton.textContent = required ? "Upload required figure" : "Use my own figure";
     figureEl.hidden = !allowUpload;
     return;
   }
@@ -1146,8 +1278,17 @@ function renderTaskFigure(figureEl, imageEl, captionEl, figure, { allowUpload = 
     resetButton.hidden = !custom;
     resetButton.textContent = baseSrc ? "Reset to sample figure" : "Remove my figure";
   }
+  if (replaceButton) {
+    replaceButton.textContent = required
+      ? custom ? "Replace my figure" : "Upload required figure"
+      : "Use my own figure";
+  }
   if (tipEl) {
-    tipEl.textContent = baseSrc ? FIGURE_TIP_TEXT : FIGURE_TIP_NO_SAMPLE_TEXT;
+    tipEl.textContent = required
+      ? FIGURE_TIP_REQUIRED_TEXT
+      : baseSrc
+        ? FIGURE_TIP_TEXT
+        : FIGURE_TIP_NO_SAMPLE_TEXT;
     tipEl.hidden = false;
   }
   figureEl.hidden = false;
@@ -1379,11 +1520,14 @@ function showGameChallenge(challenge) {
     gameLessonMeta.hidden = true;
   }
   gameTopicTitle.textContent = challenge.title;
-  gameTopicQuestion.textContent = challenge.question;
   if (!state.question && isGameRoute(normalizeRoute(window.location.pathname))) {
-    questionText.textContent = challenge.question;
+    renderQuestionHeading(questionText, challenge);
+    renderQuestionDetails(questionPrompt, challenge.question, { hideWhenPlain: true });
     questionMeta.textContent = `Target: within ${challenge.expectedDurationSeconds} seconds.`;
-    renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, challenge.figure, { allowUpload: true });
+    renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, challenge.figure, {
+      allowUpload: true,
+      required: challenge.requiresFigureUpload === true,
+    });
   }
 }
 
@@ -1477,7 +1621,9 @@ async function loadGameChallenge() {
     await fetchGameChallengeCatalog();
   } catch (error) {
     gameTopicTitle.textContent = "This week's task is unavailable";
-    gameTopicQuestion.textContent = error.message;
+    questionText.textContent = error.message;
+    questionText.classList.remove("is-structured-question");
+    clearQuestionDetails(questionPrompt);
     renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, null);
   }
 }
@@ -1809,9 +1955,13 @@ function setPlayMode(route) {
       showGameChallenge(state.gameChallenge);
     } else if (isGame) {
       questionText.textContent = "Loading this week's fixed task...";
+      questionText.classList.remove("is-structured-question");
+      clearQuestionDetails(questionPrompt);
       questionMeta.textContent = "Every player receives the same task for the week.";
     } else {
       questionText.textContent = "Enter a profile, then generate one question.";
+      questionText.classList.remove("is-structured-question");
+      clearQuestionDetails(questionPrompt);
       questionMeta.textContent = "";
       renderTaskFigure(questionFigure, questionFigureImage, questionFigureCaption, null);
     }
@@ -1957,9 +2107,22 @@ profileForm.addEventListener("submit", async (event) => {
   }
   state.authUser = window.VisitorSession.user;
   const actionOwner = state.authUser?.openId;
+  const isGame = isGameRoute(normalizeRoute(window.location.pathname));
 
   if (state.recorder && state.recorder.state !== "inactive") {
     saveResult.textContent = "Finish and save the current recording before generating another question.";
+    return;
+  }
+
+  if (
+    isGame
+    && state.gameChallenge?.requiresFigureUpload === true
+    && !state.customFigure?.file
+  ) {
+    saveResult.textContent = "Upload one figure before starting this challenge.";
+    setStatus("Figure required");
+    questionFigure?.scrollIntoView({ behavior: "smooth", block: "center" });
+    questionFigure?.querySelector("[data-figure-input]")?.click();
     return;
   }
 
@@ -1985,7 +2148,6 @@ profileForm.addEventListener("submit", async (event) => {
   if (!mediaReady) return;
 
   state.profile = getProfileFromForm();
-  const isGame = isGameRoute(normalizeRoute(window.location.pathname));
   setStatus("Generating");
   showGeneratingModal();
   prepareModalTitle.textContent = isGame ? "Preparing the weekly task..." : "Preparing your question...";
@@ -1993,6 +2155,8 @@ profileForm.addEventListener("submit", async (event) => {
     ? "The fixed task is ready. We are setting up your private planning time."
     : "Please wait while the assessment question is generated.";
   questionText.textContent = isGame ? "Preparing the weekly task..." : "Generating a question...";
+  questionText.classList.remove("is-structured-question");
+  clearQuestionDetails(questionPrompt);
   questionMeta.textContent = isGame
     ? "Creating your owned attempt for this week's task."
     : "Calling the internally deployed model through the local server.";
@@ -2017,6 +2181,15 @@ profileForm.addEventListener("submit", async (event) => {
     }
 
     setQuestion(data.question);
+    if (data.question?.requiresFigureUpload === true && !state.customFigure?.file) {
+      closePrepareModal();
+      stopStream();
+      setStatus("Figure required");
+      saveResult.textContent = "Upload one figure before starting this challenge.";
+      questionFigure?.scrollIntoView({ behavior: "smooth", block: "center" });
+      questionFigure?.querySelector("[data-figure-input]")?.click();
+      return;
+    }
     setStatus(isGame ? "Task ready" : response.ok ? "" : "Fallback ready");
     if (data.error) {
       saveResult.textContent = `LLM fallback used: ${data.error}`;
@@ -2035,6 +2208,8 @@ profileForm.addEventListener("submit", async (event) => {
     stopStream();
     setStatus("Error");
     questionText.textContent = isGame ? "Weekly task setup failed." : "Question generation failed.";
+    questionText.classList.remove("is-structured-question");
+    clearQuestionDetails(questionPrompt);
     questionMeta.textContent = error.message;
   } finally {
     if ((!state.recorder || state.recorder.state === "inactive") && !state.mediaRetryPending) {
@@ -2126,7 +2301,7 @@ async function startRecording() {
 }
 
 // A recorder that stalls keeps the live preview running while the encoded file
-// stops growing: the learner speaks for two minutes and hands in the first few
+// stops growing: the learner speaks for the full limit and hands in the first few
 // seconds. Measure the file itself before uploading it.
 const RECORDING_SHORTFALL_SECONDS = 4;
 const RECORDING_SHORTFALL_RATIO = 0.8;
@@ -2472,6 +2647,8 @@ async function discardCurrentAnswer() {
       showGameChallenge(state.gameChallenge);
     } else {
       questionText.textContent = "Enter a profile, then generate one question.";
+      questionText.classList.remove("is-structured-question");
+      clearQuestionDetails(questionPrompt);
       questionMeta.textContent = "";
     }
     saveResult.textContent = "Answer discarded. No recording, evaluation, or score was saved.";

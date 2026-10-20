@@ -56,7 +56,7 @@ async function main() {
   const failQuestion = process.argv.includes("--fail-question");
   const invalidMedia = process.argv.includes("--invalid-media");
   const guests = process.argv.includes("--guests");
-  const expectedState = failScoring || invalidMedia || noAudio || (audioOnly && !standalone) ? "failed" : "completed";
+  const expectedState = failScoring || invalidMedia || noAudio ? "failed" : "completed";
   console.log(JSON.stringify({ event: "benchmark-start", users, arrivals, ffmpegConcurrency: concurrency, dataDirectory: data }));
   try {
     let resumedJobs = null;
@@ -231,7 +231,7 @@ async function main() {
     for (const job of jobs) {
       const history = await call(job.i, "/api/recordings");
       assert.equal(history.data.recordings.filter(r => r.id === job.id).length, 1);
-      if (invalidMedia || noAudio || (audioOnly && !standalone)) assert.equal(history.data.recordings[0].path, null);
+      if (invalidMedia || noAudio) assert.equal(history.data.recordings[0].path, null);
       else {
         assert.equal((await fetch(base + history.data.recordings[0].path, { headers: { "X-Expected-Owner": expectedOwner(job.i + 1000), Cookie: cookie(job.i + 1000) } })).status, 404);
         const video = await fetch(base + history.data.recordings[0].path, { headers: { "X-Expected-Owner": expectedOwner(job.i), Cookie: cookie(job.i), Range: "bytes=0-15" } });

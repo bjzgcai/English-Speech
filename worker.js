@@ -25,6 +25,7 @@ async function processJob(job) {
   active.set(job.id, { controller, token: job.token });
   const task = { ...job, queue, signal: controller.signal };
   const record = job.payload.record;
+  const maximumDurationSeconds = evaluation.maximumSecondsForEvaluationMode(job.payload.mode);
   const videoPath = path.join(config.recordingsDir, record.filename);
   const artifactBaseDir = path.join(config.artifactsDir, job.id);
   let valid = Boolean(job.checkpoint.normalized);
@@ -39,14 +40,21 @@ async function processJob(job) {
       const media = await stage("normalized", async () => {
         const inspected = await evaluation.inspectMedia(job.payload.inputPath);
         if (!inspected.hasAudio) throw new Error("The recording has no usable microphone audio.");
-        const media = evaluation.limitStandaloneMediaInfo(inspected);
+        const media = evaluation.limitMediaInfo(inspected, maximumDurationSeconds);
         task.checkpoint.category = media.durationSeconds <= 40 ? "short" : "long";
         task.checkpoint.pipelineVersion = mediaPipelineVersion;
         fs.mkdirSync(artifactBaseDir, { recursive: true, mode: 0o700 });
         const temporaryPath = path.join(artifactBaseDir, "normalizing.mp4");
-        const prepared = await evaluation.normalizeRecording(job.payload.inputPath, temporaryPath, { artifactBaseDir, mediaInfo: inspected });
+        const prepared = await evaluation.normalizeRecording(job.payload.inputPath, temporaryPath, {
+          artifactBaseDir,
+          mediaInfo: media,
+          maximumDurationSeconds,
+        });
         if (!inspected.durationSeconds && prepared.prepared?.analysis.durationSeconds) {
-          media.durationSeconds = Math.min(120, prepared.prepared.analysis.durationSeconds);
+          media.durationSeconds = Math.min(
+            maximumDurationSeconds,
+            prepared.prepared.analysis.durationSeconds,
+          );
           task.checkpoint.category = media.durationSeconds <= 40 ? "short" : "long";
         }
         controller.signal.throwIfAborted();
@@ -59,7 +67,15 @@ async function processJob(job) {
       });
       valid = true;
       task.checkpoint.pipelineVersion ||= media.pipelineVersion || "legacy";
-      const result = await evaluation.evaluateSavedVideo({ videoPath, artifactBaseDir, profile: record.profile, question: record.question, evaluationMode: job.payload.mode, mediaInfo: media });
+      const result = await evaluation.evaluateSavedVideo({
+        videoPath,
+        artifactBaseDir,
+        profile: record.profile,
+        question: record.question,
+        evaluationMode: job.payload.mode,
+        mediaInfo: media,
+        maximumDurationSeconds,
+      });
       if (job.payload.mode === "standalone-speech" && result.rubric?.coherence) result.rubric.coherence.label = "Coherence / speech consistency";
       queue.finish(job.id, job.token, { ...record, bytes: fs.statSync(videoPath).size, path: `/api/recordings/${job.id}/video`, evaluation: result });
     });

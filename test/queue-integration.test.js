@@ -18,7 +18,7 @@ for (const [name, ...flags] of [
   ["browser WebM completes under two FFmpeg slots", "--webm", "--ffmpeg-concurrency=2"],
   ["silent recordings complete with zero and do not call ASR", "--silent"],
   ["standalone audio reweights visual delivery", "--audio-only", "--standalone"],
-  ["answers reject missing camera tracks", "--audio-only"],
+  ["answers accept audio-only captures when camera is optional", "--audio-only"],
   ["answers reject missing microphone tracks", "--no-audio"],
   ["a failed question service still permits the saved owned fallback to be answered", "--fail-question"],
   ["a repeated model JSON response still completes a scored recording", "--repeat-json"],

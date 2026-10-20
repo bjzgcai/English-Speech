@@ -230,16 +230,19 @@ const weeklyTopics = Object.freeze([
     unitNumber: 7,
     unitTitle: "Research statements & conference Q&A",
     instructor: "Wang Xudong",
-    title: "A research statement around one figure",
+    title: "Three-minute research statement around one figure",
     question:
-      "Deliver a two-minute research statement built around this figure: the problem, the approach, the main result it shows, and why it matters.",
-    focus: "One figure, one story, clear significance",
+      "Deliver a 3-minute research statement on your work, structured around the five-beat framework below and accompanied by one uploaded figure. Follow the beat order and timing:\n\n" +
+      "1. Context/problem: why anyone should care (~30s). Explain the issue in plain terms, no jargon. Make clear why a non-specialist should find it important.\n" +
+      "2. Gap/question: what is not yet known or not yet working (~20s). State precisely what the field currently lacks, and the specific question your work addresses.\n" +
+      "3. What we did: the approach (~40s). Describe your method at roughly 30 seconds' worth of conceptual depth: enough for the audience to follow the logic, not a full technical walkthrough.\n" +
+      "4. The figure: the evidence (~60s). Upload one figure and walk the audience through it. This is the centre of the talk: spend the most time here, orienting the audience to what the figure shows and what it demonstrates.\n" +
+      "5. So-what + boundary: what it enables and where it stops (~30s). State what your result makes possible and be explicit about the limits of your claim.\n\n" +
+      "Keep the total to 3 minutes, respect the timings, and make sure the figure carries the evidential weight of the talk.",
+    focus: "Five-beat structure, figure evidence, and claim boundaries",
+    expectedDurationSeconds: 180,
+    requiresFigureUpload: true,
     followUp: "What is the one sentence you want remembered?",
-    figure: {
-      src: "/assets/figures/l13-research-statement-figure.png",
-      alt: "Line chart of exact match against training steps, comparing Ours with a baseline and highlighting the twelve-point gap that closes at the last step.",
-      caption: "Illustrative figure — synthetic data",
-    },
   },
   {
     unitNumber: 7,
@@ -336,7 +339,8 @@ function challengeForIndex(index, group = DEFAULT_GAME_GROUP) {
     title: topic.title,
     question: topic.question,
     focus: topic.focus,
-    expectedDurationSeconds: 120,
+    expectedDurationSeconds: topic.expectedDurationSeconds || 120,
+    requiresFigureUpload: topic.requiresFigureUpload === true,
     followUp: topic.followUp,
     figure: topic.figure || null,
     startsAt: new Date(startMs).toISOString(),
@@ -361,6 +365,7 @@ function challengeQuestion(challenge) {
     question: challenge.question,
     focus: challenge.focus,
     expectedDurationSeconds: challenge.expectedDurationSeconds,
+    requiresFigureUpload: challenge.requiresFigureUpload === true,
     followUp: challenge.followUp,
     challengeId: challenge.id,
     challengeTitle: challenge.title,

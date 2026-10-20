@@ -31,11 +31,11 @@ function call(owner, route, body, extra = {}) {
       "X-Expected-Owner": owner, "Content-Type": "application/json", ...extra },
     body: body === undefined ? undefined : JSON.stringify(body) });
 }
-async function prepare(owner) {
+async function prepare(owner, { question = { question: "A test question" } } = {}) {
   await call(owner, "/api/privacy-consent", { privacyAgreed: true, sensitiveInfoAgreed: true });
   queue.enter(owner);
   const questionId = crypto.randomUUID();
-  appendJsonLine(config.questionsMetadataFile, { id: questionId, openId: owner, profile: {}, question: { question: "A test question" } });
+  appendJsonLine(config.questionsMetadataFile, { id: questionId, openId: owner, profile: {}, question });
   return { "X-Submission-Id": crypto.randomUUID(), "X-Question-Id": questionId, "X-Upload-Grant": queue.grant(owner).grant };
 }
 
@@ -67,6 +67,33 @@ test("quotas include terminal queue results before history projection, without d
   assert.equal((await projected.json()).quota.videos, 10);
   const replay = await call(owner, "/api/evaluate-video", {}, { "X-Submission-Id": id });
   assert.equal(replay.status, 200, "An accepted submission stays idempotent after reaching the quota");
+});
+
+test("a figure-required question rejects an answer upload without a figure", async () => {
+  const owner = crypto.randomUUID();
+  const headers = await prepare(owner, {
+    question: {
+      question: "Present your research around one uploaded figure.",
+      focus: "Figure evidence",
+      expectedDurationSeconds: 180,
+      requiresFigureUpload: true,
+      followUp: "What should the audience remember?",
+    },
+  });
+  const body = new FormData();
+  body.append("video", new Blob(["synthetic video"], { type: "video/mp4" }), "answer.mp4");
+  const response = await fetch(base + "/api/save-answer", {
+    method: "POST",
+    headers: {
+      Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId: owner, name: "Figure required member" })}`,
+      "X-Expected-Owner": owner,
+      ...headers,
+    },
+    body,
+  });
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error, "Upload one figure before saving this answer.");
+  assert.equal(queue.get("SELECT id FROM jobs WHERE owner=?", owner), undefined);
 });
 
 test("comment moderation uses a guarded model kind and hides the original blocked version", async t => {

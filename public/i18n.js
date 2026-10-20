@@ -211,6 +211,17 @@
     "Please record the answer again.": "请重新录制回答。",
     "The video was longer than two minutes, so only the first two minutes were evaluated.":
       "视频超过两分钟，仅评估了前两分钟。",
+    "The video was longer than 3 minutes 30 seconds, so only the first 3 minutes 30 seconds were evaluated.":
+      "视频超过三分三十秒，仅评估了前三分三十秒。",
+    "Required: upload one figure for this research statement. Choose a PNG, JPG, or WebP image up to 5 MB; your answer will be evaluated against this figure.":
+      "必须上传一张图：请选择不超过 5 MB 的 PNG、JPG 或 WebP 图片，系统将结合这张图评估你的回答。",
+    "Upload required figure": "上传必需图片",
+    "Replace my figure": "更换我的图片",
+    "Upload one figure before starting this challenge.":
+      "开始本次挑战前请先上传一张图片。",
+    "Upload one figure before saving this answer.":
+      "保存本次回答前请先上传一张图片。",
+    "Figure required": "需要上传图片",
     "Generating a question...": "正在生成问题...",
     "Question generation failed.": "问题生成失败。",
     "Saving…": "正在保存…",

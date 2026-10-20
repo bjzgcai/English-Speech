@@ -54,6 +54,18 @@ test("a recording longer than the two-minute limit counts as truncated, not inco
   assert.equal(result.evaluatedSeconds, 120);
 });
 
+test("recorded answers use the 3:30 completeness horizon", () => {
+  const result = mediaCompleteness(
+    { originalDurationSeconds: 300, durationSeconds: 210 },
+    { durationSeconds: 210 },
+    210,
+  );
+  assert.equal(result.incomplete, false);
+  assert.equal(result.claimedSeconds, 300);
+  assert.equal(result.expectedSeconds, 210);
+  assert.equal(result.evaluatedSeconds, 210);
+});
+
 test("an unmeasurable file falls back to the inspected duration without a false alarm", () => {
   assert.equal(mediaCompleteness({ durationSeconds: 60 }, null).incomplete, false);
   assert.equal(mediaCompleteness({ durationSeconds: 60 }, {}).incomplete, false);

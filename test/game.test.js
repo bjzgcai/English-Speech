@@ -23,7 +23,6 @@ const FIGURE_LESSON_SLUGS = {
   "Explaining an experimental figure": "l07-experimental-figure",
   "Managing the boundaries of your results": "l10-results-boundaries",
   "Title and abstract information structure": "l12-title-abstract",
-  "A research statement around one figure": "l13-research-statement-figure",
 };
 
 test("academic English course starts on 2026-09-28 with sixteen lessons", () => {
@@ -351,6 +350,31 @@ test("the two groups share lesson dates but never share a challenge id", () => {
   assert.equal(wrapped.startsAt, challengeForIndex(16, "g1").startsAt);
 });
 
+test("the shared three-minute research statement lands in g2 lesson 3", () => {
+  const challenge = challengeForIndex(2, "g2");
+  assert.equal(challenge.id, "weekly-2026-10-20-g2");
+  assert.equal(
+    challenge.title,
+    "Three-minute research statement around one figure",
+  );
+  assert.equal(challenge.expectedDurationSeconds, 180);
+  assert.equal(challenge.requiresFigureUpload, true);
+  assert.equal(challenge.figure, null);
+  assert.match(challenge.question, /^Deliver a 3-minute research statement/);
+  assert.match(challenge.question, /1\. Context\/problem:.*~30s/);
+  assert.match(challenge.question, /2\. Gap\/question:.*~20s/);
+  assert.match(challenge.question, /3\. What we did:.*~40s/);
+  assert.match(challenge.question, /4\. The figure:.*~60s/);
+  assert.match(challenge.question, /5\. So-what \+ boundary:.*~30s/);
+  assert.match(challenge.question, /figure carries the evidential weight/);
+  assert.equal(challenge.followUp, "What is the one sentence you want remembered?");
+
+  // The topic is shared by the parallel course, so group 1 receives it later.
+  assert.equal(challengeForIndex(12, "g1").title, challenge.title);
+  assert.equal(challengeForIndex(12, "g1").requiresFigureUpload, true);
+  assert.equal(challengeQuestion(challenge).requiresFigureUpload, true);
+});
+
 test("available challenges and leaderboards stay inside one group", () => {
   const now = new Date("2026-10-21T12:00:00+08:00");
   assert.deepEqual(
@@ -383,7 +407,7 @@ test("available challenges and leaderboards stay inside one group", () => {
   assert.deepEqual(secondBoard.entries.map((entry) => entry.name), ["Group Two"]);
 });
 
-test("exactly the seven figure lessons carry an interpretable figure asset", () => {
+test("exactly the six supplied-figure lessons carry an interpretable asset", () => {
   const withFigure = weeklyTopics.filter((topic) => topic.figure);
   assert.equal(withFigure.length, Object.keys(FIGURE_LESSON_SLUGS).length);
   assert.deepEqual(
@@ -405,8 +429,9 @@ test("exactly the seven figure lessons carry an interpretable figure asset", () 
     );
   }
 
-  // The nine remaining lessons stay text-only.
-  assert.equal(weeklyTopics.filter((topic) => !topic.figure).length, 9);
+  // The ten remaining lessons stay text-only; the research-statement lesson
+  // requires a learner-uploaded figure instead of shipping a sample.
+  assert.equal(weeklyTopics.filter((topic) => !topic.figure).length, 10);
 });
 
 test("the figure follows the topic, so both class groups receive the right one", () => {
@@ -444,7 +469,7 @@ test("the persisted question carries the figure so history and scoring keep it",
 
 test("figure lessons read as plain tasks without an 'use the figure' opener", () => {
   const figureTopics = weeklyTopics.filter((topic) => topic.figure);
-  assert.equal(figureTopics.length, 7);
+  assert.equal(figureTopics.length, 6);
 
   // The figure is the task material because it is shown beside the question and
   // labelled "Task figure"; the prompt itself stays a plain task statement.
@@ -457,7 +482,7 @@ test("figure lessons read as plain tasks without an 'use the figure' opener", ()
     assert.doesNotMatch(topic.question, stalePhrasing, `${topic.title} must not ask for own material`);
   }
 
-  // The nine text-only lessons must not acquire a figure reference either.
+  // Text-only lessons must not point at a figure that is not supplied.
   for (const topic of weeklyTopics.filter((topic) => !topic.figure)) {
     assert.doesNotMatch(topic.question, /\bshown\b/i, `${topic.title} has no figure to point at`);
   }

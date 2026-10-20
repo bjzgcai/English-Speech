@@ -127,6 +127,7 @@ const internalLlmTranscribeModel = process.env.INTERNAL_LLM_TRANSCRIBE_MODEL || 
 const internalLlmEvalModel = process.env.INTERNAL_LLM_EVAL_MODEL || "qwen";
 const openRouterEvalModelName = () => openRouterModelFor("eval");
 const maximumVideoBytes = 250 * 1024 * 1024;
+const questionAnswerEvaluationMaxSeconds = 3 * 60 + 30;
 const standaloneEvaluationMaxSeconds = 2 * 60;
 const answerCancellationTtlMs = 60 * 60 * 1000;
 const canceledAnswerSaves = new Map();
@@ -904,6 +905,7 @@ function partnerEvaluation(record) {
       question: safeText(record?.question?.question),
       focus: safeText(record?.question?.focus),
       expectedDurationSeconds: Number(record?.question?.expectedDurationSeconds) || null,
+      requiresFigureUpload: record?.question?.requiresFigureUpload === true,
       followUp: safeText(record?.question?.followUp),
     },
     evaluation: {
@@ -1047,17 +1049,37 @@ function runFfmpeg(args) {
   return processing.runMedia(args);
 }
 
-function limitStandaloneMediaInfo(mediaInfo) {
+function maximumSecondsForEvaluationMode(evaluationMode) {
+  return evaluationMode === "standalone-speech"
+    ? standaloneEvaluationMaxSeconds
+    : questionAnswerEvaluationMaxSeconds;
+}
+
+function limitMediaInfo(mediaInfo, maximumSeconds) {
   const originalDurationSeconds = mediaInfo.durationSeconds;
   const hasKnownDuration = Number.isFinite(originalDurationSeconds);
   return {
     ...mediaInfo,
-    truncated: hasKnownDuration && originalDurationSeconds > standaloneEvaluationMaxSeconds,
+    truncated: hasKnownDuration && originalDurationSeconds > maximumSeconds,
     originalDurationSeconds,
     durationSeconds: hasKnownDuration
-      ? Math.min(originalDurationSeconds, standaloneEvaluationMaxSeconds)
-      : standaloneEvaluationMaxSeconds,
+      ? Math.min(originalDurationSeconds, maximumSeconds)
+      : maximumSeconds,
   };
+}
+
+function limitStandaloneMediaInfo(mediaInfo) {
+  return limitMediaInfo(mediaInfo, standaloneEvaluationMaxSeconds);
+}
+
+function mediaTruncationNotice(maximumSeconds) {
+  if (maximumSeconds === standaloneEvaluationMaxSeconds) {
+    return "The video was longer than two minutes, so only the first two minutes were evaluated.";
+  }
+  const label = maximumSeconds === questionAnswerEvaluationMaxSeconds
+    ? "3 minutes 30 seconds"
+    : `${Math.floor(maximumSeconds / 60)} minutes ${maximumSeconds % 60} seconds`;
+  return `The video was longer than ${label}, so only the first ${label} were evaluated.`;
 }
 
 // A recorder that stalls mid-sentence keeps the container's timeline running
@@ -1078,7 +1100,7 @@ const mediaShortfallRatio = 0.2;
 function mediaCompleteness(mediaInfo, analysis, maximumSeconds = standaloneEvaluationMaxSeconds) {
   const raw = Number(mediaInfo?.originalDurationSeconds ?? mediaInfo?.durationSeconds);
   const claimedSeconds = Number.isFinite(raw) && raw > 0 ? raw : null;
-  // A recording longer than the two-minute limit is expected to be evaluated
+  // A recording longer than the active limit is expected to be evaluated
   // only up to that limit, so the shortfall is measured against the expectation
   // rather than against the raw container duration.
   const expectedSeconds = claimedSeconds === null ? null : Math.min(claimedSeconds, maximumSeconds);
@@ -1993,6 +2015,7 @@ async function evaluateSavedVideo({
   question,
   evaluationMode = "question-answer",
   mediaInfo = null,
+  maximumDurationSeconds = standaloneEvaluationMaxSeconds,
 }) {
   const missingConfiguration = [
     !process.env.INTERNAL_LLM_API_KEY && "INTERNAL_LLM_API_KEY",
@@ -2016,7 +2039,10 @@ async function evaluateSavedVideo({
   const { audibleAudio, framePaths, analysis } = await processing.stage("media", async () => {
     if (preparedMediaExists(artifactBaseDir, inspectedMedia.prepared)) return inspectedMedia.prepared;
     // Old checkpoints or lost artifacts can resume from the durable MP4.
-    return (await processMedia(videoPath, { artifactBaseDir })).prepared;
+    return (await processMedia(videoPath, {
+      artifactBaseDir,
+      maximumDurationSeconds,
+    })).prepared;
   });
   const { transcript, audioMetrics } = await processing.stage("transcription", async () => {
     const transcript = audibleAudio ? await transcribeAudio(audioPath, { durationSeconds: inspectedMedia.durationSeconds }) : "";
@@ -2030,7 +2056,7 @@ async function evaluateSavedVideo({
     framePaths,
     evaluationMode,
   }));
-  const completeness = mediaCompleteness(inspectedMedia, analysis);
+  const completeness = mediaCompleteness(inspectedMedia, analysis, maximumDurationSeconds);
 
   return {
     status: "completed",
@@ -2046,7 +2072,7 @@ async function evaluateSavedVideo({
       evaluatedDurationSeconds: completeness.evaluatedSeconds,
       notice: [
         inspectedMedia.truncated
-          ? "The video was longer than two minutes, so only the first two minutes were evaluated."
+          ? mediaTruncationNotice(maximumDurationSeconds)
           : "",
         completeness.incomplete
           ? `Only the first ${Math.max(1, Math.round(completeness.evaluatedSeconds || 0))} seconds of this recording could be read, so the rest of the answer was never evaluated. Please record the answer again.`
@@ -2598,6 +2624,7 @@ function gameChallengeForClient(challenge) {
     question: challenge.question,
     focus: challenge.focus,
     expectedDurationSeconds: challenge.expectedDurationSeconds,
+    requiresFigureUpload: challenge.requiresFigureUpload === true,
     followUp: challenge.followUp,
     startsAt: challenge.startsAt,
     endsAt: challenge.endsAt,
@@ -2867,6 +2894,10 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttem
 
   const profile = questionRecord.profile;
   const question = questionRecord.question;
+  if (question.requiresFigureUpload === true && !figureFile) {
+    cleanupUploads();
+    return res.status(400).json({ error: "Upload one figure before saving this answer." });
+  }
   if (figureFile && !isSupportedUserFigure(figureFile)) {
     cleanupUploads();
     return res.status(400).json({ error: "Choose a PNG, JPG, or WebP figure image up to 5 MB." });
@@ -2931,10 +2962,13 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttem
   let evaluationMediaInfo;
 
   try {
-    evaluationMediaInfo = limitStandaloneMediaInfo(await inspectMedia(videoFile.path));
+    evaluationMediaInfo = limitMediaInfo(
+      await inspectMedia(videoFile.path),
+      questionAnswerEvaluationMaxSeconds,
+    );
     if (!evaluationMediaInfo.hasAudio) throw new Error("The answer requires a microphone track.");
     const prepared = await normalizeRecording(videoFile.path, convertedPath, {
-      maximumDurationSeconds: standaloneEvaluationMaxSeconds,
+      maximumDurationSeconds: questionAnswerEvaluationMaxSeconds,
       mediaInfo: evaluationMediaInfo,
       artifactBaseDir: path.join(artifactsDir, id),
     });
@@ -2985,6 +3019,7 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttem
       profile,
       question: questionForAnswer,
       mediaInfo: evaluationMediaInfo,
+      maximumDurationSeconds: questionAnswerEvaluationMaxSeconds,
     });
   } catch (error) {
     record.evaluation = {
@@ -3050,7 +3085,7 @@ app.post(
       const limitedMediaInfo = limitStandaloneMediaInfo(mediaInfo);
       const prepared = await normalizeRecording(inputPath, convertedPath, {
         maximumDurationSeconds: standaloneEvaluationMaxSeconds,
-        mediaInfo,
+        mediaInfo: limitedMediaInfo,
         artifactBaseDir: path.join(artifactsDir, id),
       });
       Object.assign(limitedMediaInfo, prepared);
@@ -3071,6 +3106,7 @@ app.post(
           question,
           evaluationMode: "standalone-speech",
           mediaInfo: limitedMediaInfo,
+          maximumDurationSeconds: standaloneEvaluationMaxSeconds,
         });
       } catch {
         evaluation = { status: "failed", reason: "Your recording was saved, but evaluation could not finish. Please retry later." };
@@ -3685,8 +3721,12 @@ module.exports = {
     isDingTalkInAppConfigured,
     isTranscriptionSizeError,
     isTranscriptionFileOpenError,
+    limitMediaInfo,
     limitStandaloneMediaInfo,
+    maximumSecondsForEvaluationMode,
     mediaCompleteness,
+    questionAnswerEvaluationMaxSeconds,
+    standaloneEvaluationMaxSeconds,
     leaderboardAnswerMedia,
     canAccessTeacher,
     canAccessCatchup,

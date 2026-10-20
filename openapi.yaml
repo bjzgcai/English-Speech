@@ -619,6 +619,9 @@ components:
           type: integer
           nullable: true
           description: Suggested answer duration; null when the attempt has no configured duration
+        requiresFigureUpload:
+          type: boolean
+          description: Whether the learner must upload a figure before submitting this answer
         followUp:
           type: string
           description: Follow-up prompt; empty when unavailable

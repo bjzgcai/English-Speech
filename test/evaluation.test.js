@@ -237,6 +237,32 @@ test("standalone videos are capped at the end of the second minute", () => {
   assert.equal(overLimit.durationSeconds, 120);
 });
 
+test("recorded question answers use a three-and-a-half-minute cap", () => {
+  assert.equal(testHelpers.maximumSecondsForEvaluationMode("question-answer"), 210);
+  assert.equal(testHelpers.maximumSecondsForEvaluationMode("standalone-speech"), 120);
+
+  const exactLimit = testHelpers.limitMediaInfo(
+    { hasAudio: true, hasVideo: true, durationSeconds: 210 },
+    210,
+  );
+  const overLimit = testHelpers.limitMediaInfo(
+    { hasAudio: true, hasVideo: true, durationSeconds: 210.1 },
+    210,
+  );
+  const unknownDuration = testHelpers.limitMediaInfo(
+    { hasAudio: true, hasVideo: true, durationSeconds: null },
+    210,
+  );
+
+  assert.equal(exactLimit.truncated, false);
+  assert.equal(exactLimit.durationSeconds, 210);
+  assert.equal(overLimit.truncated, true);
+  assert.equal(overLimit.originalDurationSeconds, 210.1);
+  assert.equal(overLimit.durationSeconds, 210);
+  assert.equal(unknownDuration.truncated, false);
+  assert.equal(unknownDuration.durationSeconds, 210);
+});
+
 test("recognizes the upstream encoder-cache error as a chunking signal", () => {
   assert.equal(
     testHelpers.isTranscriptionSizeError(

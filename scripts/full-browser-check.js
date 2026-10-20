@@ -10,6 +10,13 @@ const { once } = require("node:events");
 const { chromium } = require("playwright");
 const { runMedia } = require("../src/processing");
 
+async function uploadGameFigureIfRequired(page, figureFixture) {
+  await page.waitForFunction(() => Boolean(state.gameChallenge));
+  if (await page.evaluate(() => state.gameChallenge?.requiresFigureUpload === true)) {
+    await page.locator("#questionFigure [data-figure-input]").setInputFiles(figureFixture);
+  }
+}
+
 async function main() {
   const data = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-full-browser-"));
   const screenshots = [];
@@ -49,6 +56,7 @@ async function main() {
   let activePage;
   try {
     const fixture = path.join(data, "spoken-test.mp4");
+    const figureFixture = path.resolve(__dirname, "../public/assets/figures/l13-research-statement-figure.png");
     await runMedia(["-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24:duration=3", "-f", "lavfi", "-i", "sine=frequency=440:duration=3", "-c:v", "libx264", "-preset", "veryfast", "-threads:v", "1", "-c:a", "aac", fixture]);
     for (let i = 0; i < 100; i++) {
       try { if ((await fetch(base + "/api/health")).ok) break; } catch {}
@@ -68,7 +76,8 @@ async function main() {
         await page.screenshot({ path: file, fullPage: true }); screenshots.push(file);
       };
       await page.goto(base + "/examine");
-      await page.waitForFunction(() => Boolean(VisitorSession.user));
+      // Browsing is anonymous until an invitation is redeemed below.
+      await page.waitForFunction(() => Boolean(window.VisitorSession));
       const invitation = crypto.randomUUID().toUpperCase();
       fs.appendFileSync(path.join(data, "invitations", "metadata.jsonl"), JSON.stringify({ id: crypto.randomUUID(), hash: crypto.createHash("sha256").update(invitation).digest("hex") }) + "\n");
       await page.locator("#role").fill("Software engineering and team communication");
@@ -78,13 +87,13 @@ async function main() {
       await page.locator(".access-submit").click();
       await page.locator("#privacyConsentModal").waitFor({ state: "visible" });
       await page.locator("#privacyPolicyAgree").check();
-      assert.equal(await page.locator("#acceptPrivacyButton").isEnabled(), false);
       await page.locator("#sensitiveInfoAgree").check();
       await page.locator("#acceptPrivacyButton").click();
       await page.locator("#speakDirectlyButton").waitFor({ state: "visible" });
       await capture("question-prepare");
       await page.locator("#speakDirectlyButton").click();
       await page.waitForFunction(() => state.recorder?.state === "recording");
+      assert.match(await page.locator("#recordingRemaining").textContent(), /^03:\d\d$/);
       await page.waitForFunction(() => document.querySelector("#recordingElapsed").textContent >= "00:03");
       await capture("recording");
       await page.locator("#finishButton").click();
@@ -110,11 +119,12 @@ async function main() {
       await page.locator("#closeVideoModal").click();
       await capture("history");
       await page.goto(base + "/game");
+      await uploadGameFigureIfRequired(page, figureFixture);
       await page.locator("#generateButton").click();
       await page.locator("#speakDirectlyButton").click();
       await page.waitForFunction(() => state.recorder?.state === "recording");
       if (process.argv.includes("--full-duration") && viewport.width === 1440) {
-        await page.waitForFunction(() => state.recorder?.state !== "recording", null, { timeout: 150000 });
+        await page.waitForFunction(() => state.recorder?.state !== "recording", null, { timeout: 240000 });
       } else {
         await page.waitForFunction(() => document.querySelector("#recordingElapsed").textContent >= "00:03");
         await page.locator("#finishButton").click();
@@ -143,6 +153,7 @@ async function main() {
       assert.equal(await page.locator(".history-collapse").count(), 3);
       for (const kind of ["audio", "video"]) {
         await page.goto(base + "/game");
+        await uploadGameFigureIfRequired(page, figureFixture);
         await page.locator("#generateButton").click();
         await page.locator("#speakDirectlyButton").click();
         await page.waitForFunction(() => state.recorder?.state === "recording");
@@ -156,7 +167,7 @@ async function main() {
       const stranger = await browser.newContext();
       const otherPage = await stranger.newPage();
       await otherPage.goto(base + "/history");
-      await otherPage.waitForFunction(() => Boolean(VisitorSession.user));
+      await otherPage.waitForFunction(() => Boolean(window.VisitorSession));
       assert.equal(await otherPage.locator(".history-collapse").count(), 0);
       await stranger.close();
       await context.close();

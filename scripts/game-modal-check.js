@@ -43,6 +43,7 @@ const FAKE_ARGS = [
 ];
 
 const OUT = path.join(process.cwd(), 'output');
+const REQUIRED_FIGURE_FIXTURE = path.resolve(__dirname, '../public/assets/figures/l13-research-statement-figure.png');
 const MODES = { camera: 'true', audio: 'false' };
 
 function probe() {
@@ -154,9 +155,9 @@ function assertNotPainted(label, node) {
     `${label}: still painted ${JSON.stringify(node)}`);
 }
 
-async function run(browser, base, route, width, mode, sessionName = 'Modal Tester') {
+async function run(browser, base, route, width, mode, sessionName = 'Modal Tester', height = 900) {
   const context = await browser.newContext({
-    viewport: { width, height: 900 },
+    viewport: { width, height },
     permissions: ['camera', 'microphone'],
   });
   const page = await context.newPage();
@@ -194,13 +195,30 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
     });
   });
   await page.reload({ waitUntil: 'networkidle' });
-  if (route === '/game' || route === '/game/first-lesson') {
+  if (route.startsWith('/game')) {
     await page.waitForFunction(() => {
       const t = document.querySelector('#gameTopicTitle');
       return t && t.textContent && !/Loading/.test(t.textContent);
     }, null, { timeout: 15000 });
   }
   await page.waitForFunction(() => !!document.querySelector('#useCamera'), null, { timeout: 10000 });
+
+  const structuredQuestion = await page.evaluate(() => ({
+    title: document.querySelector('#questionText')?.textContent.trim(),
+    beats: document.querySelectorAll('#questionPrompt .prompt-beat').length,
+    titleSize: parseFloat(getComputedStyle(document.querySelector('#questionText')).fontSize),
+    promptWidth: document.querySelector('#questionPrompt')?.getBoundingClientRect().width || 0,
+    duplicateOverviewQuestion: Boolean(document.querySelector('#gameTopicQuestion')),
+  }));
+  assert.equal(structuredQuestion.duplicateOverviewQuestion, false,
+    `${label}: the duplicate game-overview question is still rendered`);
+  if (route === '/game?group=g2') {
+    assert.equal(structuredQuestion.beats, 5, `${label}: the five beats are not split into readable cards`);
+    assert.equal(structuredQuestion.title, 'Three-minute research statement around one figure');
+    assert.ok(structuredQuestion.titleSize <= 32, `${label}: the structured title is still oversized`);
+    assert.ok(structuredQuestion.promptWidth > 0 && structuredQuestion.promptWidth <= width,
+      `${label}: the structured prompt overflows the viewport`);
+  }
 
   // The private make-up page is pinned to group 2's lesson 1: no group picker,
   // and a link to that week's public standings.
@@ -283,6 +301,15 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
   assert.deepEqual(copy.before, wantCamera ? copy.camera : copy.audio,
     `${label}: the consent copy painted on load does not match the persisted mode`);
 
+  // A challenge can require a learner-supplied figure. Seed one through the
+  // normal upload control so this layout check remains date-independent.
+  if (route.startsWith('/game') && route !== '/game/first-lesson') {
+    await page.waitForFunction(() => Boolean(state.gameChallenge));
+    if (await page.evaluate(() => state.gameChallenge?.requiresFigureUpload === true)) {
+      await page.locator('#questionFigure [data-figure-input]').setInputFiles(REQUIRED_FIGURE_FIXTURE);
+    }
+  }
+
   // 1. Start challenge -> countdown modal with the question and "Start now".
   await page.locator('#generateButton').click();
   await page.waitForFunction(() => {
@@ -303,6 +330,34 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
   assertVisible('Start now button', countdown.startNow);
   assert.ok(countdown.title.text.length > 10, `countdown shows no question: ${JSON.stringify(countdown.title.text)}`);
   assert.equal(countdown.startNow.text, 'Start now');
+  if (route === '/game?group=g2') {
+    const modalPrompt = await page.evaluate(() => ({
+      beats: document.querySelectorAll('#prepareModalPrompt .prompt-beat').length,
+      title: document.querySelector('#prepareModalTitle').textContent.trim(),
+      titleSize: parseFloat(getComputedStyle(document.querySelector('#prepareModalTitle')).fontSize),
+      bodySize: parseFloat(getComputedStyle(document.querySelector('#prepareModalPrompt .prompt-beat-body')).fontSize),
+    }));
+    assert.equal(modalPrompt.beats, 5, `${label}: the modal lost the five-beat structure`);
+    assert.ok(modalPrompt.title.length < 100, `${label}: the modal still uses the full essay as its title`);
+    assert.ok(modalPrompt.titleSize <= 28 && modalPrompt.bodySize <= 14,
+      `${label}: the structured modal text is not compact enough`);
+    const reachableTop = await page.evaluate(() => {
+      const dialog = document.querySelector('.prepare-dialog');
+      const title = document.querySelector('#prepareModalTitle');
+      dialog.scrollTop = 0;
+      const dialogBox = dialog.getBoundingClientRect();
+      const titleBox = title.getBoundingClientRect();
+      return {
+        scrollTop: dialog.scrollTop,
+        titleInside: titleBox.top >= dialogBox.top - 1,
+        dialogHeight: dialogBox.height,
+        scrollHeight: dialog.scrollHeight,
+      };
+    });
+    assert.equal(reachableTop.scrollTop, 0, `${label}: the modal did not reset to the top`);
+    assert.equal(reachableTop.titleInside, true,
+      `${label}: content above the scroll origin is clipped: ${JSON.stringify(reachableTop)}`);
+  }
   if (wantCamera) {
     assertVisible('camera preview', countdown.previewWrap);
     assertVisible('camera guidance', countdown.guidance);
@@ -318,6 +373,8 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
     null, { timeout: 20000 },
   );
   await page.waitForTimeout(600);
+  assert.match(await page.locator('#recordingRemaining').textContent(), /^03:\d\d$/,
+    `${label}: the browser recorder is not using the 3:30 ceiling`);
 
   const recording = await page.evaluate(probe);
   console.log(`recording: ${recording.dialog.box.join('x')} recorder ${recording.recorder.box.join('x')} video-frame=${recording.recorder.videoFrame.display} tracks a${recording.tracks.audio}/v${recording.tracks.video}`);
@@ -329,6 +386,10 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
   assert.ok(recording.recorder.box[0] > 0 && recording.recorder.box[1] > 100,
     `recorder panel collapsed: ${JSON.stringify(recording.recorder.box)}`);
   assert.ok(recording.recorder.text.length > 10, 'recorder panel has no visible content');
+  if (route === '/game?group=g2') {
+    assert.equal(await page.locator('#recorderModalSlot #questionPrompt .prompt-beat').count(), 5,
+      `${label}: the recording view lost the five-beat structure`);
+  }
   assertVisible('question block', recording.recorder.question);
   assertVisible('recorder controls', recording.recorder.actions);
   assertVisible('Finish button', recording.recorder.finish);
@@ -389,6 +450,13 @@ async function main() {
         for (const width of [1440, 390]) await run(browser, base, route, width, mode);
       }
     }
+    // Group 2 currently owns the long structured research-statement prompt.
+    for (const mode of ['camera', 'audio']) {
+      for (const width of [1440, 390]) await run(browser, base, '/game?group=g2', width, mode);
+    }
+    // Matches the tall, narrow desktop capture where the centered audio-only
+    // grid previously hid the top of the prompt above the scroll origin.
+    await run(browser, base, '/game?group=g2', 928, 'audio', 'Modal Tester', 966);
     // The private make-up page runs the same recorder, but only for the
     // learners it is assigned to (the name fallback the gate honours).
     for (const learner of ['张鳐', '吴衍标']) {
