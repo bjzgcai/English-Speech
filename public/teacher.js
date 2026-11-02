@@ -11,6 +11,7 @@
   var groupPicker = document.getElementById("teacherGroupPicker");
   var summary = document.getElementById("teacherSummary");
   var list = document.getElementById("teacherList");
+  var topicGroups = document.getElementById("teacherTopicGroups");
   var exportCurrent = document.getElementById("exportCurrent");
   var exportAll = document.getElementById("exportAll");
 
@@ -161,6 +162,51 @@
       .join("");
   }
 
+  function renderTopics(data) {
+    var groups = Array.isArray(data.groups) ? data.groups : [];
+    if (!groups.length) {
+      topicGroups.innerHTML = '<p class="leaderboard-empty">No group topics are available.</p>';
+      return;
+    }
+    topicGroups.innerHTML = groups
+      .map(function (group) {
+        var topics = Array.isArray(group.topics) ? group.topics : [];
+        var items = topics
+          .map(function (topic) {
+            var meta = ["Unit " + escapeHtml(topic.unitNumber)];
+            if (topic.instructor) meta.push(escapeHtml(topic.instructor));
+            return '<li class="teacher-topic-item' + (topic.current ? " is-current" : "") + '">' +
+              '<span class="teacher-topic-number" aria-hidden="true">' + escapeHtml(topic.lessonNumber) + "</span>" +
+              '<span class="teacher-topic-copy">' +
+                "<strong>" + escapeHtml(topic.title) + "</strong>" +
+                "<small>" + meta.join(" · ") + "</small>" +
+              "</span>" +
+              (topic.current ? '<span class="teacher-topic-now">This week</span>' : "") +
+              "</li>";
+          })
+          .join("");
+        return '<article class="teacher-topic-group">' +
+          '<div class="teacher-topic-group-head">' +
+            "<h4>" + escapeHtml(group.label) + "</h4>" +
+            "<span>" + topics.length + " topics</span>" +
+          "</div>" +
+          '<ol class="teacher-topic-list">' + items + "</ol>" +
+          "</article>";
+      })
+      .join("");
+  }
+
+  async function loadTopics() {
+    try {
+      var response = await window.VisitorSession.fetch("/api/teacher/topics", { cache: "no-store" });
+      var data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to load the group topics.");
+      renderTopics(data);
+    } catch (error) {
+      topicGroups.innerHTML = '<p class="leaderboard-error">' + escapeHtml(error.message) + "</p>";
+    }
+  }
+
   async function load(challengeId, restoreStartsAt) {
     list.setAttribute("aria-busy", "true");
     summary.textContent = "Loading weekly standings...";
@@ -269,4 +315,5 @@
 
   setGroup(readStoredGroup() || "g1", false);
   load(readWeekParam());
+  loadTopics();
 })();

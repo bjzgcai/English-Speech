@@ -42,6 +42,7 @@ const {
   parseExperienceRating,
 } = require("./experience-ratings");
 const {
+  GAME_GROUPS,
   GAME_GROUP_IDS,
   availableChallenges,
   challengeForIndex,
@@ -3760,6 +3761,33 @@ function teacherLeaderboardPayload(records, challenge, challenges, group) {
   };
 }
 
+// The teacher console shows each group's full rotation below the standings.
+// Reuse the live scheduler so topic titles, unit labels, and weekly overrides
+// stay identical to what learners receive.
+function teacherTopicCatalog(now = new Date()) {
+  return {
+    groups: GAME_GROUP_IDS.map((group) => {
+      const groupConfig = GAME_GROUPS[group];
+      const rotationLength = groupConfig.topicSchedule
+        ? groupConfig.topicSchedule.length
+        : groupConfig.topicPool.length;
+      const current = availableChallenges(now, 1, group)[0] || null;
+      const topics = Array.from({ length: rotationLength }, (_, offset) => {
+        const challenge = challengeForIndex(groupConfig.startSlot + offset, group);
+        return {
+          lessonNumber: challenge.lessonNumber,
+          unitNumber: challenge.unitNumber,
+          unitTitle: challenge.unitTitle,
+          instructor: challenge.instructor,
+          title: challenge.title,
+          current: Boolean(current && challenge.topicIndex === current.topicIndex),
+        };
+      });
+      return { group, label: groupConfig.label, topics };
+    }),
+  };
+}
+
 function resolveTeacherChallenge(query) {
   const group = normalizeGameGroup(safeText(query.group));
   const challenges = availableChallenges(new Date(), 10, group);
@@ -3780,6 +3808,12 @@ app.get("/api/teacher/leaderboard", requireVisitor, requireTeacher, (req, res) =
 
   res.set("Cache-Control", "no-store");
   res.json(teacherLeaderboardPayload(readJsonLines(metadataFile), challenge, challenges, group));
+});
+
+app.get("/api/teacher/topics", requireVisitor, requireTeacher, (_req, res) => {
+  // The catalog only changes when the current-week marker rolls over.
+  res.set("Cache-Control", "private, max-age=300");
+  res.json(teacherTopicCatalog());
 });
 
 function csvCell(value) {

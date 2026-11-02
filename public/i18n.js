@@ -76,6 +76,13 @@
     "Teacher console": "教师端",
     "Weekly standings with answer playback, AI integrity flags, and CSV export.":
       "每周成绩单，支持回答播放、AI诚信标记与CSV导出。",
+    "Topics by group": "各组主题",
+    "Every topic in each group's weekly rotation, in teaching order.":
+      "各组每周轮换的全部主题，按教学顺序排列。",
+    "Loading topics...": "主题加载中...",
+    "No group topics are available.": "暂无各组主题。",
+    "Unable to load the group topics.": "无法加载各组主题。",
+    "This week": "本周",
     "Export current week": "导出本周",
     "Export all": "导出全部",
     "Players": "人参与",

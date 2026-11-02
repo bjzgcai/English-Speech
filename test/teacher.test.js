@@ -123,6 +123,47 @@ test("the invitation-code guest may enter the teacher console", async () => {
   assert.equal(me.teacherAccess, true);
 });
 
+test("teachers can list every group's topic rotation", async () => {
+  assert.equal((await fetch(base + "/api/teacher/topics")).status, 401);
+  assert.equal((await fetch(base + "/api/teacher/topics", { headers: sessionHeaders("陈云") })).status, 403);
+
+  const response = await fetch(base + "/api/teacher/topics", { headers: sessionHeaders("王旭东") });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.deepEqual(payload.groups.map((group) => group.group), ["g1", "g2", "g3"]);
+
+  const expected = {
+    g1: {
+      label: "Group 1",
+      count: 15,
+      first: "Introducing yourself as a researcher",
+      last: "Round-table defense",
+    },
+    g2: {
+      label: "Group 2",
+      count: 15,
+      first: "Explaining an experimental figure",
+      last: "Round-table defense",
+    },
+    g3: {
+      label: "山东大学",
+      count: 9,
+      first: "How do you use AI everyday?",
+      last: "If AI planned my campus day",
+    },
+  };
+
+  for (const group of payload.groups) {
+    const wanted = expected[group.group];
+    assert.equal(group.label, wanted.label);
+    assert.equal(group.topics.length, wanted.count);
+    assert.equal(group.topics[0].title, wanted.first);
+    assert.equal(group.topics.at(-1).title, wanted.last);
+    assert.deepEqual(group.topics.map((topic) => topic.lessonNumber), Array.from({ length: wanted.count }, (_, index) => index + 1));
+    assert.equal(group.topics.filter((topic) => topic.current).length, 1, `${group.group} marks this week's topic`);
+  }
+});
+
 test("teachers can export the selected week and everything as CSV", async () => {
   seedAnswer("student-2", "韩梅梅", 92, { challengeId: null });
   const teacher = sessionHeaders("董圣娇");
