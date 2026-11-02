@@ -239,7 +239,7 @@
       if (!current?.hasAccess) throw new Error("Unable to verify access. Please try signing in.");
       if (current.user?.identityType === "guest") showCongratulations(current.user.name);
     } finally { redeeming = false; }
-    return true;
+    return data;
   }
   // Invitation QR images encode <share-url>/invite#code=<CODE>. The small client-side
   // reader (public/vendor/jsQR.js, MIT-licensed) is fetched only when an image is used.

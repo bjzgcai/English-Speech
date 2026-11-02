@@ -28,9 +28,9 @@ function sessionHeaders(name, openId = crypto.randomUUID()) {
   return { Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId, name })}` };
 }
 
-function seedAnswer(openId, name, score, { answerId = crypto.randomUUID(), finishedAt = "2026-10-01T09:00:00.000Z", challengeId = null, filename = "answer.mp4" } = {}) {
+function seedAnswer(openId, name, score, { answerId = crypto.randomUUID(), finishedAt = "2026-10-01T09:00:00.000Z", challengeId = null, filename = "answer.mp4", group = "g1" } = {}) {
   // The board serves the challenge that is current when the test runs.
-  const challenge = game.currentChallenge(new Date(), "g1");
+  const challenge = game.currentChallenge(new Date(), group);
   const record = {
     id: answerId,
     openId,
@@ -54,7 +54,7 @@ test("the teacher page and APIs are allow-listed", async () => {
   assert.equal((await fetch(base + "/teacher", { redirect: "manual" })).status, 302);
   assert.equal((await fetch(base + "/teacher", { headers: sessionHeaders("陈云"), redirect: "manual" })).status, 302);
   // Whitelisted names get the console.
-  for (const name of ["王旭东", "邹欣", "吴衍标", "高坤", "柳君丽", "胡辰", "何源", "董圣娇", "赵晨"]) {
+  for (const name of ["王旭东", "邹欣", "吴衍标", "高坤", "柳君丽", "胡辰", "何源", "董圣娇", "赵晨", "邹猛"]) {
     const response = await fetch(base + "/teacher", { headers: sessionHeaders(name), redirect: "manual" });
     assert.equal(response.status, 200, name);
   }
@@ -153,6 +153,28 @@ test("teachers can export the selected week and everything as CSV", async () => 
   const allLines = allCsv.trim().split(/\r\n/);
   assert.equal(allLines[0], "Rank,Name,Score,Attempts,FinishedAt,Group,Week,AI-suspicious");
   assert.ok(allLines.some(line => line.includes("韩梅梅")), "export-all includes the g1 student");
+});
+
+test("teachers can view and export the 山东大学 group", async () => {
+  seedAnswer("shandong-student", "山大同学", 86, { group: "g3" });
+  const teacher = sessionHeaders("柳君丽");
+
+  const boardResponse = await fetch(base + "/api/teacher/leaderboard?group=g3", { headers: teacher });
+  assert.equal(boardResponse.status, 200);
+  const board = await boardResponse.json();
+  assert.equal(board.group, "g3");
+  assert.equal(board.challenge.groupLabel, "山东大学");
+  assert.ok(board.entries.some((entry) => entry.name === "山大同学"));
+
+  const week = await fetch(base + "/api/teacher/export?group=g3", { headers: teacher });
+  assert.equal(week.status, 200);
+  const weekCsv = (await week.text()).replace(/^\uFEFF/, "");
+  assert.ok(weekCsv.split(/\r\n/).some((line) => line.includes("山大同学") && line.includes(",g3,")));
+
+  const all = await fetch(base + "/api/teacher/export-all", { headers: teacher });
+  assert.equal(all.status, 200);
+  const allCsv = (await all.text()).replace(/^\uFEFF/, "");
+  assert.ok(allCsv.split(/\r\n/).some((line) => line.includes("山大同学") && line.includes(",g3,")));
 });
 
 test("a completed AI verdict marks the entry suspicious and flows into the CSV", async () => {

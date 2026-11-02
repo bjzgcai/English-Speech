@@ -9,10 +9,15 @@ if (location.hash) history.replaceState(null, "", location.pathname + location.s
 async function enterInvitation({ force = false } = {}) {
   // An invitation link signs in with the code alone, so DingTalk stays out of the way.
   const granted = await window.VisitorSession.ensureAccess({ force, invitationOnly: Boolean(invitationCode) });
-  if (granted) location.href = "/game";
+  if (granted) await redirectWithSessionGroup();
 }
-async function hasAccess() {
-  try { return (await window.VisitorSession.refresh()).hasAccess === true; } catch { return false; }
+async function redirectWithSessionGroup() {
+  try {
+    const session = await window.VisitorSession.refresh();
+    location.href = gameUrlWithGroup(session?.gameGroup);
+    return;
+  } catch { /* The normal game route still works without a group override. */ }
+  location.href = "/game";
 }
 const enter = document.querySelector("#enter");
 // Show the invitee the code they arrived with, so the prefilled field is never a surprise.
@@ -33,8 +38,8 @@ async function start() {
       // A copied personal link is a bearer credential for one account. Redeem it
       // immediately, then fall back to the prefilled form if the link was edited
       // or the account can no longer be restored.
-      await window.VisitorSession.redeem(invitationCode, invitationName);
-      location.replace("/game");
+      const session = await window.VisitorSession.redeem(invitationCode, invitationName);
+      location.replace(gameUrlWithGroup(session?.gameGroup));
     } catch {
       await window.VisitorSession.ensureAccess({ force: true, invitationOnly: true });
     } finally {
@@ -48,11 +53,19 @@ async function start() {
     try {
       // Reading the fragment never redeems it. A browser that already has access keeps it;
       // anyone else must supply the name bound to this code.
-      const granted = (await hasAccess()) || (await window.VisitorSession.ensureAccess({ force: true, invitationOnly: true }));
-      if (granted) location.replace("/game");
+      const existing = await window.VisitorSession.refresh().catch(() => null);
+      const granted = existing?.hasAccess === true ||
+        (await window.VisitorSession.ensureAccess({ force: true, invitationOnly: true }));
+      if (granted) {
+        const session = await window.VisitorSession.refresh().catch(() => null);
+        location.replace(gameUrlWithGroup(session?.gameGroup));
+      }
     } finally { enter.disabled = false; }
     return;
   }
   await enterInvitation();
+}
+function gameUrlWithGroup(group) {
+  return group && group !== "g1" ? `/game?group=${encodeURIComponent(group)}` : "/game";
 }
 void start();

@@ -158,8 +158,13 @@ Guest cookie or DingTalk OAuth -> effective owner -> versioned privacy consent
 
 `/game` always serves the **current** week: `POST /api/game/question` resolves
 the week from the clock (`currentChallenge`) and the selected class group
-(`?group=g1|g2`). The public leaderboard can display any of the last ten weeks,
-so a past week is answerable only through `/game/first-lesson` — a private
+(`?group=g1|g2|g3`). Groups 1 and 2 follow the academic course schedule. The
+public **山东大学** group (`g3`) starts with the 2026-10-20 challenge, uses a
+nine-topic two-minute everyday-English cycle, and has separate IDs such as
+`weekly-2026-10-20-g3` and separate standings. The 山东大学 invitation campaign
+(`1B5190BE4F1F`) automatically signs its learners into `g3`. The public
+leaderboard can display any of the last ten available weeks for the selected
+group, so a past week is answerable only through `/game/first-lesson` — a private
 make-up page pinned to group 2's lesson 1 (`weekly-2026-09-28-g2`, "Explaining
 an experimental figure"). It is deliberately absent from every menu and serves
 the app shell to the allow-listed session and to anonymous visitors. A visitor
@@ -305,8 +310,9 @@ The production web and worker units load the non-secret, versioned
 `ops/englisheval-capacity.env` profile. On the six-CPU / 12 GB shared host the
 worker gets `CPUQuota=400%`, `MemoryHigh=3G`, and `MemoryMax=4G`, leaving capacity
 for the web process and other applications. The profile sets media/pipeline/ASR/
-scoring limits to 3/8/3/4. RPM and TPM budgets remain unchanged; four scoring
-slots do not guarantee four simultaneous provider requests. Existing `.env.prod`
+scoring limits to 3/10/3/6, with a separate 18 RPM and 600,000 TPM scoring budget.
+Question, ASR and detection still share the internal 3-call ceiling. Six scoring
+slots do not guarantee six simultaneous provider requests. Existing `.env.prod`
 values explicitly loaded by the app take precedence. Deployment and rollback
 switch code and systemd units together without modifying shared credentials.
 

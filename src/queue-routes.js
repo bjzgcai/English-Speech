@@ -12,9 +12,10 @@ const {
   userFigureFilenameFromSrc,
 } = require("./user-figures");
 const { ensureTeacherDetections, processTeacherDetections } = require("./ai-detection");
+const { inspectMedia } = require("./media");
 
 function registerQueueRoutes(app, deps) {
-  const { config, requireAuth, requireVisitor, requirePrivacyConsent, requireAdminAccess, upload, findOwnedQuestion, validAnswerSaveId, decodeUtf8UploadFilename, standaloneEvaluationTitle, requireAttemptQuota, requireVideoQuota } = deps;
+  const { config, requireAuth, requireVisitor, requirePrivacyConsent, requireAdminAccess, upload, findOwnedQuestion, validAnswerSaveId, decodeUtf8UploadFilename, standaloneEvaluationTitle, requireAttemptQuota, requireVideoQuota, requiresCameraForQuestion } = deps;
   const queue = new Queue(config.queueFile);
   require("./processing").setModelQueue(queue);
   require("./processing").setQuestionObserver(data => queue.run("INSERT INTO telemetry(job,stage,created,data) VALUES(NULL,'question',?,?)", Date.now(), JSON.stringify(data)));
@@ -179,6 +180,24 @@ function registerQueueRoutes(app, deps) {
     }
     const id = req.queueSubmission;
     const standalone = !req.ownedQuestion;
+    if (!standalone && requiresCameraForQuestion(req.ownedQuestion.question)) {
+      let media;
+      try {
+        media = await inspectMedia(videoFile.path);
+      } catch {
+        fs.rmSync(videoFile.path, { force: true });
+        if (figureFile) fs.rmSync(figureFile.path, { force: true });
+        return res.status(400).json({ error: "The uploaded file is not a valid supported audio or video recording." });
+      }
+      if (!media.hasVideo) {
+        fs.rmSync(videoFile.path, { force: true });
+        if (figureFile) fs.rmSync(figureFile.path, { force: true });
+        return res.status(400).json({
+          error: "Camera video is required for Group 1 and Group 2 weekly tasks.",
+          code: "CAMERA_REQUIRED",
+        });
+      }
+    }
     if (!standalone && req.ownedQuestion.question.requiresFigureUpload === true && !figureFile) {
       fs.rmSync(videoFile.path, { force: true });
       return res.status(400).json({ error: "Upload one figure before saving this answer." });

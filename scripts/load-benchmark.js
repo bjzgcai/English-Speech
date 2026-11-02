@@ -169,7 +169,13 @@ async function main() {
     const uploadRoute = standalone ? "/api/evaluate-video" : "/api/save-answer";
     jobs = await Promise.all(admitted.map(async ({ i }) => {
       const generated = real || failQuestion;
-      const question = await call(i, generated ? "/api/generate-question" : "/api/game/question", generated ? { profile: { role: "Software engineering" } } : {});
+      const question = await call(
+        i,
+        generated ? "/api/generate-question" : "/api/game/question",
+        generated
+          ? { profile: { role: "Software engineering" } }
+          : { ...(audioOnly || invalidMedia ? { group: "g3" } : {}) },
+      );
       assert.ok(question.data.question?.id && question.data.question.question, "Question service must return a persisted generated or fallback question");
       const fallback = question.data.model === "fallback" || ![200, 201].includes(question.status);
       questionOutcomes[fallback ? "fallback" : "generated"]++;

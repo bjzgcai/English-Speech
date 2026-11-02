@@ -35,6 +35,8 @@ const state = {
   gameGroup: "g1",
   activeMode: null,
   useCamera: true,
+  cameraPreference: true,
+  cameraRequired: false,
   customFigure: null,
   experienceRatingScore: null,
   experienceRatingTags: [],
@@ -43,6 +45,7 @@ const state = {
 
 const MAX_RECORDING_MS = 3 * 60 * 1000 + 30 * 1000;
 const PREPARE_COUNTDOWN_SECONDS = 120;
+const CAMERA_REQUIRED_GAME_GROUPS = new Set(["g1", "g2"]);
 const dimensionDetails = {
   "Pronunciation / intelligibility":
     "Measures how easily the answer can be understood, including sound clarity, word stress, rhythm, and whether pronunciation issues interfere with meaning.",
@@ -62,10 +65,17 @@ const nameInput = document.querySelector("#name");
 const nameField = document.querySelector("#nameField");
 const generateButton = document.querySelector("#generateButton");
 const useCameraInput = document.querySelector("#useCamera");
+const cameraOption = document.querySelector("#cameraOption");
+const cameraRequiredHint = document.querySelector("#cameraRequiredHint");
 const audioOnlyHint = document.querySelector("#audioOnlyHint");
 const previewLabel = document.querySelector("#previewLabel");
-try { state.useCamera = localStorage.getItem("oscanner-use-camera") !== "false"; if (useCameraInput) useCameraInput.checked = state.useCamera; if (audioOnlyHint) audioOnlyHint.hidden = state.useCamera; } catch {}
-useCameraInput?.addEventListener("change", () => { state.useCamera = useCameraInput.checked; try { localStorage.setItem("oscanner-use-camera", String(state.useCamera)); } catch {} if (audioOnlyHint) audioOnlyHint.hidden = state.useCamera; if (previewLabel) previewLabel.textContent = state.useCamera ? "Camera preview" : "Audio recording"; if (preparePreviewWrap) preparePreviewWrap.hidden = !state.useCamera; if (videoFrame) videoFrame.hidden = !state.useCamera; prepareDialog?.classList.toggle("audio-only", !state.useCamera); updatePrivacyConsentCopy(); });
+try {
+  state.cameraPreference = localStorage.getItem("oscanner-use-camera") !== "false";
+  state.useCamera = state.cameraPreference;
+  if (useCameraInput) useCameraInput.checked = state.useCamera;
+  if (audioOnlyHint) audioOnlyHint.hidden = state.useCamera;
+} catch {}
+useCameraInput?.addEventListener("change", handleCameraPreferenceChange);
 const finishButton = document.querySelector("#finishButton");
 const discardButton = document.querySelector("#discardButton");
 const controlRow = document.querySelector(".recorder-actions");
@@ -333,6 +343,53 @@ function updatePrivacyConsentCopy() {
 // (Must sit after `PRIVACY_CONSENT_COPY` — calling it earlier throws a TDZ
 // ReferenceError that aborts the rest of this script.)
 updatePrivacyConsentCopy();
+
+function applyCameraPresentation() {
+  if (useCameraInput) {
+    useCameraInput.checked = state.useCamera;
+    useCameraInput.disabled = state.cameraRequired;
+  }
+  cameraOption?.classList.toggle("is-required", state.cameraRequired);
+  if (cameraRequiredHint) cameraRequiredHint.hidden = !state.cameraRequired;
+  if (audioOnlyHint) audioOnlyHint.hidden = state.useCamera;
+  if (previewLabel) previewLabel.textContent = state.useCamera ? "Camera preview" : "Audio recording";
+  if (preparePreviewWrap) preparePreviewWrap.hidden = !state.useCamera || !state.stream;
+  if (videoFrame) videoFrame.hidden = !state.useCamera;
+  prepareDialog?.classList.toggle("audio-only", !state.useCamera);
+  updatePrivacyConsentCopy();
+}
+
+function syncCameraRequirement() {
+  const route = normalizeRoute(window.location.pathname);
+  const activeGroup = activeGameGroup();
+  const challengeMatchesGroup = state.gameChallenge?.group === activeGroup;
+  const challengeRequiresCamera = challengeMatchesGroup
+    && typeof state.gameChallenge?.requiresCamera === "boolean"
+    ? state.gameChallenge.requiresCamera
+    : null;
+  state.cameraRequired = isGameRoute(route)
+    && (CAMERA_REQUIRED_GAME_GROUPS.has(activeGroup) || challengeRequiresCamera === true);
+  // Forced camera mode is route-local. Keep the learner's saved audio-only
+  // preference intact so /examine and Group 3 still honor it afterwards.
+  state.useCamera = state.cameraRequired ? true : state.cameraPreference;
+  applyCameraPresentation();
+}
+
+function handleCameraPreferenceChange() {
+  if (state.cameraRequired) {
+    state.useCamera = true;
+    applyCameraPresentation();
+    return;
+  }
+  state.cameraPreference = useCameraInput.checked;
+  state.useCamera = state.cameraPreference;
+  try {
+    localStorage.setItem("oscanner-use-camera", String(state.cameraPreference));
+  } catch {
+    /* private browsing — ignore */
+  }
+  applyCameraPresentation();
+}
 
 function updatePrivacyAcceptButton() {
   acceptPrivacyButton.disabled = !(privacyPolicyAgree.checked && sensitiveInfoAgree.checked);
@@ -714,6 +771,19 @@ async function checkAuth() {
     state.teacherAccess = data.teacherAccess === true;
     state.catchupAccess = data.catchupAccess === true;
     state.dingTalkConfigured = data.configured;
+    const route = normalizeRoute(window.location.pathname);
+    if (data.gameGroup && (isGameRoute(route) || route === "/leaderboard")) {
+      const previousGroup = state.gameGroup;
+      setGameGroup(data.gameGroup);
+      if (previousGroup !== state.gameGroup) {
+        window.location.replace(
+          isGameRoute(route)
+            ? `/game?group=${encodeURIComponent(state.gameGroup)}`
+            : `/leaderboard?group=${encodeURIComponent(state.gameGroup)}`,
+        );
+        return;
+      }
+    }
     setStatus(!state.authUser || state.authUser.identityType === "guest" ? "Guest" : "Signed in");
     updateAuthView();
     setRoute(window.location.pathname);
@@ -1032,9 +1102,9 @@ function getSupportedMimeType() {
   return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
 }
 
-// The course's long research prompt is stored as one canonical string so the
-// evaluator receives the exact instructions. The browser adds presentation
-// structure only, turning the numbered beats into scannable cards.
+// Long course prompts are stored as one canonical string so the evaluator
+// receives the exact instructions. The browser adds presentation structure
+// only, turning numbered beats or requirement lists into scannable cards.
 function parseFiveBeatQuestion(value) {
   const paragraphs = String(value || "")
     .trim()
@@ -1072,13 +1142,75 @@ function parseFiveBeatQuestion(value) {
     return null;
   }
   return {
+    kind: "beats",
     intro: paragraphs.slice(0, beatIndex).join("\n\n"),
     beats,
     closing: paragraphs.slice(beatIndex + 1).join("\n\n"),
   };
 }
 
+function parseRequirementQuestion(value) {
+  const lines = String(value || "")
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const intro = [];
+  const sections = [];
+  let current = null;
+
+  lines.forEach((line) => {
+    const heading = line.match(/^([A-Za-z][A-Za-z ]*requirements):$/i);
+    if (heading) {
+      current = { title: heading[1], items: [], ordered: false };
+      sections.push(current);
+      return;
+    }
+    if (!current) {
+      intro.push(line);
+      return;
+    }
+    const item = line.match(/^(?:[-*•]\s+(.+)|(\d+)\.\s+(.+))$/);
+    if (item) {
+      current.ordered = Boolean(item[2]);
+      current.items.push((item[1] || item[3]).trim());
+    } else if (current.items.length) {
+      current.items[current.items.length - 1] += ` ${line}`;
+    }
+  });
+
+  if (!sections.length || sections.some((section) => !section.items.length)) return null;
+  return {
+    kind: "requirements",
+    intro: intro.join(" ").replace(/\s+/g, " "),
+    sections,
+  };
+}
+
+function parseStructuredQuestion(value) {
+  return parseFiveBeatQuestion(value) || parseRequirementQuestion(value);
+}
+
+function requirementDetailsMarkup(parsed) {
+  return `
+    ${parsed.intro ? `<p class="prompt-lead">${escapeHtml(parsed.intro)}</p>` : ""}
+    <div class="prompt-requirements" aria-label="Task requirements">
+      ${parsed.sections.map((section) => {
+        const listTag = section.ordered ? "ol" : "ul";
+        return `
+        <section class="prompt-requirement-card">
+          <h3>${escapeHtml(section.title)}</h3>
+          <${listTag} class="prompt-requirement-list">
+            ${section.items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+          </${listTag}>
+        </section>`;
+      }).join("")}
+    </div>
+  `;
+}
+
 function promptDetailsMarkup(parsed) {
+  if (parsed.kind === "requirements") return requirementDetailsMarkup(parsed);
   return `
     ${parsed.intro ? `<p class="prompt-lead">${escapeHtml(parsed.intro)}</p>` : ""}
     <ol class="prompt-beats" aria-label="Five speaking beats">
@@ -1101,7 +1233,7 @@ function promptDetailsMarkup(parsed) {
 
 function renderQuestionDetails(element, value, { hideWhenPlain = false } = {}) {
   if (!element) return null;
-  const parsed = parseFiveBeatQuestion(value);
+  const parsed = parseStructuredQuestion(value);
   element.classList.toggle("structured-question", Boolean(parsed));
   if (!parsed) {
     element.textContent = String(value || "");
@@ -1115,7 +1247,7 @@ function renderQuestionDetails(element, value, { hideWhenPlain = false } = {}) {
 
 function renderQuestionHeading(element, question, fallbackTitle = "Your speaking task") {
   if (!element) return null;
-  const parsed = parseFiveBeatQuestion(question?.question);
+  const parsed = parseStructuredQuestion(question?.question);
   element.classList.toggle("is-structured-question", Boolean(parsed));
   element.textContent = parsed
     ? question?.challengeTitle || question?.title || fallbackTitle
@@ -1400,7 +1532,7 @@ async function deleteHistoryRecord(button) {
   }
 }
 
-const GAME_GROUP_TOKENS = ["g1", "g2"];
+const GAME_GROUP_TOKENS = ["g1", "g2", "g3"];
 const GAME_GROUP_STORAGE_KEY = "oscanner-game-group";
 
 // The private make-up page is pinned to one past week — group 2's lesson 1 task
@@ -1499,6 +1631,7 @@ function setGameGroup(value, { persist = true } = {}) {
       /* private browsing — ignore */
     }
   }
+  syncCameraRequirement();
   syncGroupPickers();
   writeGameGroupToUrl();
 }
@@ -1517,11 +1650,16 @@ function formatChallengeRange(challenge) {
 
 function showGameChallenge(challenge) {
   state.gameChallenge = challenge;
+  syncCameraRequirement();
   gameWeekLabel.textContent = state.catchupMode
     ? `Make-up lesson · ${formatChallengeRange(challenge)}`
     : formatChallengeRange(challenge);
   if (challenge?.lessonNumber && challenge?.unitNumber) {
-    gameLessonMeta.textContent = `Unit ${challenge.unitNumber} · Lesson ${challenge.lessonNumber} · ${challenge.instructor || ""}`.trim();
+    const groupLabel = challenge.groupLabel ? `${challenge.groupLabel} · ` : "";
+    gameLessonMeta.textContent =
+      `${groupLabel}Unit ${challenge.unitNumber} · Lesson ${challenge.lessonNumber} · ${challenge.instructor || ""}`
+        .replace(/ · $/, "")
+        .trim();
     gameLessonMeta.hidden = false;
   } else {
     gameLessonMeta.hidden = true;
@@ -2000,6 +2138,7 @@ function setRoute(pathname) {
     stopStream();
   }
   syncCatchupMode(route);
+  syncCameraRequirement();
   const isHistory = route === "/history";
   const isLeaderboard = route === "/leaderboard";
   const isGame = isGameRoute(route);

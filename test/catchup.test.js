@@ -70,6 +70,7 @@ test("the pinned make-up challenge is group 2's lesson 1", () => {
   const pinned = testHelpers.catchupChallenge;
   assert.equal(pinned.id, PINNED_ID);
   assert.equal(pinned.group, "g2");
+  assert.equal(pinned.requiresCamera, true);
   assert.equal(pinned.lessonNumber, 1);
   assert.equal(pinned.title, "Explaining an experimental figure");
   assert.equal(game.matchesChallengeId(pinned, PINNED_ID), true);
@@ -127,6 +128,7 @@ test("the second assigned learner can play the pinned week", async () => {
   assert.equal(created.status, 201);
   const body = await created.json();
   assert.equal(body.question.challengeId, PINNED_ID);
+  assert.equal(body.question.requiresCamera, true);
 
   const me = await (await fetch(`${base}/api/me`, {
     headers: sessionHeaders(SECOND_LEARNER_NAME, learner),
@@ -155,6 +157,7 @@ test("the pinned challenge catalog is gated and cannot be pointed at another wee
   const payload = await allowed.json();
   assert.equal(payload.challenge.id, PINNED_ID);
   assert.equal(payload.group, "g2");
+  assert.equal(payload.challenge.requiresCamera, true);
   assert.deepEqual(payload.challenges.map((challenge) => challenge.id), [PINNED_ID]);
 
   // Without a pinned id the endpoint still serves the ordinary current week.

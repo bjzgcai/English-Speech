@@ -45,6 +45,18 @@ const FAKE_ARGS = [
 const OUT = path.join(process.cwd(), 'output');
 const REQUIRED_FIGURE_FIXTURE = path.resolve(__dirname, '../public/assets/figures/l13-research-statement-figure.png');
 const MODES = { camera: 'true', audio: 'false' };
+const GROUP_ONE_REQUIREMENT_PROMPTS = Object.freeze({
+  'Writing a paper title and abstract for your research project': {
+    sections: 2,
+    items: 10,
+    ordered: false,
+  },
+  'Writing an academic paper in English': {
+    sections: 1,
+    items: 5,
+    ordered: true,
+  },
+});
 
 function probe() {
   const pick = sel => {
@@ -58,7 +70,7 @@ function probe() {
       display: cs.display,
       visibility: cs.visibility,
       box: [Math.round(r.width), Math.round(r.height)],
-      parent: el.parentElement?.id || el.parentElement?.className || null,
+      parent: el.parentElement?.id || el.parentElement?.className?.split(/\s+/)[0] || null,
     };
   };
   const dialog = document.querySelector('.prepare-dialog');
@@ -206,18 +218,49 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
   const structuredQuestion = await page.evaluate(() => ({
     title: document.querySelector('#questionText')?.textContent.trim(),
     beats: document.querySelectorAll('#questionPrompt .prompt-beat').length,
+    requirementSections: document.querySelectorAll('#questionPrompt .prompt-requirement-card').length,
+    requirementItems: document.querySelectorAll('#questionPrompt .prompt-requirement-list li').length,
+    requirementListTag: document.querySelector('#questionPrompt .prompt-requirement-list')?.tagName || '',
     titleSize: parseFloat(getComputedStyle(document.querySelector('#questionText')).fontSize),
     promptWidth: document.querySelector('#questionPrompt')?.getBoundingClientRect().width || 0,
+    promptOverflow: (() => {
+      const prompt = document.querySelector('#questionPrompt');
+      return prompt ? prompt.scrollWidth > prompt.clientWidth + 1 : false;
+    })(),
     duplicateOverviewQuestion: Boolean(document.querySelector('#gameTopicQuestion')),
   }));
   assert.equal(structuredQuestion.duplicateOverviewQuestion, false,
     `${label}: the duplicate game-overview question is still rendered`);
+  if (route === '/game') {
+    const expectedPrompt = GROUP_ONE_REQUIREMENT_PROMPTS[structuredQuestion.title];
+    assert.ok(expectedPrompt, `${label}: unexpected current Group 1 task: ${structuredQuestion.title}`);
+    assert.equal(structuredQuestion.requirementSections, expectedPrompt.sections,
+      `${label}: the writing requirements are not split into readable cards`);
+    assert.equal(structuredQuestion.requirementItems, expectedPrompt.items,
+      `${label}: a current writing requirement is missing`);
+    assert.equal(structuredQuestion.requirementListTag, expectedPrompt.ordered ? 'OL' : 'UL',
+      `${label}: the writing requirement list type is wrong`);
+    assert.ok(structuredQuestion.titleSize <= 32,
+      `${label}: the structured paper-writing title is still oversized`);
+    assert.equal(structuredQuestion.promptOverflow, false,
+      `${label}: the requirement cards overflow their container`);
+  }
   if (route === '/game?group=g2') {
-    assert.equal(structuredQuestion.beats, 5, `${label}: the five beats are not split into readable cards`);
-    assert.equal(structuredQuestion.title, 'Three-minute research statement around one figure');
-    assert.ok(structuredQuestion.titleSize <= 32, `${label}: the structured title is still oversized`);
-    assert.ok(structuredQuestion.promptWidth > 0 && structuredQuestion.promptWidth <= width,
-      `${label}: the structured prompt overflows the viewport`);
+    if (structuredQuestion.beats) {
+      assert.equal(structuredQuestion.beats, 5, `${label}: the five beats are not split into readable cards`);
+      assert.ok(structuredQuestion.title.length < 100, `${label}: the structured title is still an essay`);
+      assert.ok(structuredQuestion.titleSize <= 32, `${label}: the structured title is still oversized`);
+      assert.ok(structuredQuestion.promptWidth > 0 && structuredQuestion.promptWidth <= width,
+        `${label}: the structured prompt overflows the viewport`);
+    }
+    if (structuredQuestion.requirementSections) {
+      assert.equal(structuredQuestion.requirementSections, 1,
+        `${label}: the Group 2 writing task is not split into a readable card`);
+      assert.equal(structuredQuestion.requirementItems, 5,
+        `${label}: the Group 2 writing task lost a step`);
+      assert.equal(structuredQuestion.requirementListTag, 'OL',
+        `${label}: the Group 2 writing steps are not ordered`);
+    }
   }
 
   // The private make-up page is pinned to group 2's lesson 1: no group picker,
@@ -238,14 +281,24 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
       `${label}: the standings link points at the wrong week`);
   }
 
-  const wantCamera = mode === 'camera';
+  const group = new URL(route, base).searchParams.get('group');
+  const cameraRequired = route.startsWith('/game')
+    && (route.startsWith('/game/first-lesson') || group !== 'g3');
+  const wantCamera = cameraRequired || mode === 'camera';
   const initial = await page.evaluate(() => ({
     // app.js keeps the checkbox in sync with the persisted mode, so the DOM is
     // the observable contract here.
     useCamera: document.querySelector('#useCamera').checked,
     checked: document.querySelector('#useCamera').checked,
+    disabled: document.querySelector('#useCamera').disabled,
+    requiredClass: document.querySelector('#cameraOption').classList.contains('is-required'),
+    savedPreference: localStorage.getItem('oscanner-use-camera'),
     hint: (() => {
       const el = document.querySelector('#audioOnlyHint');
+      return { hidden: el.hidden, display: getComputedStyle(el).display };
+    })(),
+    requiredHint: (() => {
+      const el = document.querySelector('#cameraRequiredHint');
       return { hidden: el.hidden, display: getComputedStyle(el).display };
     })(),
   }));
@@ -253,8 +306,18 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
   await page.screenshot({ path: path.join(OUT, `workflow-entry-${tag}.png`) });
   assert.equal(initial.useCamera, wantCamera, `${label}: state.useCamera is ${initial.useCamera}`);
   assert.equal(initial.checked, wantCamera, `${label}: the Use camera checkbox is ${initial.checked}`);
+  assert.equal(initial.disabled, cameraRequired,
+    `${label}: camera-required checkbox disabled=${initial.disabled}`);
+  assert.equal(initial.requiredClass, cameraRequired,
+    `${label}: camera-required styling is ${initial.requiredClass}`);
   assert.equal(initial.hint.hidden, wantCamera,
     `${label}: the audio-only hint is ${initial.hint.hidden ? 'hidden' : 'shown'}`);
+  assert.equal(initial.requiredHint.hidden, !cameraRequired,
+    `${label}: the required-camera hint is ${initial.requiredHint.hidden ? 'hidden' : 'shown'}`);
+  if (cameraRequired) {
+    assert.equal(initial.savedPreference, MODES[mode],
+      `${label}: forcing camera overwrote the saved ${mode} preference`);
+  }
 
   // The modals must not be trapped inside the prepare modal.
   const nesting = await page.evaluate(probe);
@@ -271,7 +334,7 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
   // checkbox on purpose — it is the listener that repaints the copy — and the
   // mode is restored afterwards, because the toggle also flips the dialog's
   // `audio-only` class that later steps assert on.
-  const copy = await page.evaluate(() => {
+  const copy = await page.evaluate(required => {
     const read = () => ({
       summary: document.querySelector('#privacyConsentSummary').textContent,
       highlight: document.querySelector('#privacyConsentHighlight').textContent,
@@ -281,25 +344,47 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
     const original = box.checked;
     const set = on => { box.checked = on; box.dispatchEvent(new Event('change', { bubbles: true })); };
     const before = read();
+    if (required) {
+      set(false);
+      const forced = read();
+      return {
+        before,
+        forced,
+        checkedAfterAttempt: box.checked,
+        disabledAfterAttempt: box.disabled,
+      };
+    }
     set(false);
     const audio = read();
     set(true);
     const camera = read();
     set(original);
     return { before, audio, camera };
-  });
+  }, cameraRequired);
   const VIDEO_WORDS = /视频|面部|抽帧/;
-  for (const [name, variant] of [['summary', copy.camera.summary], ['highlight', copy.camera.highlight], ['consent', copy.camera.consent]]) {
-    assert.ok(VIDEO_WORDS.test(variant), `${label}: camera-mode ${name} lost its video wording: ${variant}`);
+  if (cameraRequired) {
+    for (const [name, variant] of [['summary', copy.before.summary], ['highlight', copy.before.highlight], ['consent', copy.before.consent]]) {
+      assert.ok(VIDEO_WORDS.test(variant), `${label}: required-camera ${name} lost its video wording: ${variant}`);
+    }
+    assert.deepEqual(copy.forced, copy.before,
+      `${label}: the disabled camera control changed the consent to audio-only`);
+    assert.equal(copy.checkedAfterAttempt, true,
+      `${label}: the camera checkbox was unchecked despite the group requirement`);
+    assert.equal(copy.disabledAfterAttempt, true,
+      `${label}: the camera checkbox became editable despite the group requirement`);
+  } else {
+    for (const [name, variant] of [['summary', copy.camera.summary], ['highlight', copy.camera.highlight], ['consent', copy.camera.consent]]) {
+      assert.ok(VIDEO_WORDS.test(variant), `${label}: camera-mode ${name} lost its video wording: ${variant}`);
+    }
+    for (const [name, variant] of [['summary', copy.audio.summary], ['highlight', copy.audio.highlight], ['consent', copy.audio.consent]]) {
+      assert.ok(!VIDEO_WORDS.test(variant),
+        `${label}: audio-only ${name} still promises video: ${variant}`);
+    }
+    assert.ok(/麦克风音频/.test(copy.audio.summary) && /音频/.test(copy.audio.consent),
+      `${label}: audio-only consent copy dropped the microphone/audio wording`);
+    assert.deepEqual(copy.before, wantCamera ? copy.camera : copy.audio,
+      `${label}: the consent copy painted on load does not match the persisted mode`);
   }
-  for (const [name, variant] of [['summary', copy.audio.summary], ['highlight', copy.audio.highlight], ['consent', copy.audio.consent]]) {
-    assert.ok(!VIDEO_WORDS.test(variant),
-      `${label}: audio-only ${name} still promises video: ${variant}`);
-  }
-  assert.ok(/麦克风音频/.test(copy.audio.summary) && /音频/.test(copy.audio.consent),
-    `${label}: audio-only consent copy dropped the microphone/audio wording`);
-  assert.deepEqual(copy.before, wantCamera ? copy.camera : copy.audio,
-    `${label}: the consent copy painted on load does not match the persisted mode`);
 
   // A challenge can require a learner-supplied figure. Seed one through the
   // normal upload control so this layout check remains date-independent.
@@ -331,16 +416,21 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
   assert.ok(countdown.title.text.length > 10, `countdown shows no question: ${JSON.stringify(countdown.title.text)}`);
   assert.equal(countdown.startNow.text, 'Start now');
   if (route === '/game?group=g2') {
-    const modalPrompt = await page.evaluate(() => ({
-      beats: document.querySelectorAll('#prepareModalPrompt .prompt-beat').length,
-      title: document.querySelector('#prepareModalTitle').textContent.trim(),
-      titleSize: parseFloat(getComputedStyle(document.querySelector('#prepareModalTitle')).fontSize),
-      bodySize: parseFloat(getComputedStyle(document.querySelector('#prepareModalPrompt .prompt-beat-body')).fontSize),
-    }));
-    assert.equal(modalPrompt.beats, 5, `${label}: the modal lost the five-beat structure`);
-    assert.ok(modalPrompt.title.length < 100, `${label}: the modal still uses the full essay as its title`);
-    assert.ok(modalPrompt.titleSize <= 28 && modalPrompt.bodySize <= 14,
-      `${label}: the structured modal text is not compact enough`);
+    const modalPrompt = await page.evaluate(() => {
+      const body = document.querySelector('#prepareModalPrompt .prompt-beat-body');
+      return {
+        beats: document.querySelectorAll('#prepareModalPrompt .prompt-beat').length,
+        title: document.querySelector('#prepareModalTitle').textContent.trim(),
+        titleSize: parseFloat(getComputedStyle(document.querySelector('#prepareModalTitle')).fontSize),
+        bodySize: body ? parseFloat(getComputedStyle(body).fontSize) : 0,
+      };
+    });
+    if (modalPrompt.beats) {
+      assert.equal(modalPrompt.beats, 5, `${label}: the modal lost the five-beat structure`);
+      assert.ok(modalPrompt.title.length < 100, `${label}: the modal still uses the full essay as its title`);
+      assert.ok(modalPrompt.titleSize <= 28 && modalPrompt.bodySize <= 14,
+        `${label}: the structured modal text is not compact enough`);
+    }
     const reachableTop = await page.evaluate(() => {
       const dialog = document.querySelector('.prepare-dialog');
       const title = document.querySelector('#prepareModalTitle');
@@ -357,6 +447,22 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
     assert.equal(reachableTop.scrollTop, 0, `${label}: the modal did not reset to the top`);
     assert.equal(reachableTop.titleInside, true,
       `${label}: content above the scroll origin is clipped: ${JSON.stringify(reachableTop)}`);
+  }
+  if (route === '/game') {
+    const requirementPrompt = await page.evaluate(() => ({
+      sections: document.querySelectorAll('#prepareModalPrompt .prompt-requirement-card').length,
+      items: document.querySelectorAll('#prepareModalPrompt .prompt-requirement-list li').length,
+      listTag: document.querySelector('#prepareModalPrompt .prompt-requirement-list')?.tagName || '',
+      title: document.querySelector('#prepareModalTitle').textContent.trim(),
+    }));
+    const expectedPrompt = GROUP_ONE_REQUIREMENT_PROMPTS[requirementPrompt.title];
+    assert.ok(expectedPrompt, `${label}: unexpected current Group 1 task: ${requirementPrompt.title}`);
+    assert.equal(requirementPrompt.sections, expectedPrompt.sections,
+      `${label}: the countdown lost the requirement-card structure`);
+    assert.equal(requirementPrompt.items, expectedPrompt.items,
+      `${label}: the countdown lost a current writing requirement`);
+    assert.equal(requirementPrompt.listTag, expectedPrompt.ordered ? 'OL' : 'UL',
+      `${label}: the countdown requirement list type is wrong`);
   }
   if (wantCamera) {
     assertVisible('camera preview', countdown.previewWrap);
@@ -387,8 +493,33 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
     `recorder panel collapsed: ${JSON.stringify(recording.recorder.box)}`);
   assert.ok(recording.recorder.text.length > 10, 'recorder panel has no visible content');
   if (route === '/game?group=g2') {
-    assert.equal(await page.locator('#recorderModalSlot #questionPrompt .prompt-beat').count(), 5,
-      `${label}: the recording view lost the five-beat structure`);
+    const beats = await page.locator('#recorderModalSlot #questionPrompt .prompt-beat').count();
+    if (beats) {
+      assert.equal(beats, 5, `${label}: the recording view lost the five-beat structure`);
+    }
+    const requirementCards = await page.locator('#recorderModalSlot #questionPrompt .prompt-requirement-card').count();
+    if (requirementCards) {
+      assert.equal(requirementCards, 1,
+        `${label}: the Group 2 recording view lost the writing card`);
+      assert.equal(
+        await page.locator('#recorderModalSlot #questionPrompt .prompt-requirement-list').evaluate(node => node.tagName),
+        'OL',
+        `${label}: the Group 2 recording view lost ordered steps`,
+      );
+    }
+  }
+  if (route === '/game') {
+    const recordingTitle = (await page.locator('#prepareModalTitle').textContent()).trim();
+    const expectedPrompt = GROUP_ONE_REQUIREMENT_PROMPTS[recordingTitle];
+    assert.ok(expectedPrompt, `${label}: unexpected current Group 1 task: ${recordingTitle}`);
+    assert.equal(await page.locator('#recorderModalSlot #questionPrompt .prompt-requirement-card').count(), expectedPrompt.sections,
+      `${label}: the recording view lost the requirement-card structure`);
+    assert.deepEqual(
+      await page.locator('#recorderModalSlot #questionPrompt .prompt-requirement-list')
+        .evaluateAll(nodes => nodes.map(node => node.tagName)),
+      Array(expectedPrompt.sections).fill(expectedPrompt.ordered ? 'OL' : 'UL'),
+      `${label}: the recording requirement list type is wrong`,
+    );
   }
   assertVisible('question block', recording.recorder.question);
   assertVisible('recorder controls', recording.recorder.actions);
@@ -437,22 +568,55 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
   await context.close();
 }
 
+async function checkCameraPreferenceRestoration(browser, base) {
+  const context = await browser.newContext({ permissions: ['camera', 'microphone'] });
+  await context.addInitScript(() => localStorage.setItem('oscanner-use-camera', 'false'));
+  await context.addCookies([{
+    name: 'englisheval_session',
+    value: testHelpers.createSessionToken({ openId: 'camera-preference-restore', name: 'Modal Tester' }),
+    url: base,
+  }]);
+  const page = await context.newPage();
+  const read = () => page.evaluate(() => ({
+    checked: document.querySelector('#useCamera').checked,
+    disabled: document.querySelector('#useCamera').disabled,
+    saved: localStorage.getItem('oscanner-use-camera'),
+  }));
+  await page.goto(`${base}/game?group=g2`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => {
+    const title = document.querySelector('#gameTopicTitle')?.textContent || '';
+    return title && !/Loading/.test(title);
+  });
+  assert.deepEqual(await read(), { checked: true, disabled: true, saved: 'false' },
+    'Group 2 must force camera without overwriting the saved audio-only preference');
+  await page.goto(`${base}/game?group=g3`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => {
+    const title = document.querySelector('#gameTopicTitle')?.textContent || '';
+    return title && !/Loading/.test(title);
+  });
+  assert.deepEqual(await read(), { checked: false, disabled: false, saved: 'false' },
+    'Group 3 must restore the saved audio-only preference');
+  await context.close();
+}
+
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
   const server = await listenForTest(app);
   const base = `http://127.0.0.1:${server.address().port}`;
   const browser = await chromium.launch({ headless: true, args: FAKE_ARGS });
   try {
-    // /examine shares the same app shell and prepare modal as /game; both must work,
-    // in both the camera and the audio-only layout.
+    // /examine shares the same app shell and prepare modal as /game; Group 1
+    // forces camera even when an old audio-only preference is present.
     for (const route of ['/game', '/examine']) {
       for (const mode of ['camera', 'audio']) {
         for (const width of [1440, 390]) await run(browser, base, route, width, mode);
       }
     }
-    // Group 2 currently owns the long structured research-statement prompt.
+    // Group 2 also forces camera, while Group 3 preserves both input modes.
     for (const mode of ['camera', 'audio']) {
-      for (const width of [1440, 390]) await run(browser, base, '/game?group=g2', width, mode);
+      for (const route of ['/game?group=g2', '/game?group=g3']) {
+        for (const width of [1440, 390]) await run(browser, base, route, width, mode);
+      }
     }
     // Matches the tall, narrow desktop capture where the centered audio-only
     // grid previously hid the top of the prompt above the scroll origin.
@@ -463,7 +627,8 @@ async function main() {
       await run(browser, base, '/game/first-lesson', 1440, 'camera', learner);
     }
     await run(browser, base, '/game/first-lesson', 1440, 'audio', '张鳐');
-    console.log('\nOK: the prepare modal renders on /game, /examine and the private /game/first-lesson make-up page, camera and audio-only, at every viewport');
+    await checkCameraPreferenceRestoration(browser, base);
+    console.log('\nOK: the prepare modal renders on /game, /examine and the private /game/first-lesson make-up page; Groups 1/2 force camera and Group 3 keeps both input modes');
   } finally {
     await browser.close();
     server.close();

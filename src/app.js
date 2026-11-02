@@ -42,6 +42,7 @@ const {
   parseExperienceRating,
 } = require("./experience-ratings");
 const {
+  GAME_GROUP_IDS,
   availableChallenges,
   challengeForIndex,
   challengeQuestion,
@@ -49,7 +50,11 @@ const {
   leaderboardForChallenge,
   matchesChallengeId,
   normalizeGameGroup,
+  requiresCameraForQuestion,
 } = require("./game");
+
+const SHANDONG_INVITATION_CODE = "1B5190BE4F1F";
+const CAMERA_REQUIRED_ERROR = "Camera video is required for Group 1 and Group 2 weekly tasks.";
 const {
   detectionById,
   detectionSummary,
@@ -2273,6 +2278,27 @@ function campaignAccountRecords(campaignId, records = invitationRecords()) {
     .filter((record) => record.kind === "campaign-account" && record.campaignId === campaignId && record.usedAt)
     .sort((left, right) => (Date.parse(left.createdAt || '') || 0) - (Date.parse(right.createdAt || '') || 0));
 }
+
+function invitationGameGroup(record, records = invitationRecords()) {
+  const storedGroup = safeText(record?.gameGroup || record?.game_group);
+  if (storedGroup) return normalizeGameGroup(storedGroup);
+  if (safeText(record?.code).toUpperCase() === SHANDONG_INVITATION_CODE) return "g3";
+  const campaignId = safeText(record?.campaignId);
+  if (!campaignId) return null;
+  const campaign = records.find((item) => item.id === campaignId && item.kind === "campaign");
+  return campaign ? invitationGameGroup(campaign, records) : null;
+}
+
+function invitationGameGroupForUser(user) {
+  if (user?.identityType !== "guest") return null;
+  const record = invitationRecords()
+    .filter((item) => item?.usedBy === user.openId)
+    .sort((left, right) =>
+      (Date.parse(right.createdAt || right.usedAt || "") || 0) -
+      (Date.parse(left.createdAt || left.usedAt || "") || 0))
+    .at(0);
+  return record ? invitationGameGroup(record) : null;
+}
 function campaignStatus(record, accounts, now = Date.now()) {
   const start = Date.parse(record?.start_time || "");
   const end = Date.parse(record?.end_time || "");
@@ -2482,6 +2508,7 @@ app.post("/api/invitation/redeem", (req, res) => {
     return res.json({
       ok: true,
       user: { openId: record.usedBy, identityType: "guest", name: record.guestName || `Guest ${record.usedBy.slice(6, 14)}` },
+      gameGroup: invitationGameGroup(record),
       loginUrl: record.guestName ? invitationShareUrl(req, record.code, record.guestName) : null,
     });
   }
@@ -2539,6 +2566,7 @@ app.post("/api/invitation/redeem", (req, res) => {
         codePreview: allocation.code.slice(-4),
         inviterOpenId: campaign.inviterOpenId,
         inviterName: campaign.inviterName,
+        gameGroup: invitationGameGroup(campaign, records),
         guestName: normalized,
         guestNameHash,
         usedAt: createdAt,
@@ -2557,6 +2585,7 @@ app.post("/api/invitation/redeem", (req, res) => {
     return res.status(201).json({
       ok: true,
       user: { openId: claim.usedBy, identityType: "guest", name: claim.guestName },
+      gameGroup: invitationGameGroup(claim),
       loginUrl: invitationShareUrl(req, claim.code, claim.guestName),
     });
   }
@@ -2574,6 +2603,7 @@ app.post("/api/invitation/redeem", (req, res) => {
     return res.json({
       ok: true,
       user: { openId: record.usedBy, identityType: "guest", name: record.guestName },
+      gameGroup: invitationGameGroup(record),
       loginUrl: invitationShareUrl(req, record.code, record.guestName),
     });
   }
@@ -2581,12 +2611,20 @@ app.post("/api/invitation/redeem", (req, res) => {
   const guestId = `guest:${crypto.randomUUID()}`;
   const normalized = name.trim();
   const guestNameHash = invitationNameHash(normalized);
-  appendJsonLine(invitationsMetadataFile, { ...record, usedAt: new Date().toISOString(), usedBy: guestId, guestName: normalized, guestNameHash });
+  appendJsonLine(invitationsMetadataFile, {
+    ...record,
+    gameGroup: invitationGameGroup(record),
+    usedAt: new Date().toISOString(),
+    usedBy: guestId,
+    guestName: normalized,
+    guestNameHash,
+  });
   redeemCodeThrottle.reset(record.id);
   visitorAccess.setGuestSession(res, guestId);
   res.json({
     ok: true,
     user: { openId: guestId, identityType: "guest", name: normalized },
+    gameGroup: invitationGameGroup(record),
     loginUrl: invitationShareUrl(req, record.code, normalized),
   });
 });
@@ -2645,6 +2683,7 @@ app.get("/api/me", (req, res) => {
       configured: isDingTalkInAppConfigured(),
     },
     user,
+    gameGroup: hasAccess ? invitationGameGroupForUser(user) : null,
     identityType: user?.identityType || null,
     isZgcMember: user?.isZgcMember === true,
     invitationAdminAccess: hasAccess && hasInvitationAdminAccess(user),
@@ -2877,6 +2916,7 @@ function gameChallengeForClient(challenge) {
   return {
     id: challenge.id,
     group: challenge.group,
+    groupLabel: challenge.groupLabel,
     lessonNumber: challenge.lessonNumber,
     unitNumber: challenge.unitNumber,
     unitTitle: challenge.unitTitle,
@@ -2886,6 +2926,7 @@ function gameChallengeForClient(challenge) {
     focus: challenge.focus,
     expectedDurationSeconds: challenge.expectedDurationSeconds,
     requiresFigureUpload: challenge.requiresFigureUpload === true,
+    requiresCamera: challenge.requiresCamera === true,
     followUp: challenge.followUp,
     startsAt: challenge.startsAt,
     endsAt: challenge.endsAt,
@@ -2997,6 +3038,7 @@ app.get("/api/admin/statistics", requireAuth, requireAdminAccess, (_req, res) =>
 const queueApi = config.queueEnabled && process.env.QUEUE_WORKER !== "true" ? require("./queue-routes").registerQueueRoutes(app, {
   config, requireAuth, requireVisitor, requirePrivacyConsent, requireAdminAccess, upload, findOwnedQuestion,
   validAnswerSaveId, decodeUtf8UploadFilename, standaloneEvaluationTitle, requireAttemptQuota, requireVideoQuota,
+  requiresCameraForQuestion,
 }) : null;
 const requireAdmission = queueApi?.required || ((_req, _res, next) => next());
 
@@ -3155,6 +3197,13 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttem
 
   const profile = questionRecord.profile;
   const question = questionRecord.question;
+  if (requiresCameraForQuestion(question) && !videoFile) {
+    cleanupUploads();
+    return res.status(400).json({
+      error: CAMERA_REQUIRED_ERROR,
+      code: "CAMERA_REQUIRED",
+    });
+  }
   if (question.requiresFigureUpload === true && !figureFile) {
     cleanupUploads();
     return res.status(400).json({ error: "Upload one figure before saving this answer." });
@@ -3228,6 +3277,11 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttem
       questionAnswerEvaluationMaxSeconds,
     );
     if (!evaluationMediaInfo.hasAudio) throw new Error("The answer requires a microphone track.");
+    if (requiresCameraForQuestion(question) && !evaluationMediaInfo.hasVideo) {
+      const error = new Error(CAMERA_REQUIRED_ERROR);
+      error.code = "CAMERA_REQUIRED";
+      throw error;
+    }
     const prepared = await normalizeRecording(videoFile.path, convertedPath, {
       maximumDurationSeconds: questionAnswerEvaluationMaxSeconds,
       mediaInfo: evaluationMediaInfo,
@@ -3241,6 +3295,9 @@ app.post("/api/save-answer", requireVisitor, requirePrivacyConsent, requireAttem
     if (figurePath) removePath(figurePath);
     removePath(convertedPath);
     removePath(finalPath);
+    if (error.code === "CAMERA_REQUIRED") {
+      return res.status(400).json({ error: CAMERA_REQUIRED_ERROR, code: "CAMERA_REQUIRED" });
+    }
     return res.status(400).json({ error: "The uploaded file is not a valid supported audio or video recording." });
   }
   removePath(videoFile.path);
@@ -3495,6 +3552,7 @@ const TEACHER_NAMES = new Set([
   "何源",
   "董圣娇",
   "赵晨",
+  "邹猛",
 ]);
 
 // Teacher openIds go here (TEACHER_OPEN_IDS in the environment is a
@@ -3771,10 +3829,8 @@ app.get("/api/teacher/export", requireVisitor, requireTeacher, (req, res) => {
 
 app.get("/api/teacher/export-all", requireVisitor, requireTeacher, (_req, res) => {
   const records = readJsonLines(metadataFile);
-  const challenges = [
-    ...availableChallenges(new Date(), 200, "g1"),
-    ...availableChallenges(new Date(), 200, "g2"),
-  ]
+  const challenges = GAME_GROUP_IDS
+    .flatMap((group) => availableChallenges(new Date(), 200, group))
     .filter((challenge) => records.some((record) =>
       matchesChallengeId(challenge, record?.question?.challengeId) &&
       record?.evaluation?.status === "completed" &&

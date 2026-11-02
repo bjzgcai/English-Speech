@@ -66,6 +66,8 @@
   logs or the `Referer` header. `invitationShareUrl(req, code, name?)` in `src/app.js` is the single source
   of both URLs, used by QR routes, create/list responses, the administrator account list, and
   `GET /api/me/login-link`.
+- Invitation records may carry `gameGroup`; campaign-account codes inherit it, and the shared 山东大学
+  campaign code `1B5190BE4F1F` resolves to `g3` so its invite links land on `/game?group=g3`.
 - The campaign QR payload and copied campaign link must stay byte-identical, or a scan and a paste would stop
   being interchangeable. `test/invitation.test.js` asserts QR bytes and the 200-seat concurrency boundary
   against `APP_BASE_URL`.
@@ -82,7 +84,7 @@
 
 - `/teacher` (page `public/teacher.html`, route in `src/routes/pages.js`) is limited to an allow-list:
   teacher openIds in `TEACHER_OPEN_IDS` (env, comma-separated) — plus, until any openId is enrolled, the
-  DingTalk session names in `TEACHER_NAMES` (王旭东, 邹欣, 吴衍标, 高坤, 柳君丽, 胡辰, 何源, 董圣娇, 赵晨)
+  DingTalk session names in `TEACHER_NAMES` (王旭东, 邹欣, 吴衍标, 高坤, 柳君丽, 胡辰, 何源, 董圣娇, 赵晨, 邹猛)
   as a transitional fallback — and guests who redeemed an invitation code in `TEACHER_INVITATION_CODES`
   (`B19B59975BC0`). `canAccessTeacher(user)` in `src/app.js` is the single gate; once `TEACHER_OPEN_IDS`
   is non-empty, display names no longer grant access (they are user-changeable in DingTalk), and each
@@ -92,9 +94,9 @@
 - The public `/leaderboard` never shows playback controls any more: `GET /api/game/leaderboard` always
   strips `answerId`/`mediaType`. Playback lives on `/teacher` via
   `GET /api/game/leaderboard-answers/:id/media|transcript`, gated by the same teacher allow-list.
-- `/teacher` serves weekly standings per group (g1/g2) with the best answer per learner, plus CSV export:
+- `/teacher` serves weekly standings per group (g1/g2/g3) with the best answer per learner, plus CSV export:
   `GET /api/teacher/export?group=&challengeId=` ("export current week") and `GET /api/teacher/export-all`
-  (both groups, every week with completed answers). CSVs are UTF-8 with BOM, and cells starting with
+  (all groups, every week with completed answers). CSVs are UTF-8 with BOM, and cells starting with
   `=`, `+`, `-`, or `@` are apostrophe-prefixed so learner-controlled names cannot execute as Excel
   formulas (`csvCell`).
 - The AI-suspicion flag is produced by `src/ai-detection.js`: a one-time background analysis of each

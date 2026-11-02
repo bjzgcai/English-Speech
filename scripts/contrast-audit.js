@@ -28,6 +28,7 @@ const PAGES = [
   ["Methodology", "/docs.html"],
   ["Prepare", "/prepare.html"],
   ["Intro", "/intro.html"],
+  ["Architecture", "/architecture.html"],
   ["Privacy", "/privacy.html"],
   ["Invitation codes", "/invitation-codes.html"],
   ["Invite", "/invite"],

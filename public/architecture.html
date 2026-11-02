@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="OScanner-Eng 公开技术架构：从浏览器采集、异步媒体处理到基于证据的英语口语评估。A public overview of the durable, evidence-driven evaluation pipeline."
+    />
+    <title>技术架构 | OScanner-Eng Architecture</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/docs.css" />
+    <link rel="stylesheet" href="/architecture.css" />
+    <link rel="stylesheet" href="/mobile-nav.css" />
+  </head>
+  <body class="architecture-page">
+    <a class="skip-link" href="#mainContent">跳至正文 / Skip to content</a>
+
+    <header class="docs-nav">
+      <a class="brand" href="/leaderboard" aria-label="OScanner-Eng leaderboard">
+        <span class="brand-mark" aria-hidden="true"><span>E</span></span>
+        <span>OScanner-Eng</span>
+      </a>
+      <div class="header-menu">
+        <nav aria-label="Primary navigation">
+          <a href="/leaderboard">Leaderboard</a>
+          <a href="/game">Game</a>
+          <a href="/examine">Examine</a>
+          <a href="/history">History</a>
+          <a href="/methodology">Rubric</a>
+          <a href="/prepare">Prepare</a>
+          <a href="/intro">Intro</a>
+          <a href="/invitation-codes" data-invitation-link hidden>Invitation</a>
+          <a href="/teacher" data-teacher-link hidden>Teacher</a>
+        </nav>
+        <a class="header-login" data-header-login href="/auth/dingtalk">Sign in</a>
+        <div class="auth-chip" data-auth-chip hidden>
+          <span data-auth-user-name>DingTalk user</span>
+          <button type="button" data-logout-button>Logout</button>
+        </div>
+      </div>
+    </header>
+
+    <main id="mainContent">
+      <section class="arch-hero arch-shell" aria-labelledby="architectureTitle">
+        <div class="arch-hero-copy">
+          <p class="arch-eyebrow">
+            <span>Engineering architecture</span>
+            <span>面向工程学习者的系统拆解</span>
+          </p>
+          <h1 id="architectureTitle">一层一层，<span>看懂口语评估系统。</span></h1>
+          <p class="arch-hero-en" lang="en">
+            A layered walk through the browser experience, application boundary, durable workflow,
+            AI evidence pipeline, and private data layer.
+          </p>
+          <p class="arch-hero-lede">
+            这张图从一次浏览器采集出发，逐层解释请求如何被验证、如何进入异步处理、如何形成评分证据，
+            最后又如何成为只属于回答者的历史记录。
+          </p>
+          <div class="arch-hero-actions">
+            <a class="arch-button arch-button-primary" href="#layers">
+              阅读分层架构
+              <span lang="en">Read the layer map</span>
+            </a>
+            <a class="arch-button arch-button-quiet" href="#pipeline">
+              查看评估流水线
+              <span lang="en">Explore the pipeline</span>
+            </a>
+          </div>
+          <p class="arch-disclosure">
+            <span aria-hidden="true">◎</span>
+            本页仅展示系统如何工作。凭证、部署位置、访问策略、精确运行参数与真实学习者数据均不在公开范围内。
+          </p>
+        </div>
+
+        <figure class="layer-board reveal" id="layers" aria-labelledby="layerBoardTitle">
+          <header class="layer-board-head">
+            <div>
+              <p>Layered architecture / 分层架构</p>
+              <h2 id="layerBoardTitle">五个边界，一条完整调用链。</h2>
+            </div>
+            <div class="layer-direction" aria-label="请求向下，结果向上">
+              <span><b aria-hidden="true">↓</b> Request path</span>
+              <span><b aria-hidden="true">↑</b> Result path</span>
+            </div>
+          </header>
+
+          <div class="layer-board-body">
+            <div class="layer-stack">
+              <article class="layer-row layer-experience">
+                <div class="layer-identity">
+                  <span>L1</span>
+                  <strong>体验层</strong>
+                  <small>Experience</small>
+                </div>
+                <div class="layer-role">
+                  <h3>采集与交互</h3>
+                  <p>负责设备状态、录制、进度反馈，以及在网络或页面中断前保存未上传草稿。</p>
+                </div>
+                <div class="layer-components" aria-label="体验层组件">
+                  <span>Web interface</span>
+                  <span>Media capture</span>
+                  <span>Draft recovery</span>
+                  <span>Status &amp; history</span>
+                </div>
+                <div class="layer-contract">
+                  <small>Passes down</small>
+                  <strong>一次有效回答 + 所属任务</strong>
+                </div>
+              </article>
+
+              <article class="layer-row layer-application">
+                <div class="layer-identity">
+                  <span>L2</span>
+                  <strong>应用层</strong>
+                  <small>Application</small>
+                </div>
+                <div class="layer-role">
+                  <h3>身份、规则与同步边界</h3>
+                  <p>验证身份、隐私同意、任务归属和提交请求。只有通过校验的工作才进入异步系统。</p>
+                </div>
+                <div class="layer-components" aria-label="应用层组件">
+                  <span>API boundary</span>
+                  <span>Identity &amp; consent</span>
+                  <span>Ownership checks</span>
+                  <span>Admission</span>
+                </div>
+                <div class="layer-contract">
+                  <small>Passes down</small>
+                  <strong>已授权、可持久化的提交</strong>
+                </div>
+              </article>
+
+              <article class="layer-row layer-workflow">
+                <div class="layer-identity">
+                  <span>L3</span>
+                  <strong>编排层</strong>
+                  <small>Workflow</small>
+                </div>
+                <div class="layer-role">
+                  <h3>把长任务变成可恢复状态机</h3>
+                  <p>保存任务状态，协调阶段、重试、租约和恢复，并用容量边界保护整个系统。</p>
+                </div>
+                <div class="layer-components" aria-label="编排层组件">
+                  <span>Durable queue</span>
+                  <span>Stage orchestration</span>
+                  <span>Checkpoint &amp; retry</span>
+                  <span>Backpressure</span>
+                </div>
+                <div class="layer-contract">
+                  <small>Passes down</small>
+                  <strong>可恢复的评估任务</strong>
+                </div>
+              </article>
+
+              <article class="layer-row layer-intelligence">
+                <div class="layer-identity">
+                  <span>L4</span>
+                  <strong>处理层</strong>
+                  <small>AI &amp; media</small>
+                </div>
+                <div class="layer-role">
+                  <h3>从媒体产生可追溯证据</h3>
+                  <p>规范化媒体，提取转写、节奏与画面证据，再按版本化评分标准生成结构化结果。</p>
+                </div>
+                <div class="layer-components" aria-label="处理层组件">
+                  <span>Media preparation</span>
+                  <span>Transcription</span>
+                  <span>Delivery metrics</span>
+                  <span>Frame sampling</span>
+                  <span>Structured scoring</span>
+                </div>
+                <div class="layer-contract">
+                  <small>Passes down</small>
+                  <strong>规范化的评分与证据</strong>
+                </div>
+              </article>
+
+              <article class="layer-row layer-data">
+                <div class="layer-identity">
+                  <span>L5</span>
+                  <strong>数据层</strong>
+                  <small>Data</small>
+                </div>
+                <div class="layer-role">
+                  <h3>保存私有状态与可恢复历史</h3>
+                  <p>保存原始回答、处理产物、评分和任务状态，并继续执行所有者过滤、保留与恢复规则。</p>
+                </div>
+                <div class="layer-components" aria-label="数据层组件">
+                  <span>Private media</span>
+                  <span>Evaluation records</span>
+                  <span>Owned history</span>
+                  <span>Backup &amp; recovery</span>
+                </div>
+                <div class="layer-contract">
+                  <small>Returns up</small>
+                  <strong>私有历史与结构化反馈</strong>
+                </div>
+              </article>
+            </div>
+
+            <aside class="layer-crosscutting" aria-labelledby="crosscuttingTitle">
+              <p>Cross-cutting concerns</p>
+              <h3 id="crosscuttingTitle">贯穿五层的约束</h3>
+              <ul>
+                <li><span>01</span><strong>身份与隐私</strong><small>Identity &amp; privacy</small></li>
+                <li><span>02</span><strong>失败隔离</strong><small>Failure isolation</small></li>
+                <li><span>03</span><strong>可观测性</strong><small>Observability</small></li>
+                <li><span>04</span><strong>资源上限</strong><small>Bounded resources</small></li>
+              </ul>
+            </aside>
+          </div>
+
+          <figcaption class="layer-board-foot">
+            <span><b>Sync boundary</b> L1 ↔ L2</span>
+            <span><b>Async boundary</b> L2 → L3</span>
+            <span><b>Durable state</b> L5</span>
+          </figcaption>
+        </figure>
+      </section>
+
+      <section class="arch-section arch-shell" aria-labelledby="principlesTitle">
+        <header class="arch-section-heading">
+          <div>
+            <p class="section-index">Design principles / 设计原则</p>
+            <h2 id="principlesTitle">让可靠性先于智能。</h2>
+          </div>
+          <p lang="en">
+            The architecture is shaped as much by failure handling and data boundaries as by the
+            evaluation model itself.
+          </p>
+        </header>
+
+        <div class="principle-grid arch-principles">
+          <article class="arch-principle principle-save">
+            <span>01</span>
+            <h3>先保存，再计算</h3>
+            <p>用户回答先获得持久落点，耗时的媒体处理与模型评估随后异步进行。</p>
+            <small>Durable before expensive</small>
+          </article>
+          <article class="arch-principle principle-evidence">
+            <span>02</span>
+            <h3>先证据，后评分</h3>
+            <p>转写、语速、停顿和画面分别进入明确的评分维度，不用单一信号概括全部表现。</p>
+            <small>Evidence before score</small>
+          </article>
+          <article class="arch-principle principle-bounds">
+            <span>03</span>
+            <h3>有边界地并行</h3>
+            <p>队列、准入和并发控制共同保护服务稳定性，拥塞不会转化为无限增长的等待。</p>
+            <small>Bounded asynchronous work</small>
+          </article>
+          <article class="arch-principle principle-private">
+            <span>04</span>
+            <h3>默认保持私有</h3>
+            <p>身份、同意和所有权贯穿题目、回答与历史；原始媒体不进入公开页面。</p>
+            <small>Private by default</small>
+          </article>
+        </div>
+      </section>
+
+      <section class="arch-section arch-pipeline-section" id="pipeline" aria-labelledby="pipelineTitle">
+        <div class="arch-shell">
+          <header class="arch-section-heading pipeline-heading">
+            <div>
+              <p class="section-index">Evaluation pipeline / 评估流水线</p>
+              <h2 id="pipelineTitle">八个阶段，一条证据链。</h2>
+            </div>
+            <p>
+              选择任一阶段，查看它接收什么、产生什么，以及为什么这样拆分。
+              <span lang="en">Choose a stage to inspect its input, evidence, and design rationale.</span>
+            </p>
+          </header>
+
+          <div class="pipeline-layout">
+            <div class="stage-tabs" role="tablist" aria-label="评估流水线阶段">
+              <button
+                class="stage-tab is-active"
+                id="tab-capture"
+                type="button"
+                role="tab"
+                aria-selected="true"
+                aria-controls="panel-capture"
+                data-stage="capture"
+              >
+                <span class="stage-number">01</span>
+                <span><strong>采集回答</strong><small>Capture</small></span>
+              </button>
+              <button
+                class="stage-tab"
+                id="tab-intake"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="panel-intake"
+                data-stage="intake"
+                tabindex="-1"
+              >
+                <span class="stage-number">02</span>
+                <span><strong>接收与归属校验</strong><small>Durable intake</small></span>
+              </button>
+              <button
+                class="stage-tab"
+                id="tab-normalize"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="panel-normalize"
+                data-stage="normalize"
+                tabindex="-1"
+              >
+                <span class="stage-number">03</span>
+                <span><strong>媒体规范化</strong><small>Normalize media</small></span>
+              </button>
+              <button
+                class="stage-tab"
+                id="tab-transcribe"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="panel-transcribe"
+                data-stage="transcribe"
+                tabindex="-1"
+              >
+                <span class="stage-number">04</span>
+                <span><strong>语音转写</strong><small>Transcribe</small></span>
+              </button>
+              <button
+                class="stage-tab"
+                id="tab-measure"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="panel-measure"
+                data-stage="measure"
+                tabindex="-1"
+              >
+                <span class="stage-number">05</span>
+                <span><strong>表达节奏测量</strong><small>Measure delivery</small></span>
+              </button>
+              <button
+                class="stage-tab"
+                id="tab-frames"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="panel-frames"
+                data-stage="frames"
+                tabindex="-1"
+              >
+                <span class="stage-number">06</span>
+                <span><strong>画面抽样</strong><small>Sample frames</small></span>
+              </button>
+              <button
+                class="stage-tab"
+                id="tab-score"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="panel-score"
+                data-stage="score"
+                tabindex="-1"
+              >
+                <span class="stage-number">07</span>
+                <span><strong>结构化评分</strong><small>Structured scoring</small></span>
+              </button>
+              <button
+                class="stage-tab"
+                id="tab-persist"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="panel-persist"
+                data-stage="persist"
+                tabindex="-1"
+              >
+                <span class="stage-number">08</span>
+                <span><strong>结果与历史</strong><small>Persist & explain</small></span>
+              </button>
+            </div>
+
+            <div class="stage-panel-shell" aria-live="polite">
+              <article
+                class="stage-panel"
+                id="panel-capture"
+                role="tabpanel"
+                aria-labelledby="tab-capture"
+                data-panel="capture"
+              >
+                <header class="stage-panel-heading">
+                  <span>01 / Capture</span>
+                  <h3>在浏览器中完成一次完整回答。</h3>
+                  <p>
+                    采集发生在用户设备上。浏览器持续确认所需媒体轨道是否仍然有效，并把有效回答整理成一个待提交单元。
+                  </p>
+                </header>
+                <div class="stage-io">
+                  <div><small>输入 / Input</small><p>准备好的任务、用户设备权限、实时音视频。</p></div>
+                  <div><small>产出 / Output</small><p>完整回答、媒体类型，以及设备在录制期间未中断的校验结果。</p></div>
+                </div>
+                <div class="stage-rationale">
+                  <span>Design choice</span>
+                  <p>先把采集边界处理干净，后面的转写和评分才有稳定、可验证的输入。</p>
+                </div>
+              </article>
+
+              <article
+                class="stage-panel"
+                id="panel-intake"
+                role="tabpanel"
+                aria-labelledby="tab-intake"
+                data-panel="intake"
+                hidden
+              >
+                <header class="stage-panel-heading">
+                  <span>02 / Durable intake</span>
+                  <h3>先确认归属，再接收昂贵工作。</h3>
+                  <p>
+                    提交必须对应到当前用户拥有的任务。系统为提交建立幂等引用，并把回答与处理任务一起保存到持久边界。
+                  </p>
+                </header>
+                <div class="stage-io">
+                  <div><small>输入 / Input</small><p>回答文件、任务引用、提交标识与当前身份。</p></div>
+                  <div><small>产出 / Output</small><p>可恢复的持久任务、处理状态，以及重复提交时的既有结果。</p></div>
+                </div>
+                <div class="stage-rationale">
+                  <span>Design choice</span>
+                  <p>只有当回答已经安全落盘，系统才把“已接收”告诉用户并启动后续处理。</p>
+                </div>
+              </article>
+
+              <article
+                class="stage-panel"
+                id="panel-normalize"
+                role="tabpanel"
+                aria-labelledby="tab-normalize"
+                data-panel="normalize"
+                hidden
+              >
+                <header class="stage-panel-heading">
+                  <span>03 / Normalize media</span>
+                  <h3>把不同来源整理成统一、可验证的媒体。</h3>
+                  <p>
+                    服务端验证文件是否可读、是否包含可评估的声音，并统一容器格式。可用视频还会提取独立音频，供后续证据阶段使用。
+                  </p>
+                </header>
+                <div class="stage-io">
+                  <div><small>输入 / Input</small><p>浏览器录制或独立上传的受支持媒体。</p></div>
+                  <div><small>产出 / Output</small><p>规范化后的私有回答、提取音频，以及媒体元数据。</p></div>
+                </div>
+                <div class="stage-rationale">
+                  <span>Design choice</span>
+                  <p>规范化让“能否评估”在进入模型之前就有确定答案，也避免把格式差异误当成表达差异。</p>
+                </div>
+              </article>
+
+              <article
+                class="stage-panel"
+                id="panel-transcribe"
+                role="tabpanel"
+                aria-labelledby="tab-transcribe"
+                data-panel="transcribe"
+                hidden
+              >
+                <header class="stage-panel-heading">
+                  <span>04 / Transcribe</span>
+                  <h3>把可评估的语音变成结构化文本证据。</h3>
+                  <p>
+                    长回答按顺序分段转写，短暂失败可以重试，并保留兼容性回退路径。转写只负责表达内容，不直接给学习者评分。
+                  </p>
+                </header>
+                <div class="stage-io">
+                  <div><small>输入 / Input</small><p>规范化的音频、回答语言和任务上下文。</p></div>
+                  <div><small>产出 / Output</small><p>有序转写文本，以及用于判断可懂度的辅助线索。</p></div>
+                </div>
+                <div class="stage-rationale">
+                  <span>Design choice</span>
+                  <p>转写与评分分开，让语言内容、表达节奏和视觉表现可以使用各自最合适的证据。</p>
+                </div>
+              </article>
+
+              <article
+                class="stage-panel"
+                id="panel-measure"
+                role="tabpanel"
+                aria-labelledby="tab-measure"
+                data-panel="measure"
+                hidden
+              >
+                <header class="stage-panel-heading">
+                  <span>05 / Measure delivery</span>
+                  <h3>用时间结构补充“听起来的感受”。</h3>
+                  <p>
+                    系统从音频中计算时长、静音、停顿、词数和语速等指标，使流利度不只依赖文字层面的印象。
+                  </p>
+                </header>
+                <div class="stage-io">
+                  <div><small>输入 / Input</small><p>提取后的音频与转写文本。</p></div>
+                  <div><small>产出 / Output</small><p>停顿结构、说话速度、词数和相关时长的可解释指标。</p></div>
+                </div>
+                <div class="stage-rationale">
+                  <span>Design choice</span>
+                  <p>节奏指标与转写证据相互校验，而不是用一个“流利度”标签替代可观察的过程。</p>
+                </div>
+              </article>
+
+              <article
+                class="stage-panel"
+                id="panel-frames"
+                role="tabpanel"
+                aria-labelledby="tab-frames"
+                data-panel="frames"
+                hidden
+              >
+                <header class="stage-panel-heading">
+                  <span>06 / Sample frames</span>
+                  <h3>只为镜头表达抽取必要画面。</h3>
+                  <p>
+                    摄像头回答会按时间覆盖抽取少量画面，用于观察姿态、取景、面部参与度与干扰动作。纯音频回答不会伪造视觉证据。
+                  </p>
+                </header>
+                <div class="stage-io">
+                  <div><small>输入 / Input</small><p>规范化后的视频回答，或明确无画面的音频回答。</p></div>
+                  <div><small>产出 / Output</small><p>有代表性的抽样画面；没有视频时则标记镜头表达不可评估。</p></div>
+                </div>
+                <div class="stage-rationale">
+                  <span>Design choice</span>
+                  <p>视觉评分只关注沟通行为，不评价外貌；音频模式会自动排除并重新分配视觉维度。</p>
+                </div>
+              </article>
+
+              <article
+                class="stage-panel"
+                id="panel-score"
+                role="tabpanel"
+                aria-labelledby="tab-score"
+                data-panel="score"
+                hidden
+              >
+                <header class="stage-panel-heading">
+                  <span>07 / Structured scoring</span>
+                  <h3>让每个分数都能回到证据。</h3>
+                  <p>
+                    评估请求同时携带题目、回答背景、版本化评分标准、转写文本、节奏指标和可用画面。输出被规范为固定维度、总结、优势和改进建议。
+                  </p>
+                </header>
+                <div class="stage-io">
+                  <div><small>输入 / Input</small><p>任务上下文、评分标准，以及前序阶段产生的全部有效证据。</p></div>
+                  <div><small>产出 / Output</small><p>六维评分、总分、摘要、优势、改进方向与评分标准版本。</p></div>
+                </div>
+                <div class="stage-rationale">
+                  <span>Design choice</span>
+                  <p>评分维度、证据来源和权重由版本化标准定义，模型输出必须回到这套结构，而不是自由生成一段结论。</p>
+                </div>
+              </article>
+
+              <article
+                class="stage-panel"
+                id="panel-persist"
+                role="tabpanel"
+                aria-labelledby="tab-persist"
+                data-panel="persist"
+                hidden
+              >
+                <header class="stage-panel-heading">
+                  <span>08 / Persist & explain</span>
+                  <h3>评估可以失败，回答不能消失。</h3>
+                  <p>
+                    处理结果被写回持久记录。即使后续评估失败，原始回答仍会保留，失败状态也会被记录下来，而不是让用户重录。
+                  </p>
+                </header>
+                <div class="stage-io">
+                  <div><small>输入 / Input</small><p>原始回答、处理产物、结构化评分或明确的失败状态。</p></div>
+                  <div><small>产出 / Output</small><p>拥有者可见的历史记录、分项反馈，以及可回看的私有原始回答。</p></div>
+                </div>
+                <div class="stage-rationale">
+                  <span>Design choice</span>
+                  <p>历史页读取的是所有权过滤后的记录；失败是状态，不是丢弃用户内容的条件。</p>
+                </div>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="arch-section arch-shell" aria-labelledby="evidenceTitle">
+        <header class="arch-section-heading">
+          <div>
+            <p class="section-index">Evidence map / 证据矩阵</p>
+            <h2 id="evidenceTitle">不同维度，使用不同证据。</h2>
+          </div>
+          <p lang="en">
+            Language meaning, timing, and visual delivery are related, but they are not interchangeable.
+          </p>
+        </header>
+
+        <div class="evidence-table-wrap reveal">
+          <table class="evidence-table">
+            <caption class="visually-hidden">Six evaluation dimensions and the evidence used for each</caption>
+            <thead>
+              <tr>
+                <th scope="col">评估维度</th>
+                <th scope="col">转写文本</th>
+                <th scope="col">节奏指标</th>
+                <th scope="col">抽样画面</th>
+                <th scope="col">解释</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row"><strong>连贯性与任务相关</strong><small>Coherence</small></th>
+                <td data-label="转写文本"><span class="evidence-yes">主要证据</span></td>
+                <td data-label="节奏指标"><span class="evidence-muted">辅助</span></td>
+                <td data-label="抽样画面"><span class="evidence-no">不使用</span></td>
+                <td data-label="解释">关注主线、逻辑连接和对题目的回应。</td>
+              </tr>
+              <tr>
+                <th scope="row"><strong>语法</strong><small>Grammar</small></th>
+                <td data-label="转写文本"><span class="evidence-yes">主要证据</span></td>
+                <td data-label="节奏指标"><span class="evidence-muted">辅助</span></td>
+                <td data-label="抽样画面"><span class="evidence-no">不使用</span></td>
+                <td data-label="解释">优先判断错误是否影响意义，而不是只看错误数量。</td>
+              </tr>
+              <tr>
+                <th scope="row"><strong>词汇</strong><small>Vocabulary</small></th>
+                <td data-label="转写文本"><span class="evidence-yes">主要证据</span></td>
+                <td data-label="节奏指标"><span class="evidence-no">不使用</span></td>
+                <td data-label="抽样画面"><span class="evidence-no">不使用</span></td>
+                <td data-label="解释">关注表达范围、准确度和自然程度。</td>
+              </tr>
+              <tr>
+                <th scope="row"><strong>流利度</strong><small>Fluency</small></th>
+                <td data-label="转写文本"><span class="evidence-yes">主要证据</span></td>
+                <td data-label="节奏指标"><span class="evidence-yes">主要证据</span></td>
+                <td data-label="抽样画面"><span class="evidence-no">不使用</span></td>
+                <td data-label="解释">综合连续表达、语速和停顿结构。</td>
+              </tr>
+              <tr>
+                <th scope="row"><strong>发音与可懂度</strong><small>Intelligibility</small></th>
+                <td data-label="转写文本"><span class="evidence-yes">主要线索</span></td>
+                <td data-label="节奏指标"><span class="evidence-muted">辅助</span></td>
+                <td data-label="抽样画面"><span class="evidence-no">不使用</span></td>
+                <td data-label="解释">当前是基于转写可靠性与可懂线索的间接推断，不是逐音素声学评分。</td>
+              </tr>
+              <tr>
+                <th scope="row"><strong>镜头表达</strong><small>Visual delivery</small></th>
+                <td data-label="转写文本"><span class="evidence-no">不使用</span></td>
+                <td data-label="节奏指标"><span class="evidence-no">不使用</span></td>
+                <td data-label="抽样画面"><span class="evidence-yes">主要证据</span></td>
+                <td data-label="解释">仅在有视频时评估；纯音频回答移除该维度并重新分配权重。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="evidence-note">
+          评估结果是学习参考，不是对人的标签。完整权重与解释见
+          <a href="/methodology">Rubric / 评分方法</a>。
+        </p>
+      </section>
+
+      <section class="arch-reliability arch-shell reveal" aria-labelledby="reliabilityTitle">
+        <div class="reliability-heading">
+          <div>
+            <p class="section-index">Reliability / 可靠性</p>
+            <h2 id="reliabilityTitle">分数可以等待，回答不能丢失。</h2>
+          </div>
+          <p>
+            用户体验看起来只是一次上传，背后却是一套把“已接收”和“已完成”分开的系统。
+          </p>
+        </div>
+
+        <div class="reliability-cards">
+          <article>
+            <span>01</span>
+            <h3>持久确认</h3>
+            <p>提交得到确认前，回答和处理任务已经进入可恢复边界。</p>
+          </article>
+          <article>
+            <span>02</span>
+            <h3>断点可恢复</h3>
+            <p>任务记录阶段进度，失败可以重试；进程中断后仍能继续未完成工作。</p>
+          </article>
+          <article>
+            <span>03</span>
+            <h3>压力有上限</h3>
+            <p>准入、排队和并发上限共同保护系统，不用无界等待换取表面可用。</p>
+          </article>
+        </div>
+
+        <div class="request-timeline" aria-label="同步接收与异步评估的分离">
+          <div class="timeline-side timeline-fast">
+            <small>Fast path</small>
+            <strong>接收回答</strong>
+            <p>验证归属 → 持久保存 → 返回任务引用</p>
+          </div>
+          <span class="timeline-divider" aria-hidden="true">→</span>
+          <div class="timeline-side timeline-slow">
+            <small>Durable work</small>
+            <strong>完成评估</strong>
+            <p>媒体处理 → 证据提取 → 结构化评分 → 历史记录</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="arch-section arch-shell" aria-labelledby="ownershipTitle">
+        <header class="arch-section-heading">
+          <div>
+            <p class="section-index">Ownership & privacy / 所有权与隐私</p>
+            <h2 id="ownershipTitle">反馈属于回答它的人。</h2>
+          </div>
+          <p lang="en">
+            Identity and consent are part of the product architecture, not an afterthought around it.
+          </p>
+        </header>
+
+        <div class="ownership-grid">
+          <article>
+            <span class="ownership-icon" aria-hidden="true">01</span>
+            <h3>版本化同意</h3>
+            <p>生成题目和处理回答前确认当前隐私同意；政策版本与同意状态可追溯。</p>
+          </article>
+          <article>
+            <span class="ownership-icon" aria-hidden="true">02</span>
+            <h3>所有权边界</h3>
+            <p>题目、回答、历史和媒体请求都按当前身份过滤，记录不因知道链接而跨人可见。</p>
+          </article>
+          <article>
+            <span class="ownership-icon" aria-hidden="true">03</span>
+            <h3>原始媒体私有</h3>
+            <p>公开页面不会直接暴露用户的录制目录。视频和音频默认只供所属用户回看。</p>
+          </article>
+          <article>
+            <span class="ownership-icon" aria-hidden="true">04</span>
+            <h3>纯音频也完整</h3>
+            <p>不开启摄像头时，系统保留音频转写、节奏和语言证据，并明确不评估镜头表达。</p>
+          </article>
+        </div>
+
+        <aside class="privacy-rule" aria-labelledby="privacyRuleTitle">
+          <span class="privacy-rule-mark" aria-hidden="true">◎</span>
+          <div>
+            <p>Public boundary</p>
+            <h3 id="privacyRuleTitle">公开设计说明，不公开运行秘密。</h3>
+            <p>
+              这个页面展示可公开理解的系统结构，不携带用户内容、访问凭证、服务坐标或内部运行配置。
+            </p>
+          </div>
+        </aside>
+      </section>
+
+      <section class="arch-closing arch-shell reveal" aria-labelledby="closingTitle">
+        <div class="arch-closing-copy">
+          <p class="section-index">From system to practice</p>
+          <h2 id="closingTitle">看懂架构，再回到一次真实表达。</h2>
+          <p>从产品流程、评分标准到实际评估，每一层都为同一条目标服务：让下一次练习更有方向。</p>
+        </div>
+        <nav class="closing-links" aria-label="Architecture next steps">
+          <a href="/intro"><span>01</span><strong>产品介绍</strong><small>Intro</small></a>
+          <a href="/methodology"><span>02</span><strong>评分方法</strong><small>Rubric</small></a>
+          <a href="/examine"><span>03</span><strong>开始评估</strong><small>Examine</small></a>
+        </nav>
+      </section>
+    </main>
+
+    <footer>
+      <a class="brand" href="/intro">
+        <span class="brand-mark" aria-hidden="true">E</span>
+        <span>OScanner-Eng</span>
+      </a>
+      <p>Captured privately. Evaluated with evidence. Explained clearly.</p>
+      <a href="/privacy">隐私政策 / Privacy</a>
+    </footer>
+
+    <script src="/mobile-nav.js"></script>
+    <script src="/visitor-session.js"></script>
+    <script src="/header-auth.js"></script>
+    <script src="/architecture.js"></script>
+  </body>
+</html>

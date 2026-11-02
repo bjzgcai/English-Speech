@@ -34,6 +34,7 @@
     "Methodology": "评分方法",
     "Prepare": "备考练习",
     "Intro": "产品介绍",
+    "Architecture": "技术架构",
     "Invitation": "邀请码",
     "Invitation codes": "邀请码管理",
     "Teacher": "教师端",
@@ -126,6 +127,14 @@
     "Enter a profile, then generate one question.": "请先填写资料，再生成问题。",
     "Recording starts automatically after the question is ready.": "问题就绪后将自动开始录制。",
     "Camera preview": "摄像头预览",
+    "Audio recording": "音频录制",
+    "Use camera (visual delivery)": "使用摄像头（镜头表达）",
+    "Camera is required for Group 1 and Group 2 weekly tasks.":
+      "平行班1和平行班2的本周任务必须使用摄像头。",
+    "Camera video is required for Group 1 and Group 2 weekly tasks.":
+      "平行班1和平行班2的本周任务必须提交摄像头视频。",
+    "Audio only: visual delivery will not be scored.":
+      "仅音频：镜头表达将不计分。",
     "Your browser will ask before anything turns on.": "开启前浏览器会先征求您的同意。",
     "Align head and shoulders": "对齐头肩取景",
     "Recording started": "正在录制",

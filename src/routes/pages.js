@@ -35,6 +35,7 @@ function registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requireC
 
   // Public page whitelist: these routes intentionally remain available without a session.
   app.get("/intro", (_req, res) => res.sendFile(path.join(publicDir, "intro.html")));
+  app.get("/architecture", (_req, res) => res.sendFile(path.join(publicDir, "architecture.html")));
   app.get("/methodology", (_req, res) => res.sendFile(path.join(publicDir, "docs.html")));
   app.get("/prepare", (_req, res) => res.sendFile(path.join(publicDir, "prepare.html")));
   app.get(["/privacy", "/policy"], (_req, res) =>

@@ -39,6 +39,31 @@ async function prepare(owner, { question = { question: "A test question" } } = {
   return { "X-Submission-Id": crypto.randomUUID(), "X-Question-Id": questionId, "X-Upload-Grant": queue.grant(owner).grant };
 }
 
+async function audioOnlyFixture() {
+  const file = path.join(data, "camera-required-audio.mp4");
+  await processing.runMedia([
+    "-v", "error",
+    "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+    "-c:a", "aac", "-t", "1",
+    file,
+  ]);
+  return file;
+}
+
+async function uploadQueuedAnswer(owner, headers, fixture) {
+  const body = new FormData();
+  body.append("video", await fs.openAsBlob(fixture, { type: "video/mp4" }), "answer.mp4");
+  return fetch(base + "/api/save-answer", {
+    method: "POST",
+    headers: {
+      Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId: owner, name: "Camera rule member" })}`,
+      "X-Expected-Owner": owner,
+      ...headers,
+    },
+    body,
+  });
+}
+
 test("queued uploads enforce attempt and video quotas before accepting media", async () => {
   for (const [route, count, code] of [["/api/save-answer", 100, "ATTEMPT_QUOTA_EXCEEDED"], ["/api/evaluate-video", 10, "VIDEO_QUOTA_EXCEEDED"]]) {
     const owner = crypto.randomUUID();
@@ -94,6 +119,39 @@ test("a figure-required question rejects an answer upload without a figure", asy
   assert.equal(response.status, 400);
   assert.equal((await response.json()).error, "Upload one figure before saving this answer.");
   assert.equal(queue.get("SELECT id FROM jobs WHERE owner=?", owner), undefined);
+});
+
+test("camera-required game questions reject audio-only uploads before queueing", async () => {
+  const fixture = await audioOnlyFixture();
+  const requiredOwner = crypto.randomUUID();
+  const requiredHeaders = await prepare(requiredOwner, {
+    question: {
+      question: "Weekly camera-required answer",
+      challengeId: "weekly-2026-11-02",
+      requiresCamera: true,
+    },
+  });
+  const rejected = await uploadQueuedAnswer(requiredOwner, requiredHeaders, fixture);
+  assert.equal(rejected.status, 400);
+  assert.equal((await rejected.json()).code, "CAMERA_REQUIRED");
+  assert.equal(queue.get("SELECT id FROM jobs WHERE owner=?", requiredOwner), undefined);
+  assert.deepEqual(readJsonLines(config.metadataFile).filter(record => record.id === requiredHeaders["X-Submission-Id"]), []);
+  for (let i = 0; i < 50 && queue.get("SELECT uploading FROM admissions WHERE owner=?", requiredOwner)?.uploading; i++) {
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(queue.get("SELECT uploading FROM admissions WHERE owner=?", requiredOwner).uploading, 0);
+
+  const optionalOwner = crypto.randomUUID();
+  const optionalHeaders = await prepare(optionalOwner, {
+    question: {
+      question: "Weekly audio-optional answer",
+      challengeId: "weekly-2026-11-02-g3",
+      requiresCamera: false,
+    },
+  });
+  const accepted = await uploadQueuedAnswer(optionalOwner, optionalHeaders, fixture);
+  assert.equal(accepted.status, 202);
+  assert.ok(queue.get("SELECT id FROM jobs WHERE owner=?", optionalOwner));
 });
 
 test("comment moderation uses a guarded model kind and hides the original blocked version", async t => {

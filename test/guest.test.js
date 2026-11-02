@@ -173,6 +173,7 @@ test("guest questions and private recordings remain owned, consent-gated and out
   const generated = await call(first, "/api/game/question", { profile: { name: "Spoofed employee" } });
   assert.equal(generated.status, 201);
   const { question } = await generated.json();
+  assert.equal(question.requiresCamera, true);
   await consent(other);
   assert.equal((await call(other, "/api/save-answer", { questionId: question.id })).status, 400);
   const id = crypto.randomUUID();
@@ -253,12 +254,14 @@ test("the game challenge and leaderboard accept a parallel group selection", asy
   const defaultCatalog = await (await fetch(base + "/api/game/challenge")).json();
   assert.equal(defaultCatalog.group, "g1");
   assert.equal(defaultCatalog.challenge.group, "g1");
+  assert.equal(defaultCatalog.challenge.requiresCamera, true);
   assert.ok(defaultCatalog.challenges.every((challenge) => challenge.group === "g1"));
   assert.ok(defaultCatalog.challenges.every((challenge) => !challenge.id.endsWith("-g2")));
 
   const secondCatalog = await (await fetch(base + "/api/game/challenge?group=g2")).json();
   assert.equal(secondCatalog.group, "g2");
   assert.equal(secondCatalog.challenge.group, "g2");
+  assert.equal(secondCatalog.challenge.requiresCamera, true);
   assert.equal(secondCatalog.challenge.id, expectedSecond.id);
   assert.equal(secondCatalog.challenge.title, expectedSecond.title);
   assert.equal(secondCatalog.challenge.unitNumber, expectedSecond.unitNumber);
@@ -278,6 +281,38 @@ test("the game challenge and leaderboard accept a parallel group selection", asy
   // A group 2 challenge id is not resolvable through the group 1 board.
   const mismatched = await fetch(
     base + `/api/game/leaderboard?group=g1&challengeId=${encodeURIComponent(secondCatalog.challenge.id)}`,
+  );
+  assert.equal(mismatched.status, 400);
+});
+
+test("the 山东大学 group has its own public challenge, question, and leaderboard", async () => {
+  const expected = game.currentChallenge(new Date(), "g3");
+  const catalog = await (await fetch(base + "/api/game/challenge?group=g3")).json();
+  assert.equal(catalog.group, "g3");
+  assert.equal(catalog.challenge.group, "g3");
+  assert.equal(catalog.challenge.requiresCamera, false);
+  assert.equal(catalog.challenge.groupLabel, "山东大学");
+  assert.equal(catalog.challenge.id, expected.id);
+  assert.equal(catalog.challenge.title, expected.title);
+  assert.ok(catalog.challenges.every((challenge) => challenge.group === "g3"));
+  assert.ok(catalog.challenges.every((challenge) => challenge.id.endsWith("-g3")));
+
+  const board = await (await fetch(base + "/api/game/leaderboard?group=g3")).json();
+  assert.equal(board.challenge.id, expected.id);
+  assert.equal(board.challenge.groupLabel, "山东大学");
+
+  const person = await invitedGuest();
+  await consent(person);
+  const created = await call(person, "/api/game/question", { group: "g3" });
+  assert.equal(created.status, 201);
+  const payload = await created.json();
+  assert.equal(payload.challenge.id, expected.id);
+  assert.equal(payload.challenge.groupLabel, "山东大学");
+  assert.equal(payload.question.challengeId, expected.id);
+  assert.equal(payload.question.requiresCamera, false);
+
+  const mismatched = await fetch(
+    base + `/api/game/leaderboard?group=g1&challengeId=${encodeURIComponent(expected.id)}`,
   );
   assert.equal(mismatched.status, 400);
 });

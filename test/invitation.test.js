@@ -2,6 +2,7 @@ const { listenForTest } = require('../scripts/test-http');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const os = require('node:os');
 const path = require('node:path');
 const QRCode = require('qrcode');
@@ -258,6 +259,47 @@ test('a campaign enforces its start and end times for new accounts', async () =>
   const late = await redeem(expired.record.code, 'Late');
   assert.equal(late.status, 403);
   assert.equal((await late.json()).code, 'INVITATION_EXPIRED');
+});
+test('the 山东大学 campaign assigns g3 to its personal invitation accounts', async () => {
+  const code = '1B5190BE4F1F';
+  const now = Date.now();
+  fs.appendFileSync(invitationsMetadataFile, JSON.stringify({
+    id: 'shandong-campaign',
+    kind: 'campaign',
+    name: '山东大学',
+    code,
+    hash: crypto.createHash('sha256').update(code).digest('hex'),
+    codePreview: code.slice(-4),
+    max_uses: 2,
+    start_time: new Date(now - 60_000).toISOString(),
+    end_time: new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    inviterOpenId: 'shandong-inviter',
+    inviterName: '山东大学',
+    createdAt: new Date(now - 120_000).toISOString(),
+    deletedAt: null,
+  }) + '\n');
+
+  const first = await redeem(code, '山大同学');
+  assert.equal(first.status, 201);
+  const firstBody = await first.json();
+  assert.equal(firstBody.gameGroup, 'g3');
+  assert.equal(firstBody.user.identityType, 'guest');
+
+  const identity = await fetch(base + '/api/me', { headers: { Cookie: cookies(first) } });
+  assert.equal(identity.status, 200);
+  assert.equal((await identity.json()).gameGroup, 'g3');
+
+  const personalCode = new URL(firstBody.loginUrl).hash
+    .split('&')
+    .find(part => part.startsWith('#code='))
+    .slice(6);
+  const returning = await redeem(personalCode, '山大同学');
+  assert.equal(returning.status, 200);
+  assert.equal((await returning.json()).gameGroup, 'g3');
+
+  const claim = readJsonLines(invitationsMetadataFile)
+    .find(row => row.kind === 'campaign-account' && row.campaignId === 'shandong-campaign');
+  assert.equal(claim.gameGroup, 'g3');
 });
 test('a campaign seat creates a personal code, allows duplicate names, and survives campaign expiry', async () => {
   const { record } = await issueCampaign('personal-owner', { max_uses: 2 });

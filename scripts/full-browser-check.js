@@ -144,7 +144,7 @@ async function main() {
       await page.locator("[data-comment-list]").getByText(`Synthetic browser validation ${viewport.width}`, { exact: true }).waitFor();
       await page.reload();
       await page.locator("[data-comment-list]").getByText(`Synthetic browser validation ${viewport.width}`, { exact: true }).waitFor();
-      for (const route of ["/intro", "/prepare", "/privacy", "/api-docs"]) {
+      for (const route of ["/intro", "/architecture", "/prepare", "/privacy", "/api-docs"]) {
         assert.equal((await page.goto(base + route)).status(), 200);
         await capture(route.slice(1));
       }

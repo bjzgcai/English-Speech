@@ -16,10 +16,9 @@ function leaderboardAnswerMediaType(filename) {
 // UTC+8 (one extra day so lesson 2 stays live through Monday 2026-10-19). From
 // 2026-10-26 onward the weekly topic switch is scheduled at Monday 12:00 (noon)
 // UTC+8: lesson 3 runs to 2026-10-26 12:00 UTC+8 and every later lesson runs one
-// week from one Monday noon to the next. After lesson 16 the schedule wraps
-// around (mod 16).
+// week from one Monday noon to the next. Topic selection wraps using each
+// group's own schedule length.
 const COURSE_ANCHOR_MS = Date.parse("2026-09-28T00:00:00+08:00");
-const LESSON_COUNT = 16;
 const LAUNCH_END_MS = COURSE_ANCHOR_MS + 2 * WEEK_MS;
 // One-time handover on 2026-10-12: previous lesson extended to 24:00, current
 // lesson starts 2026-10-13 00:00 UTC+8.
@@ -34,15 +33,7 @@ const LAST_MIDNIGHT_BOUNDARY_MS = HANDOVER_END_MS + 7 * 24 * 60 * 60 * 1000;
 const FIRST_NOON_BOUNDARY_MS =
   LAST_MIDNIGHT_BOUNDARY_MS + 6 * 24 * 60 * 60 * 1000 + 12 * 60 * 60 * 1000;
 
-// The course runs two parallel class groups over the same weekly lesson slots.
-// Group 1 ("g1") keeps the original topic order; Group 2 ("g2") walks the same
-// sixteen-topic pool in the order the course schedule assigns to the second
-// parallel class. Every slot value is an index into `weeklyTopics`.
 const DEFAULT_GAME_GROUP = "g1";
-const GAME_GROUPS = Object.freeze({
-  g1: Object.freeze(Array.from({ length: LESSON_COUNT }, (_, index) => index)),
-  g2: Object.freeze([6, 7, 12, 13, 8, 9, 10, 11, 4, 5, 0, 1, 2, 3, 14, 15]),
-});
 
 // Challenge ids are derived from each slot's start date, so the schedule
 // adjustments (the one-time handover extension and the later move to Monday
@@ -277,6 +268,215 @@ const weeklyTopics = Object.freeze([
   },
 ]);
 
+// The 山东大学 group starts in the middle of the academic course calendar. Its
+// topics are intentionally lighter than the research-communication track, use
+// the same two-minute weekly format, and cycle after the first nine weeks.
+const SHANDONG_GROUP_START_SLOT = 2;
+const shandongTopics = Object.freeze([
+  {
+    unitNumber: 1,
+    unitTitle: "Everyday English for university life",
+    instructor: "",
+    title: "How do you use AI everyday?",
+    question:
+      "How do you use AI in your everyday life? Give two or three real examples, explain which one helps you most, and finish with one funny or surprising problem you have had with AI.",
+    focus: "Concrete examples, a real benefit, and one honest limitation",
+    expectedDurationSeconds: 120,
+    followUp: "What is one thing you would never trust AI to do?",
+  },
+  {
+    unitNumber: 1,
+    unitTitle: "Everyday English for university life",
+    instructor: "",
+    title: "The canteen dish I would defend in court",
+    question:
+      "Pick one canteen dish you would defend in court. Explain what it tastes like, why it deserves more respect, and exactly when a hungry student should order it.",
+    focus: "Vivid description, clear reasons, and a practical recommendation",
+    expectedDurationSeconds: 120,
+    followUp: "What is the most underrated thing on your campus menu?",
+  },
+  {
+    unitNumber: 1,
+    unitTitle: "Everyday English for university life",
+    instructor: "",
+    title: "A survival guide for an 8 a.m. class",
+    question:
+      "Create a survival guide for an 8 a.m. class. Give three practical tips, describe one mistake you keep making, and end with your emergency backup plan.",
+    focus: "Clear tips, an honest mistake, and a useful backup plan",
+    expectedDurationSeconds: 120,
+    followUp: "What is the hardest part of getting to class on time?",
+  },
+  {
+    unitNumber: 1,
+    unitTitle: "Everyday English for university life",
+    instructor: "",
+    title: "My class group chat has a personality",
+    question:
+      "Describe your class group chat as if it were a person. What is it like, what makes it funny or annoying, and how do you survive it?",
+    focus: "Personification, specific examples, and a balanced opinion",
+    expectedDurationSeconds: 120,
+    followUp: "Which group chat habit should be banned forever?",
+  },
+  {
+    unitNumber: 1,
+    unitTitle: "Everyday English for university life",
+    instructor: "",
+    title: "The package I waited for like a movie premiere",
+    question:
+      "Tell the story of a package you waited for like a movie premiere. Build up the wait, describe the tiny problem, and explain how it finally ended.",
+    focus: "A dramatic build-up, a concrete complication, and a satisfying ending",
+    expectedDurationSeconds: 120,
+    followUp: "What is the strangest thing you have ever ordered online?",
+  },
+  {
+    unitNumber: 1,
+    unitTitle: "Everyday English for university life",
+    instructor: "",
+    title: "How to win the library seat battle",
+    question:
+      "Turn your method for finding a library seat into a friendly tutorial. Explain your timing, your secret strategy, and your backup plan when every seat is gone.",
+    focus: "Useful steps, one insider tip, and a realistic backup",
+    expectedDurationSeconds: 120,
+    followUp: "Reserved seat or lucky free seat: which is better?",
+  },
+  {
+    unitNumber: 1,
+    unitTitle: "Everyday English for university life",
+    instructor: "",
+    title: "The one item in my dorm with main-character energy",
+    question:
+      "Choose an ordinary item in your dorm and describe it as the main character of a short movie. Why is it essential, what drama does it create, and how would the story end?",
+    focus: "Creative description, one real dorm story, and a clear ending",
+    expectedDurationSeconds: 120,
+    followUp: "Which dorm item could never be replaced?",
+  },
+  {
+    unitNumber: 1,
+    unitTitle: "Everyday English for university life",
+    instructor: "",
+    title: "The app I open for no reason",
+    question:
+      "Name an app you open even when you have no reason to. Explain when you do it, what it gives you, and what you would change about it.",
+    focus: "A specific habit, an honest reason, and one improvement",
+    expectedDurationSeconds: 120,
+    followUp: "Could you survive one day without that app?",
+  },
+  {
+    unitNumber: 1,
+    unitTitle: "Everyday English for university life",
+    instructor: "",
+    title: "If AI planned my campus day",
+    question:
+      "Imagine AI plans your entire campus day. Describe the schedule, predict what would go wrong, and decide whether you would try it again.",
+    focus: "A clear scenario, funny consequences, and a reasoned verdict",
+    expectedDurationSeconds: 120,
+    followUp: "Which part of your day should always stay human-controlled?",
+  },
+]);
+
+// Groups 1 and 2 use separate fifteen-topic rotations from the shared academic
+// pool. They omit their respective Nov 9-16 topics permanently, so later topics
+// and teachers move one week earlier and each rotation wraps after fifteen
+// lessons. 山东大学 uses its own pool and begins at its original course slot.
+const GAME_GROUPS = Object.freeze({
+  g1: Object.freeze({
+    label: "Group 1",
+    topicPool: weeklyTopics,
+    topicSchedule: Object.freeze([0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]),
+    startSlot: 0,
+    // One-week, group-specific replacements are keyed by the Monday date that
+    // starts the challenge. They leave the shared topic pool and other groups
+    // untouched.
+    weekOverrides: Object.freeze({
+      "2026-10-26": Object.freeze({
+        instructor: "He Yuan",
+        title: "Writing a paper title and abstract for your research project",
+        question:
+          "Write and present an English paper title and abstract for your own research project.\n\n" +
+          "Title requirements:\n" +
+          "- Use no more than 18 English words.\n" +
+          "- Reflect the research question and main findings accurately.\n" +
+          "- Avoid vague phrases such as “A novel method,” “An effective framework,” and “A comprehensive study.”\n\n" +
+          "Abstract requirements:\n" +
+          "- Write 180–220 words.\n" +
+          "- Include the research background.\n" +
+          "- Explain the problem that remains unresolved.\n" +
+          "- State what your study compared.\n" +
+          "- Report the most important result.\n" +
+          "- Discuss the trade-off between performance and inference cost.\n" +
+          "- End with a cautious, accurate conclusion.",
+        focus:
+          "A precise title, a complete 180–220-word abstract, and a cautious performance–cost trade-off",
+        followUp:
+          "Which sentence in your abstract most clearly states the main finding, and what limitation must qualify it?",
+      }),
+      "2026-11-02": Object.freeze({
+        instructor: "He Yuan",
+        title: "Writing an academic paper in English",
+        question:
+          "Task requirements:\n" +
+          "1. Choose one paper you know well or your own current project. State its research question and main contribution in one or two sentences.\n" +
+          "2. Explain how you would organize the paper in English. Describe the purpose and order of its main sections, from introduction and methods to results and conclusion.\n" +
+          "3. Point to two English-writing choices that matter most for a research paper—for example, precise verbs, cautious claims, topic sentences, or linking ideas—and explain why each improves clarity or accuracy.\n" +
+          "4. Describe one revision step you would use to improve the paper, and identify the feedback or evidence you would need before submitting it.\n" +
+          "5. Keep your response to about two minutes.",
+        focus:
+          "A clear paper structure, precise English-writing choices, and a concrete revision plan",
+        followUp: "Which sentence or section would you revise first, and why?",
+        figure: null,
+      }),
+    }),
+  }),
+  g2: Object.freeze({
+    label: "Group 2",
+    topicPool: weeklyTopics,
+    topicSchedule: Object.freeze([6, 7, 12, 13, 8, 10, 11, 4, 5, 0, 1, 2, 3, 14, 15]),
+    startSlot: 0,
+    weekOverrides: Object.freeze({
+      "2026-10-26": Object.freeze({
+        instructor: "Hu Chen",
+        title: "Draft a short research abstract",
+        question:
+          "Task requirements:\n" +
+          "1. Draft a short research abstract. Write around 150-180 words about your own research or a paper you know well. Introduce the question, approach, main findings and why the work matters.\n" +
+          "2. Try a different opening. Write an alternative opening of about 40 words for a broader academic audience. Keep the research itself unchanged, but reconsider the background and details your readers need.\n" +
+          "3. Look closely at two key sentences. Choose two sentences about the findings or contribution. Briefly note what supports each sentence and why you chose that wording.\n" +
+          "4. Choose one sentence for feedback. Mark a sentence you would like to discuss or improve. We will use it in the next meeting to explore research claims and clear writing.\n" +
+          "5. Bring your draft and notes. Have relevant results or sources available. If you use AI for revision, keep the original and revised versions so we can compare the changes.",
+        focus:
+          "A concise abstract, an audience-aware opening, evidence notes, and one sentence selected for feedback",
+        followUp:
+          "Which sentence did you choose for feedback, and what evidence supports it?",
+      }),
+    }),
+  }),
+  g3: Object.freeze({
+    label: "山东大学",
+    topicPool: shandongTopics,
+    topicSchedule: null,
+    startSlot: SHANDONG_GROUP_START_SLOT,
+  }),
+});
+
+const GAME_GROUP_IDS = Object.freeze(Object.keys(GAME_GROUPS));
+const CAMERA_REQUIRED_GROUPS = Object.freeze(["g1", "g2"]);
+
+function requiresCameraForGroup(group) {
+  return CAMERA_REQUIRED_GROUPS.includes(normalizeGameGroup(group));
+}
+
+function challengeGroupFromId(challengeId) {
+  const match = String(challengeId || "").match(/-g([1-9])$/);
+  return match ? normalizeGameGroup(`g${match[1]}`) : DEFAULT_GAME_GROUP;
+}
+
+function requiresCameraForQuestion(question) {
+  if (typeof question?.requiresCamera === "boolean") return question.requiresCamera;
+  if (question?.group) return requiresCameraForGroup(question.group);
+  if (!question?.challengeId) return false;
+  return requiresCameraForGroup(challengeGroupFromId(question.challengeId));
+}
+
 const structuralGuide = Object.freeze([
   { key: "answer", label: "Answer", prompt: "State your main point in one sentence." },
   { key: "reasons", label: "Reasons", prompt: "Add two reasons or useful details." },
@@ -311,28 +511,43 @@ function slotEndMs(index) {
 
 function challengeForIndex(index, group = DEFAULT_GAME_GROUP) {
   const normalizedGroup = normalizeGameGroup(group);
-  const slotIndex = ((index % LESSON_COUNT) + LESSON_COUNT) % LESSON_COUNT;
-  const topicIndex = GAME_GROUPS[normalizedGroup][slotIndex];
-  const topic = weeklyTopics[topicIndex];
+  const groupConfig = GAME_GROUPS[normalizedGroup];
+  const cycleIndex = groupConfig.topicSchedule
+    ? (
+        ((index % groupConfig.topicSchedule.length) + groupConfig.topicSchedule.length)
+        % groupConfig.topicSchedule.length
+      )
+    : index;
+  const topicIndex = groupConfig.topicSchedule
+    ? groupConfig.topicSchedule[cycleIndex]
+    : (
+        ((cycleIndex - groupConfig.startSlot) % groupConfig.topicPool.length)
+        + groupConfig.topicPool.length
+      ) % groupConfig.topicPool.length;
   const startMs = slotStartMs(index);
   const endMs = slotEndMs(index);
   const dateKey = new Date(startMs).toLocaleDateString("en-CA", { timeZone: "Asia/Shanghai" });
+  const topic = {
+    ...groupConfig.topicPool[topicIndex],
+    ...groupConfig.weekOverrides?.[dateKey],
+  };
   // Group 1 keeps its historical identifier so existing answers, boards, and
-  // analytics remain valid; Group 2 gets its own identifier for a separate board.
+  // analytics remain valid; every other group gets its own board identifier.
   const id = normalizedGroup === DEFAULT_GAME_GROUP
     ? `weekly-${dateKey}`
     : `weekly-${dateKey}-${normalizedGroup}`;
   const aliasIds = Object.entries(LEGACY_CHALLENGE_SLOT_IDS)
     .filter(([legacyId, legacySlotIndex]) =>
-      legacySlotIndex === slotIndex && legacyIdGroup(legacyId) === normalizedGroup)
+      legacySlotIndex === index && legacyIdGroup(legacyId) === normalizedGroup)
     .map(([legacyId]) => legacyId);
 
   return {
     id,
     aliasIds,
     group: normalizedGroup,
+    groupLabel: groupConfig.label,
     topicIndex,
-    lessonNumber: slotIndex + 1,
+    lessonNumber: cycleIndex - groupConfig.startSlot + 1,
     unitNumber: topic.unitNumber,
     unitTitle: topic.unitTitle,
     instructor: topic.instructor,
@@ -341,6 +556,7 @@ function challengeForIndex(index, group = DEFAULT_GAME_GROUP) {
     focus: topic.focus,
     expectedDurationSeconds: topic.expectedDurationSeconds || 120,
     requiresFigureUpload: topic.requiresFigureUpload === true,
+    requiresCamera: requiresCameraForGroup(normalizedGroup),
     followUp: topic.followUp,
     figure: topic.figure || null,
     startsAt: new Date(startMs).toISOString(),
@@ -354,9 +570,13 @@ function currentChallenge(now = new Date(), group = DEFAULT_GAME_GROUP) {
 }
 
 function availableChallenges(now = new Date(), limit = 10, group = DEFAULT_GAME_GROUP) {
+  const normalizedGroup = normalizeGameGroup(group);
+  const groupConfig = GAME_GROUPS[normalizedGroup];
   const currentIndex = challengeIndexAt(now);
-  return Array.from({ length: Math.min(limit, currentIndex + 1) }, (_, offset) =>
-    challengeForIndex(currentIndex - offset, group),
+  if (currentIndex < groupConfig.startSlot) return [];
+  return Array.from(
+    { length: Math.min(limit, currentIndex - groupConfig.startSlot + 1) },
+    (_, offset) => challengeForIndex(currentIndex - offset, normalizedGroup),
   );
 }
 
@@ -366,6 +586,7 @@ function challengeQuestion(challenge) {
     focus: challenge.focus,
     expectedDurationSeconds: challenge.expectedDurationSeconds,
     requiresFigureUpload: challenge.requiresFigureUpload === true,
+    requiresCamera: requiresCameraForQuestion(challenge),
     followUp: challenge.followUp,
     challengeId: challenge.id,
     challengeTitle: challenge.title,
@@ -455,6 +676,7 @@ function leaderboardForChallenge(records, challenge, viewerOpenId, identities = 
 
 module.exports = {
   GAME_GROUPS,
+  GAME_GROUP_IDS,
   availableChallenges,
   challengeForIndex,
   challengeIndexAt,
@@ -464,6 +686,9 @@ module.exports = {
   leaderboardAnswerMediaType,
   matchesChallengeId,
   normalizeGameGroup,
+  requiresCameraForGroup,
+  requiresCameraForQuestion,
+  shandongTopics,
   structuralGuide,
   weeklyTopics,
 };

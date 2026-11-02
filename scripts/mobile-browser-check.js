@@ -161,7 +161,7 @@ async function main() {
       await page.locator("#generateButton").tap();
       await page.locator("#speakDirectlyButton").filter({ hasText: "Try camera and microphone again" }).waitFor();
       await capture("camera-permission", ["#speakDirectlyButton"]);
-      for (const route of ["/leaderboard", "/history", "/methodology", "/prepare", "/intro", "/privacy", "/api-docs"]) {
+      for (const route of ["/leaderboard", "/history", "/methodology", "/prepare", "/intro", "/architecture", "/privacy", "/api-docs"]) {
         assert.equal((await page.goto(base + route)).status(), 200);
         await capture(route.slice(1));
       }

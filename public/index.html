@@ -74,6 +74,10 @@
                   <input type="radio" name="leaderboardGroup" value="g2">
                   <span>Group 2</span>
                 </label>
+                <label>
+                  <input type="radio" name="leaderboardGroup" value="g3">
+                  <span>山东大学</span>
+                </label>
               </fieldset>
             </div>
           </div>
@@ -114,6 +118,10 @@
               <label>
                 <input type="radio" name="gameGroup" value="g2">
                 <span>Group 2</span>
+              </label>
+              <label>
+                <input type="radio" name="gameGroup" value="g3">
+                <span>山东大学</span>
               </label>
             </fieldset>
           </div>
@@ -161,7 +169,8 @@
           <button type="submit" class="primary-button" id="generateButton">
             Generate question
           </button>
-          <label class="camera-option"><input type="checkbox" id="useCamera" checked> <span>Use camera (visual delivery)</span></label>
+          <label class="camera-option" id="cameraOption"><input type="checkbox" id="useCamera" checked> <span>Use camera (visual delivery)</span></label>
+          <p id="cameraRequiredHint" class="camera-purpose" hidden>Camera is required for Group 1 and Group 2 weekly tasks.</p>
           <p id="audioOnlyHint" class="camera-purpose" hidden>Audio only: visual delivery will not be scored.</p>
           <div class="secondary-info-row">
             <span class="tooltip-wrap"><button class="tooltip-trigger info-chip-trigger" type="button" aria-label="Camera scoring details">Camera</button><span class="dimension-tooltip" role="tooltip">Your camera helps us assess posture, eye contact, and on-camera presence.</span></span>

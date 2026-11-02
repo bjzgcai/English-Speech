@@ -43,8 +43,15 @@
   function readStoredGroup() {
     try {
       var stored = window.localStorage.getItem(GROUP_STORAGE_KEY);
-      return stored === "g2" ? "g2" : stored === "g1" ? "g1" : null;
+      return hasGroup(stored) ? stored : null;
     } catch { return null; }
+  }
+
+  function hasGroup(group) {
+    return Array.prototype.some.call(
+      groupPicker.querySelectorAll("input[type=radio]"),
+      function (input) { return input.value === group; },
+    );
   }
 
   function storeGroup(group) {
@@ -52,7 +59,7 @@
   }
 
   function setGroup(group, touchStorage) {
-    state.group = group === "g2" ? "g2" : "g1";
+    state.group = hasGroup(group) ? group : "g1";
     var input = groupPicker.querySelector('input[value="' + state.group + '"]');
     if (input) input.checked = true;
     if (touchStorage) storeGroup(state.group);

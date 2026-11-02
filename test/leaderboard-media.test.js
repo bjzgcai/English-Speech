@@ -97,7 +97,7 @@ test("leaderboard answer media rejects answers outside the weekly challenge", ()
 test("teacher access is limited to the allow-listed DingTalk names", () => {
   const dingtalk = (name) => ({ openId: "user-1", name, identityType: "dingtalk" });
 
-  for (const name of ["王旭东", "邹欣", "吴衍标", "高坤", "柳君丽", "胡辰", "何源", "董圣娇", "赵晨"]) {
+  for (const name of ["王旭东", "邹欣", "吴衍标", "高坤", "柳君丽", "胡辰", "何源", "董圣娇", "赵晨", "邹猛"]) {
     assert.equal(canAccessTeacher(dingtalk(name)), true, name);
   }
   // Whitespace around the session name is tolerated; near-misses are not.

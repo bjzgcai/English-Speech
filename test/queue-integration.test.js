@@ -11,7 +11,7 @@ test("real media traverses upload, durable queue, worker, ownership and history"
   assert.equal(code, 0, output);
 });
 for (const [name, ...flags] of [
-  ["the six-CPU profile processes a burst with configured worker and model limits", "--capacity-profile", "--users=8", "--model-delay=500"],
+  ["the six-CPU profile processes a burst with configured worker and model limits", "--capacity-profile", "--users=10", "--model-delay=500"],
   ["guest media completes the full workflow without DingTalk configuration", "--guests"],
   ["downstream scoring failure retains the valid owned video", "--fail-scoring"],
   ["invalid media becomes a failed job without a playable recording", "--invalid-media"],
