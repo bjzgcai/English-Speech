@@ -8,6 +8,53 @@
   padding: 0 28px;
 }
 
+.teacher-subnav {
+  display: inline-flex;
+  gap: 6px;
+  margin: 0 0 24px;
+  border: 2px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 5px;
+  box-shadow: 0 5px 0 rgba(220, 216, 247, 0.72);
+}
+
+.teacher-subnav a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  border-radius: 11px;
+  padding: 10px 14px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.teacher-subnav a span[lang="en"] {
+  color: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0.72;
+}
+
+.teacher-subnav a:hover {
+  background: var(--soft);
+  color: var(--accent-dark);
+}
+
+.teacher-subnav a[aria-current="page"] {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 3px 0 var(--accent-dark);
+}
+
+.teacher-subnav a:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
+
 .teacher-export-bar {
   display: flex;
   align-items: center;
@@ -212,6 +259,23 @@
   .teacher-main {
     padding: 0 16px;
     margin-top: 24px;
+  }
+
+  .teacher-subnav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+    margin-bottom: 20px;
+  }
+
+  .teacher-subnav a {
+    justify-content: center;
+    padding: 11px 9px;
+    text-align: center;
+  }
+
+  .teacher-subnav a span[lang="en"] {
+    display: none;
   }
 
   .teacher-export-bar a {

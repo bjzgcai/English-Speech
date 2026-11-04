@@ -36,7 +36,7 @@ EVAL_REQUEST_TIMEOUT_MS=100000
 # endpoint with a Qwen3 ASR model (same language coverage as qwen-asr).
 OPENROUTER_API_KEY=...
 OPENROUTER_CHAT_COMPLETIONS_URL=https://openrouter.ai/api/v1/chat/completions
-OPENROUTER_EVAL_MODEL=z-ai/glm-5.3-flash
+OPENROUTER_EVAL_MODEL=deepseek/deepseek-v4.1-flash-1017
 OPENROUTER_TRANSCRIBE_MODEL=qwen/qwen3-asr-1.7b
 ```
 
@@ -164,23 +164,31 @@ nine-topic two-minute everyday-English cycle, and has separate IDs such as
 `weekly-2026-10-20-g3` and separate standings. The 山东大学 invitation campaign
 (`1B5190BE4F1F`) automatically signs its learners into `g3`. The public
 leaderboard can display any of the last ten available weeks for the selected
-group, so a past week is answerable only through `/game/first-lesson` — a private
-make-up page pinned to group 2's lesson 1 (`weekly-2026-09-28-g2`, "Explaining
-an experimental figure"). It is deliberately absent from every menu and serves
-the app shell to the allow-listed session and to anonymous visitors. A visitor
-without a session gets a blank page and the sign-in modal — the link is pasted
-around directly, so a silent bounce to `/leaderboard` read as a broken link —
-while a signed-in session that is not allow-listed is still redirected to
-`/leaderboard`. The lesson itself paints only once `/api/me` reports
-`catchupAccess`, and every API the page calls is gated on its own.
+group, so a past week is answerable only through a private page. There are two,
+each pinned to one challenge and hidden from every menu:
 
-Access follows the teacher-console contract: `CATCHUP_OPEN_IDS` (comma-separated
-openIds) is authoritative once non-empty, and until then the built-in names
-`张鳐` and `吴衍标` grant access while each login logs `[catchup-enroll]` with the
-openId to enroll. The `challengeId` parameter on `GET /api/game/challenge` and
-`POST /api/game/question` is rejected for every other session, and the learner's
-answer is stored under the pinned challenge id, which is what puts his score on
-the group 2 lesson 1 board.
+| Page | Pinned challenge | Learners |
+| --- | --- | --- |
+| `/game/first-lesson` | group 2 lesson 1, `weekly-2026-09-28-g2` ("Explaining an experimental figure") | 张鳐, 吴衍标 |
+| `/game/title-abstract` | group 1 2026-10-26, `weekly-2026-10-26` ("Writing a paper title and abstract for your research project") | 崔玉帅, 吴衍标 |
+
+Each page serves the app shell to its allow-listed session and to anonymous
+visitors. A visitor without a session gets a blank page and the sign-in modal —
+the links are pasted around directly, so a silent bounce to `/leaderboard` read
+as a broken link — while a signed-in session that is not allow-listed for that
+page is still redirected to `/leaderboard`. The lesson paints only once
+`/api/me` reports the route in `privateGameRoutes`, and every API the page calls
+is gated on its own.
+
+Access follows the teacher-console contract, with one allow-list per page:
+`CATCHUP_OPEN_IDS` for `/game/first-lesson` and `TITLE_ABSTRACT_OPEN_IDS` for
+`/game/title-abstract` (comma-separated openIds). Each is authoritative once
+non-empty; until then the built-in names grant access and every login logs
+`[catchup-enroll]` or `[title-abstract-enroll]` with the openId to enroll. The
+`challengeId` parameter on `GET /api/game/challenge` and
+`POST /api/game/question` is rejected for every other session and for a session
+trying to reach the other page's week, and each answer is stored under that
+page's pinned challenge id — which is what puts the score on that week's board.
 
 ## Audio, transcript, and evaluation workflow
 
@@ -221,7 +229,7 @@ known Qwen input-format failures trigger WAV/MP3 format fallback.
 If the internal gateway fails during question generation, evaluation scoring,
 or comment moderation, the same request is retried once through OpenRouter
 (`OPENROUTER_API_KEY` required; scoring uses `OPENROUTER_EVAL_MODEL`, default
-`z-ai/glm-5.3-flash`, and question/moderation fall back to
+`deepseek/deepseek-v4.1-flash-1017`, and question/moderation fall back to
 `OPENROUTER_QUESTION_MODEL`/`OPENROUTER_MODERATION_MODEL` when set). The
 evaluation result records whichever model actually produced it.
 

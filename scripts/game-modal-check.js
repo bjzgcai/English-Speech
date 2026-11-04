@@ -58,6 +58,21 @@ const GROUP_ONE_REQUIREMENT_PROMPTS = Object.freeze({
   },
 });
 
+// Private game pages are each pinned to one past week: no group picker, and a
+// standings link to that week's public board.
+const PRIVATE_PAGE_EXPECTATIONS = Object.freeze({
+  '/game/first-lesson': {
+    topic: 'Explaining an experimental figure',
+    weekLabel: /Make-up lesson/,
+    standingsHref: '/leaderboard?group=g2&challengeId=weekly-2026-09-28-g2',
+  },
+  '/game/title-abstract': {
+    topic: 'Writing a paper title and abstract for your research project',
+    weekLabel: /Special lesson/,
+    standingsHref: '/leaderboard?group=g1&challengeId=weekly-2026-10-26',
+  },
+});
+
 function probe() {
   const pick = sel => {
     const el = document.querySelector(sel);
@@ -214,6 +229,7 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
     }, null, { timeout: 15000 });
   }
   await page.waitForFunction(() => !!document.querySelector('#useCamera'), null, { timeout: 10000 });
+  const privateExpectation = PRIVATE_PAGE_EXPECTATIONS[route];
 
   const structuredQuestion = await page.evaluate(() => ({
     title: document.querySelector('#questionText')?.textContent.trim(),
@@ -231,19 +247,23 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
   }));
   assert.equal(structuredQuestion.duplicateOverviewQuestion, false,
     `${label}: the duplicate game-overview question is still rendered`);
-  if (route === '/game') {
+  if (route === '/game' || privateExpectation) {
     const expectedPrompt = GROUP_ONE_REQUIREMENT_PROMPTS[structuredQuestion.title];
-    assert.ok(expectedPrompt, `${label}: unexpected current Group 1 task: ${structuredQuestion.title}`);
-    assert.equal(structuredQuestion.requirementSections, expectedPrompt.sections,
-      `${label}: the writing requirements are not split into readable cards`);
-    assert.equal(structuredQuestion.requirementItems, expectedPrompt.items,
-      `${label}: a current writing requirement is missing`);
-    assert.equal(structuredQuestion.requirementListTag, expectedPrompt.ordered ? 'OL' : 'UL',
-      `${label}: the writing requirement list type is wrong`);
-    assert.ok(structuredQuestion.titleSize <= 32,
-      `${label}: the structured paper-writing title is still oversized`);
-    assert.equal(structuredQuestion.promptOverflow, false,
-      `${label}: the requirement cards overflow their container`);
+    if (route === '/game') {
+      assert.ok(expectedPrompt, `${label}: unexpected current Group 1 task: ${structuredQuestion.title}`);
+    }
+    if (expectedPrompt) {
+      assert.equal(structuredQuestion.requirementSections, expectedPrompt.sections,
+        `${label}: the writing requirements are not split into readable cards`);
+      assert.equal(structuredQuestion.requirementItems, expectedPrompt.items,
+        `${label}: a current writing requirement is missing`);
+      assert.equal(structuredQuestion.requirementListTag, expectedPrompt.ordered ? 'OL' : 'UL',
+        `${label}: the writing requirement list type is wrong`);
+      assert.ok(structuredQuestion.titleSize <= 32,
+        `${label}: the structured paper-writing title is still oversized`);
+      assert.equal(structuredQuestion.promptOverflow, false,
+        `${label}: the requirement cards overflow their container`);
+    }
   }
   if (route === '/game?group=g2') {
     if (structuredQuestion.beats) {
@@ -263,27 +283,25 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
     }
   }
 
-  // The private make-up page is pinned to group 2's lesson 1: no group picker,
-  // and a link to that week's public standings.
-  if (route === '/game/first-lesson') {
-    const makeUp = await page.evaluate(() => ({
+  if (privateExpectation) {
+    const privatePage = await page.evaluate(() => ({
       topic: document.querySelector('#gameTopicTitle').textContent,
       week: document.querySelector('#gameWeekLabel').textContent,
       groupPickerHidden: document.querySelector('#gameGroupPicker').hidden,
-      standingsHidden: document.querySelector('[data-first-lesson-standings]').hidden,
-      standingsHref: document.querySelector('[data-first-lesson-standings]').getAttribute('href'),
+      standingsHidden: document.querySelector('[data-private-standings]').hidden,
+      standingsHref: document.querySelector('[data-private-standings]').getAttribute('href'),
     }));
-    assert.equal(makeUp.topic, 'Explaining an experimental figure', `${label}: wrong make-up topic`);
-    assert.match(makeUp.week, /Make-up lesson/, `${label}: the week label does not mark the make-up lesson`);
-    assert.equal(makeUp.groupPickerHidden, true, `${label}: the group picker is still offered`);
-    assert.equal(makeUp.standingsHidden, false, `${label}: the standings link is not shown`);
-    assert.equal(makeUp.standingsHref, '/leaderboard?group=g2&challengeId=weekly-2026-09-28-g2',
+    assert.equal(privatePage.topic, privateExpectation.topic, `${label}: wrong private-page topic`);
+    assert.match(privatePage.week, privateExpectation.weekLabel, `${label}: the week label is wrong`);
+    assert.equal(privatePage.groupPickerHidden, true, `${label}: the group picker is still offered`);
+    assert.equal(privatePage.standingsHidden, false, `${label}: the standings link is not shown`);
+    assert.equal(privatePage.standingsHref, privateExpectation.standingsHref,
       `${label}: the standings link points at the wrong week`);
   }
 
   const group = new URL(route, base).searchParams.get('group');
   const cameraRequired = route.startsWith('/game')
-    && (route.startsWith('/game/first-lesson') || group !== 'g3');
+    && (Boolean(privateExpectation) || group !== 'g3');
   const wantCamera = cameraRequired || mode === 'camera';
   const initial = await page.evaluate(() => ({
     // app.js keeps the checkbox in sync with the persisted mode, so the DOM is
@@ -388,7 +406,7 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
 
   // A challenge can require a learner-supplied figure. Seed one through the
   // normal upload control so this layout check remains date-independent.
-  if (route.startsWith('/game') && route !== '/game/first-lesson') {
+  if (route.startsWith('/game') && !privateExpectation) {
     await page.waitForFunction(() => Boolean(state.gameChallenge));
     if (await page.evaluate(() => state.gameChallenge?.requiresFigureUpload === true)) {
       await page.locator('#questionFigure [data-figure-input]').setInputFiles(REQUIRED_FIGURE_FIXTURE);
@@ -621,14 +639,16 @@ async function main() {
     // Matches the tall, narrow desktop capture where the centered audio-only
     // grid previously hid the top of the prompt above the scroll origin.
     await run(browser, base, '/game?group=g2', 928, 'audio', 'Modal Tester', 966);
-    // The private make-up page runs the same recorder, but only for the
-    // learners it is assigned to (the name fallback the gate honours).
+    // The private pages run the same recorder, but only for the learners they
+    // are assigned to (the name fallback each gate honours).
     for (const learner of ['张鳐', '吴衍标']) {
       await run(browser, base, '/game/first-lesson', 1440, 'camera', learner);
     }
     await run(browser, base, '/game/first-lesson', 1440, 'audio', '张鳐');
+    await run(browser, base, '/game/title-abstract', 1440, 'camera', '崔玉帅');
+    await run(browser, base, '/game/title-abstract', 1440, 'audio', '吴衍标');
     await checkCameraPreferenceRestoration(browser, base);
-    console.log('\nOK: the prepare modal renders on /game, /examine and the private /game/first-lesson make-up page; Groups 1/2 force camera and Group 3 keeps both input modes');
+    console.log('\nOK: the prepare modal renders on /game, /examine and both private pages (/game/first-lesson, /game/title-abstract); Groups 1/2 force camera and Group 3 keeps both input modes');
   } finally {
     await browser.close();
     server.close();

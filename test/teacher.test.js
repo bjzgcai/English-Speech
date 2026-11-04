@@ -52,7 +52,9 @@ test("the teacher page and APIs are allow-listed", async () => {
 
   // Anonymous and non-listed visitors cannot even see the page.
   assert.equal((await fetch(base + "/teacher", { redirect: "manual" })).status, 302);
+  assert.equal((await fetch(base + "/teacher/report", { redirect: "manual" })).status, 302);
   assert.equal((await fetch(base + "/teacher", { headers: sessionHeaders("陈云"), redirect: "manual" })).status, 302);
+  assert.equal((await fetch(base + "/teacher/report", { headers: sessionHeaders("陈云"), redirect: "manual" })).status, 302);
   // Whitelisted names get the console.
   for (const name of ["王旭东", "邹欣", "吴衍标", "高坤", "柳君丽", "胡辰", "何源", "董圣娇", "赵晨", "邹猛"]) {
     const response = await fetch(base + "/teacher", { headers: sessionHeaders(name), redirect: "manual" });
@@ -61,6 +63,19 @@ test("the teacher page and APIs are allow-listed", async () => {
 
   // API: 401 anonymous, 403 non-teacher, 200 teacher with playback fields.
   const teacher = sessionHeaders("王旭东");
+  const teacherPage = await (await fetch(base + "/teacher", { headers: teacher })).text();
+  assert.match(teacherPage, /href="\/teacher\/report"/);
+  assert.match(teacherPage, /href="\/teacher" aria-current="page"/);
+  assert.match(teacherPage, /data-teacher-link aria-current="page"/);
+
+  const reportResponse = await fetch(base + "/teacher/report", { headers: teacher });
+  assert.equal(reportResponse.status, 200);
+  const reportPage = await reportResponse.text();
+  assert.match(reportPage, /<title>Stage report \| OScanner-Eng<\/title>/);
+  assert.match(reportPage, /href="\/teacher\/report" aria-current="page"/);
+  assert.match(reportPage, /Back to weekly leaderboard/);
+  assert.match(reportPage, /data-teacher-link aria-current="page"/);
+
   assert.equal((await fetch(base + "/api/teacher/leaderboard")).status, 401);
   const denied = await fetch(base + "/api/teacher/leaderboard", { headers: sessionHeaders("陈云") });
   assert.equal(denied.status, 403);
@@ -117,6 +132,7 @@ test("the invitation-code guest may enter the teacher console", async () => {
   const guestHeaders = { Cookie: cookie };
 
   assert.equal((await fetch(base + "/teacher", { headers: guestHeaders, redirect: "manual" })).status, 200);
+  assert.equal((await fetch(base + "/teacher/report", { headers: guestHeaders, redirect: "manual" })).status, 200);
   const board = await fetch(base + "/api/teacher/leaderboard?group=g1", { headers: guestHeaders });
   assert.equal(board.status, 200);
   const me = await (await fetch(base + "/api/me", { headers: guestHeaders })).json();

@@ -1,7 +1,7 @@
 const path = require("path");
 const { openApiFile, publicDir, rootDir } = require("../config");
 
-function registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requireCatchupPage, requireInvitationAdminPage }) {
+function registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requirePrivateGamePage, requireInvitationAdminPage }) {
   app.get("/openapi.yaml", (_req, res) => {
     res.type("application/yaml").sendFile(openApiFile);
   });
@@ -19,9 +19,10 @@ function registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requireC
 
   app.get("/", (_req, res) => res.redirect(302, "/leaderboard"));
   app.get(learnerRoutes, sendAppShell);
-  // Private make-up page for a single learner: allow-listed session only, and
-  // deliberately absent from every menu so it is reachable by direct URL.
-  app.get("/game/first-lesson", requireCatchupPage, sendAppShell);
+  // Private game pages: allow-listed session only, and deliberately absent from
+  // every menu so they are reachable by direct URL.
+  app.get("/game/first-lesson", requirePrivateGamePage, sendAppShell);
+  app.get("/game/title-abstract", requirePrivateGamePage, sendAppShell);
   app.get("/admin", requirePageAuth, (_req, res) =>
     res.sendFile(path.join(rootDir, "views", "admin.html")),
   );
@@ -30,6 +31,9 @@ function registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requireC
   );
   app.get("/teacher", requireTeacherPage, (_req, res) =>
     res.sendFile(path.join(publicDir, "teacher.html")),
+  );
+  app.get("/teacher/report", requireTeacherPage, (_req, res) =>
+    res.sendFile(path.join(publicDir, "teacher-report.html")),
   );
   app.get("/invite", (_req, res) => res.sendFile(path.join(publicDir, "invite.html")));
 

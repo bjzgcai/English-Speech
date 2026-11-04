@@ -30,6 +30,9 @@ const PINNED_ID = "weekly-2026-09-28-g2";
 const LEARNER_NAME = "张鳐";
 // 吴衍标 plays the same make-up lesson, so the page answers to both names.
 const SECOND_LEARNER_NAME = "吴衍标";
+// The second private page pins group 1's 2026-10-26 paper title/abstract task.
+const TITLE_ABSTRACT_ID = "weekly-2026-10-26";
+const TITLE_ABSTRACT_NAME = "崔玉帅";
 
 let server;
 let base;
@@ -259,4 +262,157 @@ test("an enrolled openId wins over the display name once CATCHUP_OPEN_IDS is set
   assert.equal(verdict.renamedSecond, false, "the second name is not a back door once openIds are enrolled");
   assert.equal(verdict.enrolled, true, "the enrolled openId passes regardless of display name");
   assert.equal(verdict.anonymous, false);
+});
+
+test("the second private page pins group 1's paper title and abstract week", () => {
+  const pinned = testHelpers.titleAbstractChallenge;
+  assert.equal(pinned.id, TITLE_ABSTRACT_ID);
+  assert.equal(pinned.group, "g1");
+  assert.equal(pinned.lessonNumber, 4);
+  assert.equal(pinned.instructor, "He Yuan");
+  assert.equal(pinned.title, "Writing a paper title and abstract for your research project");
+  assert.equal(pinned.requiresCamera, true);
+  assert.equal(game.matchesChallengeId(pinned, TITLE_ABSTRACT_ID), true);
+});
+
+test("the title/abstract page is served to its two learners and redirected for everyone else", async () => {
+  const anonymous = await fetch(`${base}/game/title-abstract`, { redirect: "manual" });
+  assert.equal(anonymous.status, 200);
+  assert.match(await anonymous.text(), /id="gameTopicTitle"/);
+
+  const other = await fetch(`${base}/game/title-abstract`, {
+    headers: sessionHeaders("陈云"),
+    redirect: "manual",
+  });
+  assert.equal(other.status, 302);
+  assert.equal(other.headers.get("location"), "/leaderboard");
+
+  for (const name of [TITLE_ABSTRACT_NAME, "吴衍标"]) {
+    const response = await fetch(`${base}/game/title-abstract`, {
+      headers: sessionHeaders(name),
+      redirect: "manual",
+    });
+    assert.equal(response.status, 200, name);
+  }
+});
+
+test("the title/abstract week is gated per page and cannot be crossed", async () => {
+  const pinnedQuery = `group=g1&challengeId=${TITLE_ABSTRACT_ID}`;
+  assert.equal((await fetch(`${base}/api/game/challenge?${pinnedQuery}`)).status, 403);
+  assert.equal(
+    (await fetch(`${base}/api/game/challenge?${pinnedQuery}`, { headers: sessionHeaders("陈云") })).status,
+    403,
+  );
+
+  const allowed = await fetch(`${base}/api/game/challenge?${pinnedQuery}`, {
+    headers: sessionHeaders(TITLE_ABSTRACT_NAME),
+  });
+  assert.equal(allowed.status, 200);
+  const payload = await allowed.json();
+  assert.equal(payload.challenge.id, TITLE_ABSTRACT_ID);
+  assert.equal(payload.group, "g1");
+  assert.equal(payload.challenge.title, "Writing a paper title and abstract for your research project");
+  assert.deepEqual(payload.challenges.map((challenge) => challenge.id), [TITLE_ABSTRACT_ID]);
+
+  // A learner allowed on the other private page still cannot borrow this week.
+  const crossed = await fetch(`${base}/api/game/challenge?${pinnedQuery}`, {
+    headers: sessionHeaders(LEARNER_NAME),
+  });
+  assert.equal(crossed.status, 400);
+});
+
+test("the title/abstract learners generate questions only for their pinned week", async () => {
+  for (const name of [TITLE_ABSTRACT_NAME, "吴衍标"]) {
+    const learner = crypto.randomUUID();
+    await fetch(`${base}/api/privacy-consent`, {
+      method: "POST",
+      headers: mutationHeaders(name, learner),
+      body: JSON.stringify({ privacyAgreed: true, sensitiveInfoAgreed: true }),
+    });
+
+    const otherWeek = await fetch(`${base}/api/game/question`, {
+      method: "POST",
+      headers: mutationHeaders(name, learner),
+      body: JSON.stringify({ group: "g1", challengeId: "weekly-2026-11-02" }),
+    });
+    assert.equal(otherWeek.status, 400, `${name}: a different week is rejected`);
+
+    const created = await fetch(`${base}/api/game/question`, {
+      method: "POST",
+      headers: mutationHeaders(name, learner),
+      body: JSON.stringify({ group: "g1", challengeId: TITLE_ABSTRACT_ID }),
+    });
+    assert.equal(created.status, 201, name);
+    const body = await created.json();
+    assert.equal(body.challenge.id, TITLE_ABSTRACT_ID);
+    assert.equal(body.question.challengeId, TITLE_ABSTRACT_ID);
+    assert.equal(body.user.openId, learner);
+
+    const persisted = readJsonLines(config.questionsMetadataFile).filter((q) => q.openId === learner);
+    assert.equal(persisted.length, 1, name);
+    assert.equal(persisted[0].question.challengeId, TITLE_ABSTRACT_ID);
+  }
+});
+
+test("the title/abstract scores land on the group 1 2026-10-26 board", async () => {
+  const openId = crypto.randomUUID();
+  seedAnswer(openId, TITLE_ABSTRACT_NAME, 91, TITLE_ABSTRACT_ID);
+
+  const board = await (await fetch(`${base}/api/game/leaderboard?group=g1&challengeId=${TITLE_ABSTRACT_ID}`)).json();
+  assert.equal(board.challenge.id, TITLE_ABSTRACT_ID);
+  assert.equal(board.entries.length, 1);
+  assert.equal(board.entries[0].name, TITLE_ABSTRACT_NAME);
+  assert.equal(board.entries[0].score, 91);
+
+  // Group 2's same-calendar-week board is a different task and stays untouched.
+  const parallel = await (await fetch(`${base}/api/game/leaderboard?group=g2&challengeId=weekly-2026-10-26-g2`)).json();
+  assert.equal(parallel.entries.length, 0);
+});
+
+test("/api/me lists only the private pages a session may open", async () => {
+  const titleAbstract = await (await fetch(`${base}/api/me`, {
+    headers: sessionHeaders(TITLE_ABSTRACT_NAME),
+  })).json();
+  assert.deepEqual(titleAbstract.privateGameRoutes, ["/game/title-abstract"]);
+  assert.equal(titleAbstract.catchupAccess, false);
+
+  const firstLesson = await (await fetch(`${base}/api/me`, {
+    headers: sessionHeaders(LEARNER_NAME),
+  })).json();
+  assert.deepEqual(firstLesson.privateGameRoutes, ["/game/first-lesson"]);
+  assert.equal(firstLesson.catchupAccess, true);
+
+  const both = await (await fetch(`${base}/api/me`, {
+    headers: sessionHeaders("吴衍标"),
+  })).json();
+  assert.deepEqual(both.privateGameRoutes, ["/game/first-lesson", "/game/title-abstract"]);
+
+  const other = await (await fetch(`${base}/api/me`, { headers: sessionHeaders("陈云") })).json();
+  assert.deepEqual(other.privateGameRoutes, []);
+});
+
+test("TITLE_ABSTRACT_OPEN_IDS replaces the name fallback once set", async () => {
+  const { execFileSync } = require("node:child_process");
+  const probe = `
+    process.env.NODE_ENV = "test";
+    process.env.DATA_DIR = ${JSON.stringify(data)};
+    process.env.SESSION_SECRET = "title-abstract-openid-probe";
+    process.env.TITLE_ABSTRACT_OPEN_IDS = "enrolled-title-abstract-openid";
+    const { testHelpers } = require(${JSON.stringify(path.join(__dirname, "..", "src", "app"))});
+    console.log(JSON.stringify({
+      named: testHelpers.canAccessTitleAbstract({ openId: "someone-else", name: "崔玉帅", identityType: "dingtalk" }),
+      namedSecond: testHelpers.canAccessTitleAbstract({ openId: "someone-else", name: "吴衍标", identityType: "dingtalk" }),
+      enrolled: testHelpers.canAccessTitleAbstract({ openId: "enrolled-title-abstract-openid", name: "随便", identityType: "dingtalk" }),
+      firstLessonGate: testHelpers.canAccessCatchup({ openId: "someone-else", name: "崔玉帅", identityType: "dingtalk" }),
+    }));
+  `;
+  const stdout = execFileSync("node", ["-e", probe], {
+    cwd: path.join(__dirname, ".."),
+    encoding: "utf8",
+  });
+  const verdict = JSON.parse(stdout.trim().split("\n").pop());
+  assert.equal(verdict.named, false, "a renamed profile cannot reach the title/abstract page");
+  assert.equal(verdict.namedSecond, false, "the second name is not a back door once openIds are enrolled");
+  assert.equal(verdict.enrolled, true, "the enrolled openId passes regardless of display name");
+  assert.equal(verdict.firstLessonGate, false, "the two private pages keep separate allow-lists");
 });

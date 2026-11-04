@@ -1323,8 +1323,8 @@ h1 {
   margin: 20px 0 14px;
 }
 
-/* Private make-up page: a link to its pinned week's public standings. */
-.first-lesson-cta {
+/* Private game pages: a link to the pinned week's public standings. */
+.private-lesson-cta {
   grid-column: 1 / -1;
   justify-self: end;
   margin: 0 clamp(24px, 3vw, 38px) clamp(24px, 3vw, 38px);

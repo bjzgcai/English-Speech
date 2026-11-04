@@ -11,7 +11,7 @@ function openRouterChatCompletionsUrl() {
 }
 
 function openRouterModelFor(purpose) {
-  const evalModel = process.env.OPENROUTER_EVAL_MODEL || "z-ai/glm-5.3-flash";
+  const evalModel = process.env.OPENROUTER_EVAL_MODEL || "deepseek/deepseek-v4.1-flash-1017";
   if (purpose === "eval") return evalModel;
   if (purpose === "moderation") return process.env.OPENROUTER_MODERATION_MODEL || evalModel;
   if (purpose === "detection") return process.env.OPENROUTER_AI_DETECTION_MODEL || evalModel;

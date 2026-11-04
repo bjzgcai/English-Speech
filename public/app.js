@@ -20,8 +20,10 @@ const state = {
   authReady: false,
   invitationAdminAccess: false,
   teacherAccess: false,
-  catchupAccess: false,
-  catchupMode: false,
+  // The private game page this route represents ({ route, group, challengeId,
+  // label, standingsLabel }) or null on every ordinary page.
+  privateGame: null,
+  privateGameRoutes: [],
   inAppAuthAttempted: false,
   privacyConsent: null,
   privacyConsentResolve: null,
@@ -135,7 +137,7 @@ const authChip = document.querySelector("#authChip");
 const authUserName = document.querySelector("#authUserName");
 const invitationLink = document.querySelector("[data-invitation-link]");
 const teacherLink = document.querySelector("[data-teacher-link]");
-const firstLessonStandingsLink = document.querySelector("[data-first-lesson-standings]");
+const privateStandingsLink = document.querySelector("[data-private-standings]");
 const logoutButton = document.querySelector("#logoutButton");
 const navLinks = document.querySelectorAll(".main-nav [data-route]");
 const videoModal = document.querySelector("#videoModal");
@@ -769,10 +771,12 @@ async function checkAuth() {
     state.authReady = true;
     state.invitationAdminAccess = data.invitationAdminAccess === true;
     state.teacherAccess = data.teacherAccess === true;
-    state.catchupAccess = data.catchupAccess === true;
+    state.privateGameRoutes = Array.isArray(data.privateGameRoutes) ? data.privateGameRoutes : [];
     state.dingTalkConfigured = data.configured;
     const route = normalizeRoute(window.location.pathname);
-    if (data.gameGroup && (isGameRoute(route) || route === "/leaderboard")) {
+    // A private game page pins its own group and week, so an invitation group
+    // must not bounce the learner off it.
+    if (data.gameGroup && !privateGameForRoute(route) && (isGameRoute(route) || route === "/leaderboard")) {
       const previousGroup = state.gameGroup;
       setGameGroup(data.gameGroup);
       if (previousGroup !== state.gameGroup) {
@@ -806,7 +810,7 @@ async function refreshAccessFlags() {
     const data = await response.json();
     state.invitationAdminAccess = data.invitationAdminAccess === true;
     state.teacherAccess = data.teacherAccess === true;
-    state.catchupAccess = data.catchupAccess === true;
+    state.privateGameRoutes = Array.isArray(data.privateGameRoutes) ? data.privateGameRoutes : [];
   } catch {
     // Keep the previous flags; the next navigation re-reads them anyway.
   }
@@ -1535,36 +1539,49 @@ async function deleteHistoryRecord(button) {
 const GAME_GROUP_TOKENS = ["g1", "g2", "g3"];
 const GAME_GROUP_STORAGE_KEY = "oscanner-game-group";
 
-// The private make-up page is pinned to one past week — group 2's lesson 1 task
-// ("Explaining an experimental figure"). It reuses the whole weekly-game flow in
-// game mode, but the group and challenge it asks the server for are fixed.
-const FIRST_LESSON_ROUTE = "/game/first-lesson";
-const FIRST_LESSON_GROUP = "g2";
-const FIRST_LESSON_CHALLENGE_ID = "weekly-2026-09-28-g2";
+// Private game pages are each pinned to one past week that /game can no longer
+// generate. They reuse the whole weekly-game flow in game mode, but the group
+// and challenge they ask the server for are fixed per page.
+const PRIVATE_GAME_ROUTES = Object.freeze({
+  "/game/first-lesson": Object.freeze({
+    group: "g2",
+    challengeId: "weekly-2026-09-28-g2",
+    label: "Make-up lesson",
+    standingsLabel: "View lesson 1 standings",
+  }),
+  // Group 1's 2026-10-26 paper title/abstract task, which 崔玉帅 and 吴衍标
+  // play; their scores belong on that board.
+  "/game/title-abstract": Object.freeze({
+    group: "g1",
+    challengeId: "weekly-2026-10-26",
+    label: "Special lesson",
+    standingsLabel: "View this week's standings",
+  }),
+});
 
-// Both routes render the weekly game experience; the group picker, the fixed
-// task, and the question-generation endpoint all behave the same way.
+function privateGameForRoute(route) {
+  return Object.hasOwn(PRIVATE_GAME_ROUTES, route) ? PRIVATE_GAME_ROUTES[route] : null;
+}
+
+// Both private pages and /game render the weekly game experience; the group
+// picker, the fixed task, and the question-generation endpoint behave alike.
 function isGameRoute(route) {
-  return route === "/game" || route === FIRST_LESSON_ROUTE;
+  return route === "/game" || Boolean(privateGameForRoute(route));
 }
 
-function isFirstLessonRoute(route) {
-  return route === FIRST_LESSON_ROUTE;
+// The client half of a private page's gate (the server half keeps unrelated
+// sessions out): while the session is missing or not on the page's allow-list
+// the page must not paint the lesson. public/app.js opens the sign-in modal and
+// leaves the page blank for an anonymous visitor; a signed-in session without
+// access is sent on to the public board.
+function privateRouteGated(route) {
+  return Boolean(privateGameForRoute(route)) && !state.privateGameRoutes.includes(route);
 }
 
-// The client half of the make-up page's gate (the server half keeps unrelated
-// sessions out): while the session is missing or lacks the make-up flag the page
-// must not paint the lesson. public/app.js opens the sign-in modal and leaves the
-// page blank for an anonymous visitor; a signed-in session without the flag is
-// sent on to the public board.
-function firstLessonGated(route) {
-  return isFirstLessonRoute(route) && !state.catchupAccess;
-}
-
-// The group the current page belongs to. The make-up page is always group 2,
-// but that must not overwrite the learner's own group on the normal game page.
+// The group the current page belongs to. A private page is fixed to its own
+// group, but that must not overwrite the learner's group on the normal /game.
 function activeGameGroup() {
-  return state.catchupMode ? FIRST_LESSON_GROUP : state.gameGroup;
+  return state.privateGame ? state.privateGame.group : state.gameGroup;
 }
 
 function normalizeGroupToken(value) {
@@ -1600,17 +1617,27 @@ function syncGroupPickers() {
   });
 }
 
-// The make-up page belongs to a single group and a single past week, so its
-// group picker is hidden and its standings link is offered instead. Every other
-// route restores the normal picker.
-function syncCatchupMode(route) {
-  const catchup = isFirstLessonRoute(route);
-  state.catchupMode = catchup;
-  if (firstLessonStandingsLink) firstLessonStandingsLink.hidden = !catchup;
+// A private page belongs to a single group and a single past week, so its group
+// picker is hidden and a link to that week's standings is offered instead.
+// Every other route restores the normal picker.
+function syncPrivateMode(route) {
+  const page = privateGameForRoute(route);
+  state.privateGame = page;
+  if (privateStandingsLink) {
+    privateStandingsLink.hidden = !page;
+    if (page) {
+      privateStandingsLink.setAttribute(
+        "href",
+        `/leaderboard?group=${page.group}&challengeId=${page.challengeId}`,
+      );
+      const label = privateStandingsLink.querySelector("span");
+      if (label) label.textContent = page.standingsLabel;
+    }
+  }
   [gameGroupPicker, leaderboardGroupPicker].forEach((picker) => {
-    if (picker) picker.hidden = catchup && picker === gameGroupPicker;
+    if (picker) picker.hidden = Boolean(page) && picker === gameGroupPicker;
   });
-  return catchup;
+  return page;
 }
 
 function writeGameGroupToUrl() {
@@ -1651,8 +1678,8 @@ function formatChallengeRange(challenge) {
 function showGameChallenge(challenge) {
   state.gameChallenge = challenge;
   syncCameraRequirement();
-  gameWeekLabel.textContent = state.catchupMode
-    ? `Make-up lesson · ${formatChallengeRange(challenge)}`
+  gameWeekLabel.textContent = state.privateGame
+    ? `${state.privateGame.label} · ${formatChallengeRange(challenge)}`
     : formatChallengeRange(challenge);
   if (challenge?.lessonNumber && challenge?.unitNumber) {
     const groupLabel = challenge.groupLabel ? `${challenge.groupLabel} · ` : "";
@@ -1739,9 +1766,9 @@ async function loadLeaderboard(challengeId) {
 
 async function fetchGameChallengeCatalog() {
   const params = new URLSearchParams({ group: activeGameGroup() });
-  // The make-up page asks for its fixed past week; the normal game page always
+  // A private page asks for its fixed past week; the normal game page always
   // receives whatever week is current.
-  if (state.catchupMode) params.set("challengeId", FIRST_LESSON_CHALLENGE_ID);
+  if (state.privateGame) params.set("challengeId", state.privateGame.challengeId);
   const response = await window.VisitorSession.fetch(
     `/api/game/challenge?${params.toString()}`,
     { cache: "no-store" },
@@ -2069,11 +2096,12 @@ function normalizeRoute(pathname) {
 
 function setPlayMode(route) {
   const isGame = isGameRoute(route);
+  const privateGame = privateGameForRoute(route);
   gameOverview.hidden = !isGame;
   roleField.hidden = isGame;
   nameField.hidden = isGame;
-  playTitle.textContent = isFirstLessonRoute(route)
-    ? "Academic English Weekly · Make-up lesson"
+  playTitle.textContent = privateGame
+    ? `Academic English Weekly · ${privateGame.label}`
     : isGame
       ? "Academic English Weekly"
       : "Examine";
@@ -2137,7 +2165,7 @@ function setRoute(pathname) {
     closePrepareModal();
     stopStream();
   }
-  syncCatchupMode(route);
+  syncPrivateMode(route);
   syncCameraRequirement();
   const isHistory = route === "/history";
   const isLeaderboard = route === "/leaderboard";
@@ -2162,11 +2190,11 @@ function setRoute(pathname) {
     else link.removeAttribute("aria-current");
   });
 
-  // /game/first-lesson is shared as a bare URL, so an anonymous visitor is told
+  // A private game page is shared as a bare URL, so an anonymous visitor is told
   // how to get in — blank page plus the sign-in modal — rather than quietly
-  // bounced to the board. Once the session carries the make-up flag the lesson
-  // paints normally; a signed-in session without it goes to the public board.
-  if (firstLessonGated(route)) {
+  // bounced to the board. Once the session is allow-listed for the page the
+  // lesson paints normally; a signed-in session without it goes to the board.
+  if (privateRouteGated(route)) {
     if (state.authReady && window.VisitorSession.hasAccess) {
       window.location.replace("/leaderboard");
       return;
@@ -2314,9 +2342,9 @@ profileForm.addEventListener("submit", async (event) => {
       body: JSON.stringify(isGame
         ? {
           group: activeGameGroup(),
-          // The make-up page answers a fixed past week; every other game page
+          // A private page answers a fixed past week; every other game page
           // lets the server resolve this week's challenge.
-          ...(state.catchupMode ? { challengeId: FIRST_LESSON_CHALLENGE_ID } : {}),
+          ...(state.privateGame ? { challengeId: state.privateGame.challengeId } : {}),
         }
         : { profile: state.profile }),
     });
