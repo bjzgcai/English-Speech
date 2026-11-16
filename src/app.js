@@ -2275,10 +2275,29 @@ const invitationAdminNames = new Set(
     .map((name) => name.trim())
     .filter(Boolean),
 );
+const invitationNameFallbackSeen = new Set();
+function logInvitationEnrollment(kind, name, openId) {
+  const key = `${kind}:${openId}:${name}`;
+  if (invitationNameFallbackSeen.has(key)) return;
+  invitationNameFallbackSeen.add(key);
+  const detail = kind === "granted" ? "name-fallback access" : "denied access";
+  console.warn(`[inviter-enroll] ${detail} for ${name}: add openId ${openId} to INVITER_OPEN_IDS.`);
+}
 function hasInvitationAdminAccess(user) {
   if (!user || user.identityType !== "dingtalk") return false;
-  if (inviterOpenIds.size) return inviterOpenIds.has(safeText(user.openId));
-  return invitationAdminNames.has(safeText(user.name).trim());
+  const openId = safeText(user.openId);
+  const name = safeText(user.name).trim();
+  if (inviterOpenIds.size) {
+    if (inviterOpenIds.has(openId)) return true;
+    // A named administrator without an enrolled openId is still denied, but
+    // logs the openId once so the operator can add it without opening a
+    // display-name access window.
+    if (name && invitationAdminNames.has(name)) logInvitationEnrollment("denied", name, openId);
+    return false;
+  }
+  if (!name || !invitationAdminNames.has(name)) return false;
+  logInvitationEnrollment("granted", name, openId);
+  return true;
 }
 function requireZgcMember(req, res, next) {
   if (req.user?.identityType !== "dingtalk") return res.status(403).json({ error: "Only 中关村学院 DingTalk users may manage invitation codes." });
@@ -3645,9 +3664,20 @@ function canAccessTeacher(user, guestCode = null) {
   // a DingTalk profile into the console would keep working. Until then, the
   // name fallback keeps existing teacher sessions working and logs the
   // openIds the operator should enroll.
-  if (TEACHER_OPENIDS.size) return TEACHER_OPENIDS.has(openId);
+  if (TEACHER_OPENIDS.size) {
+    if (TEACHER_OPENIDS.has(openId)) return true;
+    const name = safeText(user.name).trim();
+    if (name && TEACHER_NAMES.has(name)) {
+      const key = `denied:${openId}:${name}`;
+      if (!teacherNameFallbackSeen.has(key)) {
+        teacherNameFallbackSeen.add(key);
+        console.warn(`[teacher-enroll] denied access for ${name}: add openId ${openId} to TEACHER_OPEN_IDS.`);
+      }
+    }
+    return false;
+  }
   if (TEACHER_NAMES.has(safeText(user.name).trim())) {
-    const key = `${openId}:${safeText(user.name).trim()}`;
+    const key = `granted:${openId}:${safeText(user.name).trim()}`;
     if (!teacherNameFallbackSeen.has(key)) {
       teacherNameFallbackSeen.add(key);
       console.warn(`[teacher-enroll] name-fallback access for ${safeText(user.name).trim()}: add openId ${openId} to TEACHER_OPEN_IDS.`);
@@ -3697,10 +3727,21 @@ function privatePageGate({ namesEnv, envName, logTag }) {
     if (!user) return false;
     const openId = safeText(user.openId);
     if (!openId) return false;
-    if (openIds.size) return openIds.has(openId);
+    if (openIds.size) {
+      if (openIds.has(openId)) return true;
+      const deniedName = safeText(user.name).trim();
+      if (deniedName && names.has(deniedName)) {
+        const deniedKey = `denied:${openId}:${deniedName}`;
+        if (!seen.has(deniedKey)) {
+          seen.add(deniedKey);
+          console.warn(`[${logTag}] denied access for ${deniedName}: add openId ${openId} to ${envName}.`);
+        }
+      }
+      return false;
+    }
     const name = safeText(user.name).trim();
     if (!names.has(name)) return false;
-    const key = `${openId}:${name}`;
+    const key = `granted:${openId}:${name}`;
     if (!seen.has(key)) {
       seen.add(key);
       console.warn(`[${logTag}] name-fallback access for ${name}: add openId ${openId} to ${envName}.`);
@@ -4187,6 +4228,7 @@ module.exports = {
     canAccessCatchup,
     canAccessTitleAbstract,
     canAccessLastWeek,
+    hasInvitationAdminAccess,
     catchupChallenge: FIRST_LESSON_CHALLENGE,
     titleAbstractChallenge: TITLE_ABSTRACT_CHALLENGE,
     lastWeekChallenge: LAST_WEEK_CHALLENGE,

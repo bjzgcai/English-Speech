@@ -273,6 +273,35 @@ test("an enrolled openId wins over the display name once CATCHUP_OPEN_IDS is set
   assert.equal(verdict.anonymous, false);
 });
 
+test("a named but unenrolled visitor is denied and logs the openId once", () => {
+  const { spawnSync } = require("node:child_process");
+  const probe = `
+    process.env.NODE_ENV = "test";
+    process.env.DATA_DIR = ${JSON.stringify(data)};
+    process.env.SESSION_SECRET = "catchup-denied-probe";
+    process.env.CATCHUP_OPEN_IDS = "enrolled-catchup-openid";
+    process.env.CATCHUP_NAMES = "Catchup Learner";
+    const { testHelpers } = require(${JSON.stringify(path.join(__dirname, "..", "src", "app"))});
+    const user = { openId: "unenrolled-catchup", name: "Catchup Learner", identityType: "dingtalk" };
+    console.log(JSON.stringify({
+      first: testHelpers.canAccessCatchup(user),
+      second: testHelpers.canAccessCatchup(user),
+    }));
+  `;
+  const run = spawnSync("node", ["-e", probe], {
+    cwd: path.join(__dirname, ".."),
+    encoding: "utf8",
+  });
+  const verdict = JSON.parse(run.stdout.trim().split("\n").pop());
+  assert.equal(verdict.first, false, "the name alone never grants access while openIds are enrolled");
+  assert.equal(verdict.second, false);
+  assert.equal(
+    (run.stderr.match(/add openId unenrolled-catchup to CATCHUP_OPEN_IDS/g) || []).length,
+    1,
+    "the openId is logged once for enrollment",
+  );
+});
+
 test("the second private page pins group 1's paper title and abstract week", () => {
   const pinned = testHelpers.titleAbstractChallenge;
   assert.equal(pinned.id, TITLE_ABSTRACT_ID);

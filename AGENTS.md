@@ -54,7 +54,9 @@
 
 - `/invitation-codes` is limited to DingTalk administrators in `INVITER_OPEN_IDS` when that stable-ID
   allow-list is configured; otherwise the deployment-local `INVITATION_ADMIN_NAMES` fallback applies. The page route,
-  every management API, and the header link all use the same `hasInvitationAdminAccess` gate.
+  every management API, and the header link all use the same `hasInvitationAdminAccess` gate. A named
+  administrator whose openId is not enrolled is denied, and the first attempt logs `[inviter-enroll]` with
+  the openId to add to `INVITER_OPEN_IDS`.
 - A legacy single-use code creates one account. A shared QR campaign creates one stable campaign code and up
   to the administrator-selected `max_uses` (maximum 9,999) independent `campaign-account` records, each with
   its own personal code. Duplicate names are allowed; the personal code is the account key. Campaign seat
@@ -88,7 +90,7 @@
   as a transitional fallback — and guests who redeemed an invitation code in `TEACHER_INVITATION_CODES`
   (`B19B59975BC0`). `canAccessTeacher(user)` in `src/app.js` is the single gate; once `TEACHER_OPEN_IDS`
   is non-empty, display names no longer grant access (they are user-changeable in DingTalk), and each
-  name-fallback login logs `[teacher-enroll]` with the openId to enroll. The page route redirects
+  name-fallback login — granted or denied — logs `[teacher-enroll]` with the openId to enroll. The page route redirects
   everyone else to `/leaderboard`, the APIs return 403, and `/api/me` exposes `teacherAccess` so the
   nav menu item (`data-teacher-link`) only renders for allow-listed sessions.
 - The public `/leaderboard` never shows playback controls any more: `GET /api/game/leaderboard` always

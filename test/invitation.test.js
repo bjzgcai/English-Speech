@@ -215,6 +215,31 @@ test('only the designated DingTalk administrators may open invitation management
   assert.equal(page.status, 302);
   assert.equal(page.headers.get('location'), '/leaderboard');
 });
+test('a named administrator without an enrolled openId is denied but logged once', () => {
+  const { spawnSync } = require('node:child_process');
+  const probe = `
+    process.env.NODE_ENV = 'test';
+    process.env.DATA_DIR = ${JSON.stringify(data)};
+    process.env.SESSION_SECRET = 'invitation-denied-probe';
+    process.env.INVITER_OPEN_IDS = 'enrolled-inviter';
+    process.env.INVITATION_ADMIN_NAMES = 'Inviter Admin';
+    const { testHelpers } = require(${JSON.stringify(path.join(__dirname, '..', 'src', 'app'))});
+    const user = { openId: 'unenrolled-inviter', name: 'Inviter Admin', identityType: 'dingtalk' };
+    console.log(JSON.stringify({
+      first: testHelpers.hasInvitationAdminAccess(user),
+      second: testHelpers.hasInvitationAdminAccess(user),
+    }));
+  `;
+  const run = spawnSync('node', ['-e', probe], { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
+  const verdict = JSON.parse(run.stdout.trim().split('\n').pop());
+  assert.equal(verdict.first, false);
+  assert.equal(verdict.second, false);
+  assert.equal(
+    (run.stderr.match(/add openId unenrolled-inviter to INVITER_OPEN_IDS/g) || []).length,
+    1,
+    'the denied administrator openId is logged once for enrollment',
+  );
+});
 test('campaign creation validates its name, seat count, and registration window', async () => {
   const create = body => fetch(base + '/api/invitation-campaigns', {
     method: 'POST',

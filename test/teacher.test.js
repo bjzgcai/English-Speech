@@ -308,3 +308,28 @@ test("a non-teacher cannot rename themselves into the console once openIds are e
   assert.equal(verdict.enrolled, true, "the enrolled openId passes regardless of display name");
   assert.equal(verdict.guest, true, "the teacher invitation code guest keeps access");
 });
+
+test("a named teacher without an enrolled openId is denied but logged once", () => {
+  const { spawnSync } = require("node:child_process");
+  const probe = `
+    process.env.NODE_ENV = "test";
+    process.env.DATA_DIR = ${JSON.stringify(data)};
+    process.env.SESSION_SECRET = "teacher-denied-probe";
+    process.env.TEACHER_OPEN_IDS = "enrolled-teacher-openid";
+    const { testHelpers } = require(${JSON.stringify(path.join(__dirname, "..", "src", "app"))});
+    const user = { openId: "unenrolled-teacher", name: "Teacher Alpha", identityType: "dingtalk" };
+    console.log(JSON.stringify({
+      first: testHelpers.canAccessTeacher(user),
+      second: testHelpers.canAccessTeacher(user),
+    }));
+  `;
+  const run = spawnSync("node", ["-e", probe], { cwd: path.join(__dirname, ".."), encoding: "utf8" });
+  const verdict = JSON.parse(run.stdout.trim().split("\n").pop());
+  assert.equal(verdict.first, false);
+  assert.equal(verdict.second, false);
+  assert.equal(
+    (run.stderr.match(/add openId unenrolled-teacher to TEACHER_OPEN_IDS/g) || []).length,
+    1,
+    "the denied teacher openId is logged once for enrollment",
+  );
+});
