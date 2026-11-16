@@ -144,7 +144,7 @@ const answerCancellationTtlMs = 60 * 60 * 1000;
 const canceledAnswerSaves = new Map();
 const evaluationRubricStandard = Object.freeze({
   id: "english-speaking-evaluation",
-  version: "1.2.0",
+  version: "1.3.0",
   name: "English Speaking Evaluation",
   scoreScale: {
     minimum: 0,
@@ -208,9 +208,10 @@ const evaluationRubricStandard = Object.freeze({
       key: "visualDelivery",
       label: "Visual delivery",
       weight: 10,
-      description: "Camera-facing posture, eye contact, facial engagement, framing, and distracting movement.",
-      evidence: ["posture", "camera eye contact", "facial engagement", "framing", "distracting movement"],
-      guidance: "Assess communication behavior only; do not score appearance or personal characteristics.",
+      description: "Basic on-camera presence: the learner is visible, reasonably centred, and not materially obstructed.",
+      evidence: ["face and upper body visible", "roughly centred framing", "gross gaze direction", "severe obstruction"],
+      guidance:
+        "Be lenient: this is a basic presence check, not an acting, gaze, or performance test. Any learner who is visible, reasonably centred, and behaving normally must score at least 80; default to about 85. Gaze direction, facial expression, looking at the task prompt, task figure, or notes, and ordinary hand or posture movement must not reduce the score below 80; they may be mentioned only as neutral observations. Use 90-100 for consistently strong presence. Use 70-79 only for a clear framing problem, such as the face being partly cut off or the learner being off-centre while still visible. Score below 70 only for a material failure: the face is absent or mostly out of frame for much of the answer, the camera points away, the face is persistently obscured, or the learner leaves the frame. Never state or imply that the learner is reading from a script, reading notes, blinking, or not engaging, because sparse still frames cannot establish this; if gaze is visibly below the lens, say only that the gaze was directed below the lens.",
     },
   ],
 });
@@ -1539,6 +1540,35 @@ function nonNegativeInteger(value, fallback = 0) {
   return Number.isInteger(number) && number >= 0 ? number : fallback;
 }
 
+// Visual delivery is a presence check scored from sparse still frames. The
+// model sometimes adds inferences the frames cannot support ("reading from a
+// script", "no eye contact", blinking, hand-to-face movement). Drop those
+// sentences rather than showing the learner an accusation the evidence does
+// not establish.
+const visualFeedbackInference =
+  /(read(?:s|ing)?\b[^.!?]*\b(?:script|notes)\b|\bscript(?:s)?\b|blink|eye movement|eye contact|not engaging|lack of (?:facial )?engagement|no engagement|(?:limits?|reduces?|affects?) engagement|distracting movement|hand[^.!?]*face|\bchin\b)/i;
+
+function visualPresenceFeedback(score) {
+  if (score >= 80) {
+    return "You were visible and reasonably centred in the frame. Ordinary gaze, expression, and movement did not reduce the presence score.";
+  }
+  if (score >= 70) {
+    return "You were visible, but the framing limited the presence check.";
+  }
+  return "The camera did not provide a consistently usable view for the presence check.";
+}
+
+function sanitizeVisualDeliveryFeedback(feedback, score) {
+  const text = safeText(feedback);
+  if (!text) return visualPresenceFeedback(score);
+  const sentences = text.match(/[^.!?]+[.!?]?/g) || [text];
+  const kept = sentences
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence && !visualFeedbackInference.test(sentence));
+  const cleaned = kept.join(" ").trim();
+  return cleaned.length >= 24 ? cleaned : visualPresenceFeedback(score);
+}
+
 function normalizeEvaluation(
   rawEvaluation,
   { visualAvailable = true, hasScorableSpeech = true, transcript = "", evaluateModel = internalLlmEvalModel } = {},
@@ -1548,26 +1578,37 @@ function normalizeEvaluation(
     modelSpeechFlag !== false && safeText(modelSpeechFlag).toLowerCase() !== "false";
   const shouldScore = hasScorableSpeech && modelFoundScorableSpeech;
   const rubric = Object.fromEntries(
-    evaluationRubricStandard.dimensions.map((dimension) => [
-      dimension.key,
-      {
-        label: dimension.label,
-        weight: dimension.weight,
-        score:
-          dimension.key === "visualDelivery" && !visualAvailable
-            ? null
-            : shouldScore
-              ? normalizeScore(rawEvaluation?.rubric?.[dimension.key]?.score)
-              : 0,
-        feedback:
-          dimension.key === "visualDelivery" && !visualAvailable
-            ? "Not scored because the file contains usable speech but no video picture."
-            : shouldScore
-              ? safeText(rawEvaluation?.rubric?.[dimension.key]?.feedback)
-              : "No scorable English speech was detected, so this dimension received 0.",
-        available: dimension.key !== "visualDelivery" || visualAvailable,
-      },
-    ]),
+    evaluationRubricStandard.dimensions.map((dimension) => {
+      const score =
+        dimension.key === "visualDelivery" && !visualAvailable
+          ? null
+          : shouldScore
+            ? normalizeScore(rawEvaluation?.rubric?.[dimension.key]?.score)
+            : 0;
+      let feedback;
+      if (dimension.key === "visualDelivery" && !visualAvailable) {
+        feedback = "Not scored because the file contains usable speech but no video picture.";
+      } else if (!shouldScore) {
+        feedback = "No scorable English speech was detected, so this dimension received 0.";
+      } else if (dimension.key === "visualDelivery") {
+        feedback = sanitizeVisualDeliveryFeedback(
+          rawEvaluation?.rubric?.visualDelivery?.feedback,
+          score,
+        );
+      } else {
+        feedback = safeText(rawEvaluation?.rubric?.[dimension.key]?.feedback);
+      }
+      return [
+        dimension.key,
+        {
+          label: dimension.label,
+          weight: dimension.weight,
+          score,
+          feedback,
+          available: dimension.key !== "visualDelivery" || visualAvailable,
+        },
+      ];
+    }),
   );
 
   const availableItems = Object.values(rubric).filter((item) => item.available);
@@ -1868,7 +1909,14 @@ function buildEvaluationPrompt({ profile, question, transcript, audioMetrics, fr
       ? "This is a standalone speech, not an answer to a question. Score coherence by whether the speaker stays internally consistent, develops a stable main point, and connects ideas without contradictions. Do not assess task relevance."
       : "This is an answer to the supplied question. Include task relevance when scoring coherence.",
     frameCount > 0
-      ? "Use the sampled frames to score visual delivery."
+      ? [
+          "Use the sampled frames only to score visual delivery. They are sparse still frames, not continuous video.",
+          "Score visual delivery leniently as a basic presence check. Any learner who is visible, reasonably centred, and behaving normally must score at least 80; default to about 85. Gaze direction, facial expression, looking at the task prompt, task figure, or notes, and ordinary hand or posture movement must not reduce the score below 80.",
+          "Use 90-100 for consistently strong presence. Use 70-79 only for a clear framing problem, such as the face being partly cut off or the learner being off-centre while still visible. Score below 70 only for a material failure: the face is absent or mostly out of frame for much of the answer, the camera points away, the face is persistently obscured, or the learner leaves the frame.",
+          "Mention a neutral facial expression, looking at the prompt, figure or notes, brief glances, ordinary hand gestures, or small posture shifts only as neutral observations, never as score deductions.",
+          "Never state or imply that the learner is reading from a script, reading notes, blinking, or not engaging; sparse still frames cannot establish this. If gaze is visibly below the lens, say only that the gaze was directed below the lens. If the evidence is ambiguous, keep the score in the 80s.",
+          "A camera below eye level is a setup issue, not a posture failure; mention it without dropping the score below the normal band.",
+        ].join(" ")
       : "No visual frames are available. Do not infer visual delivery; return 0 for that dimension and explain that it was not assessed.",
     ...(hasFigure
       ? [
@@ -2212,9 +2260,9 @@ app.post("/auth/logout", (_req, res) => {
 
 // Invitation codes grant full learner access without DingTalk, so minting them
 // is restricted to designated DingTalk administrators. Stable openIds from
-// INVITER_OPEN_IDS take precedence when configured; until those are enrolled,
-// the display-name fallback keeps the current administrator accounts working.
-const DEFAULT_INVITATION_ADMIN_NAMES = ["吴衍标", "邹欣", "王旭东", "符积高"];
+// INVITER_OPEN_IDS take precedence when configured; INVITATION_ADMIN_NAMES is
+// an optional, deployment-local fallback for administrators whose openId is not
+// enrolled yet. No administrator names are built into the source.
 const inviterOpenIds = new Set(
   (process.env.INVITER_OPEN_IDS || "")
     .split(",")
@@ -2222,7 +2270,7 @@ const inviterOpenIds = new Set(
     .filter(Boolean),
 );
 const invitationAdminNames = new Set(
-  (process.env.INVITATION_ADMIN_NAMES || DEFAULT_INVITATION_ADMIN_NAMES.join(","))
+  (process.env.INVITATION_ADMIN_NAMES || "")
     .split(",")
     .map((name) => name.trim())
     .filter(Boolean),
@@ -3552,21 +3600,14 @@ app.get("/api/public-evaluations/:id/video", (req, res) => {
 // is keyed on the DingTalk openId from the signed session — the display name
 // is user-changeable in DingTalk, so matching on it alone let any member
 // rename themselves into the console (playback of every learner's
-// recording). Names remain as a secondary, defense-in-depth check for openIds
-// not yet in the allow-list; remove TEACHER_NAMES once every teacher's openId
-// is confirmed.
-const TEACHER_NAMES = new Set([
-  "王旭东",
-  "邹欣",
-  "吴衍标",
-  "高坤",
-  "柳君丽",
-  "胡辰",
-  "何源",
-  "董圣娇",
-  "赵晨",
-  "邹猛",
-]);
+// recording). TEACHER_NAMES is an optional, deployment-local fallback for
+// openIds not enrolled yet; no teacher names are built into the source.
+const TEACHER_NAMES = new Set(
+  (process.env.TEACHER_NAMES || "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean),
+);
 
 // Teacher openIds go here (TEACHER_OPEN_IDS in the environment is a
 // comma-separated override for the same list).
@@ -3621,22 +3662,34 @@ function canAccessTeacher(user, guestCode = null) {
 // challengeId branches of the game APIs, and /api/me all derive from this
 // registry, so a session can only ever answer the week its page pins.
 //
-// 张鳐 and 吴衍标 still owe group 2's lesson 1 ("Explaining an experimental
-// figure"); 崔玉帅 and 吴衍标 play the paper title/abstract task that group 1
-// received on 2026-10-26, whose board keeps their scores.
+// Two catch-up learners still owe group 2's lesson 1 ("Explaining an
+// experimental figure"); two other learners play the paper title/abstract task
+// that group 1 received on 2026-10-26; another pair make up group 1's week of
+// 2026-11-09. Each page's board keeps the scores of the learners who played it.
+// The display-name fallbacks below are transitional and stop granting access
+// once the matching *_OPEN_IDS list is set.
 const FIRST_LESSON_CHALLENGE = challengeForIndex(0, "g2");
 const TITLE_ABSTRACT_CHALLENGE = challengeForIndex(3, "g1");
+// Slot 5 is the week of 2026-11-09; the index is fixed, never "now - 1", so the
+// pin cannot drift as the course advances.
+const LAST_WEEK_CHALLENGE = challengeForIndex(5, "g1");
 
 // Same contract as the teacher gate: openIds in the page's env list are the
 // stable, non-user-controllable key, and once that list is non-empty the
 // display names no longer grant access (names are user-changeable in DingTalk).
-// Until an openId is enrolled the name fallback keeps the page working and logs
-// the openId the operator should add to the env list.
-function privatePageGate({ names, envName, logTag }) {
+// The optional *_NAMES env list keeps an unenrolled account working and logs the
+// openId the operator should add; no learner names are built into the source.
+function privatePageGate({ namesEnv, envName, logTag }) {
   const openIds = new Set(
     (process.env[envName] || "")
       .split(",")
       .map((id) => id.trim())
+      .filter(Boolean),
+  );
+  const names = new Set(
+    (process.env[namesEnv] || "")
+      .split(",")
+      .map((name) => name.trim())
       .filter(Boolean),
   );
   const seen = new Set();
@@ -3646,7 +3699,7 @@ function privatePageGate({ names, envName, logTag }) {
     if (!openId) return false;
     if (openIds.size) return openIds.has(openId);
     const name = safeText(user.name).trim();
-    if (!names.includes(name)) return false;
+    if (!names.has(name)) return false;
     const key = `${openId}:${name}`;
     if (!seen.has(key)) {
       seen.add(key);
@@ -3657,14 +3710,19 @@ function privatePageGate({ names, envName, logTag }) {
 }
 
 const canAccessCatchup = privatePageGate({
-  names: ["张鳐", "吴衍标"],
+  namesEnv: "CATCHUP_NAMES",
   envName: "CATCHUP_OPEN_IDS",
   logTag: "catchup-enroll",
 });
 const canAccessTitleAbstract = privatePageGate({
-  names: ["崔玉帅", "吴衍标"],
+  namesEnv: "TITLE_ABSTRACT_NAMES",
   envName: "TITLE_ABSTRACT_OPEN_IDS",
   logTag: "title-abstract-enroll",
+});
+const canAccessLastWeek = privatePageGate({
+  namesEnv: "LAST_WEEK_NAMES",
+  envName: "LAST_WEEK_OPEN_IDS",
+  logTag: "last-week-enroll",
 });
 
 const PRIVATE_GAME_PAGES = Object.freeze([
@@ -3677,6 +3735,11 @@ const PRIVATE_GAME_PAGES = Object.freeze([
     route: "/game/title-abstract",
     challenge: TITLE_ABSTRACT_CHALLENGE,
     canAccess: canAccessTitleAbstract,
+  }),
+  Object.freeze({
+    route: "/game/last-week",
+    challenge: LAST_WEEK_CHALLENGE,
+    canAccess: canAccessLastWeek,
   }),
 ]);
 
@@ -4123,8 +4186,10 @@ module.exports = {
     canAccessTeacher,
     canAccessCatchup,
     canAccessTitleAbstract,
+    canAccessLastWeek,
     catchupChallenge: FIRST_LESSON_CHALLENGE,
     titleAbstractChallenge: TITLE_ABSTRACT_CHALLENGE,
+    lastWeekChallenge: LAST_WEEK_CHALLENGE,
     privateGamePages: PRIVATE_GAME_PAGES,
     guestInvitationCodeFor,
     modelMessageText,

@@ -5,6 +5,8 @@ const path = require("node:path");
 const test = require("node:test");
 
 process.env.NODE_ENV = "test";
+process.env.TEACHER_NAMES = "Teacher Alpha,Teacher Beta,Admin User,Teacher Gamma,Teacher Delta,Teacher Epsilon,Teacher Zeta,Teacher Eta,Teacher Theta,Teacher Iota";
+process.env.TEACHER_OPEN_IDS = "";
 
 const { testHelpers } = require("../src/app");
 
@@ -97,17 +99,17 @@ test("leaderboard answer media rejects answers outside the weekly challenge", ()
 test("teacher access is limited to the allow-listed DingTalk names", () => {
   const dingtalk = (name) => ({ openId: "user-1", name, identityType: "dingtalk" });
 
-  for (const name of ["王旭东", "邹欣", "吴衍标", "高坤", "柳君丽", "胡辰", "何源", "董圣娇", "赵晨", "邹猛"]) {
+  for (const name of ["Teacher Alpha", "Teacher Beta", "Admin User", "Teacher Gamma", "Teacher Delta", "Teacher Epsilon", "Teacher Zeta", "Teacher Eta", "Teacher Theta", "Teacher Iota"]) {
     assert.equal(canAccessTeacher(dingtalk(name)), true, name);
   }
   // Whitespace around the session name is tolerated; near-misses are not.
-  assert.equal(canAccessTeacher(dingtalk(" 王旭东 ")), true);
+  assert.equal(canAccessTeacher(dingtalk(" Teacher Alpha ")), true);
   assert.equal(canAccessTeacher(dingtalk("王旭 东")), false);
 
   assert.equal(canAccessTeacher(dingtalk("陈云")), false);
   assert.equal(canAccessTeacher(dingtalk("")), false);
   assert.equal(canAccessTeacher(null), false);
-  assert.equal(canAccessTeacher({ openId: "guest:0f4a2f2e-6d44-4d8b-ab1c-b823529ca1b5", name: "王旭东", identityType: "guest" }), false);
+  assert.equal(canAccessTeacher({ openId: "guest:0f4a2f2e-6d44-4d8b-ab1c-b823529ca1b5", name: "Teacher Alpha", identityType: "guest" }), false);
 });
 
 test("guests who redeemed an allow-listed invitation code may enter the teacher console", () => {

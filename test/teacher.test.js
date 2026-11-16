@@ -8,7 +8,8 @@ const crypto = require("node:crypto");
 const data = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-teacher-"));
 Object.assign(process.env, { NODE_ENV: "test", DATA_DIR: data, QUEUE_ENABLED: "false",
   SESSION_SECRET: "teacher-test-session", DINGTALK_CLIENT_ID: "test", DINGTALK_CLIENT_SECRET: "test",
-  DINGTALK_CORP_ID: "test", DINGTALK_ALERT_ROBOT_CODE: "", DINGTALK_ALERT_USER_ID: "" });
+  DINGTALK_CORP_ID: "test", DINGTALK_ALERT_ROBOT_CODE: "", DINGTALK_ALERT_USER_ID: "",
+  TEACHER_NAMES: "Teacher Alpha,Teacher Beta,Admin User,Teacher Gamma,Teacher Delta,Teacher Epsilon,Teacher Zeta,Teacher Eta,Teacher Theta,Teacher Iota", TEACHER_OPEN_IDS: "" });
 const { app, testHelpers } = require("../src/app");
 const config = require("../src/config");
 const { appendJsonLine } = require("../src/storage");
@@ -56,13 +57,13 @@ test("the teacher page and APIs are allow-listed", async () => {
   assert.equal((await fetch(base + "/teacher", { headers: sessionHeaders("陈云"), redirect: "manual" })).status, 302);
   assert.equal((await fetch(base + "/teacher/report", { headers: sessionHeaders("陈云"), redirect: "manual" })).status, 302);
   // Whitelisted names get the console.
-  for (const name of ["王旭东", "邹欣", "吴衍标", "高坤", "柳君丽", "胡辰", "何源", "董圣娇", "赵晨", "邹猛"]) {
+  for (const name of ["Teacher Alpha", "Teacher Beta", "Admin User", "Teacher Gamma", "Teacher Delta", "Teacher Epsilon", "Teacher Zeta", "Teacher Eta", "Teacher Theta", "Teacher Iota"]) {
     const response = await fetch(base + "/teacher", { headers: sessionHeaders(name), redirect: "manual" });
     assert.equal(response.status, 200, name);
   }
 
   // API: 401 anonymous, 403 non-teacher, 200 teacher with playback fields.
-  const teacher = sessionHeaders("王旭东");
+  const teacher = sessionHeaders("Teacher Alpha");
   const teacherPage = await (await fetch(base + "/teacher", { headers: teacher })).text();
   assert.match(teacherPage, /href="\/teacher\/report"/);
   assert.match(teacherPage, /href="\/teacher" aria-current="page"/);
@@ -143,7 +144,7 @@ test("teachers can list every group's topic rotation", async () => {
   assert.equal((await fetch(base + "/api/teacher/topics")).status, 401);
   assert.equal((await fetch(base + "/api/teacher/topics", { headers: sessionHeaders("陈云") })).status, 403);
 
-  const response = await fetch(base + "/api/teacher/topics", { headers: sessionHeaders("王旭东") });
+  const response = await fetch(base + "/api/teacher/topics", { headers: sessionHeaders("Teacher Alpha") });
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.deepEqual(payload.groups.map((group) => group.group), ["g1", "g2", "g3"]);
@@ -178,11 +179,26 @@ test("teachers can list every group's topic rotation", async () => {
     assert.deepEqual(group.topics.map((topic) => topic.lessonNumber), Array.from({ length: wanted.count }, (_, index) => index + 1));
     assert.equal(group.topics.filter((topic) => topic.current).length, 1, `${group.group} marks this week's topic`);
   }
+
+  const groupOne = payload.groups.find((group) => group.group === "g1");
+  assert.deepEqual(
+    groupOne.topics.map((topic) => topic.unitNumber),
+    [1, 1, 2, 2, 3, 4, 4, 7, 7, 6, 6, 5, 5, 8, 8],
+  );
+  assert.deepEqual(
+    groupOne.topics.map((topic) => topic.instructor),
+    [
+      "Liu Junli", "Liu Junli", "Liu Junli", "He Yuan", "He Yuan",
+      "Wang Xudong", "Wang Xudong", "Wang Xudong", "Wang Xudong",
+      "Gao Kun", "Gao Kun", "Hu Chen", "Hu Chen",
+      "Course faculty", "Course faculty",
+    ],
+  );
 });
 
 test("teachers can export the selected week and everything as CSV", async () => {
   seedAnswer("student-2", "韩梅梅", 92, { challengeId: null });
-  const teacher = sessionHeaders("董圣娇");
+  const teacher = sessionHeaders("Teacher Eta");
 
   // Partition export: current week + group.
   const week = await fetch(base + "/api/teacher/export?group=g1", { headers: teacher });
@@ -214,7 +230,7 @@ test("teachers can export the selected week and everything as CSV", async () => 
 
 test("teachers can view and export the 山东大学 group", async () => {
   seedAnswer("shandong-student", "山大同学", 86, { group: "g3" });
-  const teacher = sessionHeaders("柳君丽");
+  const teacher = sessionHeaders("Teacher Delta");
 
   const boardResponse = await fetch(base + "/api/teacher/leaderboard?group=g3", { headers: teacher });
   assert.equal(boardResponse.status, 200);
@@ -247,7 +263,7 @@ test("a completed AI verdict marks the entry suspicious and flows into the CSV",
     completedAt: new Date().toISOString(),
   });
 
-  const teacher = sessionHeaders("王旭东");
+  const teacher = sessionHeaders("Teacher Alpha");
   const board = await (await fetch(base + "/api/teacher/leaderboard?group=g1", { headers: teacher })).json();
   const entry = board.entries.find((item) => item.name === "王小明");
   assert.equal(entry.aiSuspicious.state, "completed");
@@ -261,7 +277,7 @@ test("a completed AI verdict marks the entry suspicious and flows into the CSV",
 
 test("a formula-looking learner name is neutralized in the CSV export", async () => {
   seedAnswer("student-4", "=HYPERLINK(\"http://evil.example\",\"x\")", 64);
-  const csv = await (await fetch(base + "/api/teacher/export?group=g1", { headers: sessionHeaders("王旭东") })).text();
+  const csv = await (await fetch(base + "/api/teacher/export?group=g1", { headers: sessionHeaders("Teacher Alpha") })).text();
   const row = csv.split(/\r\n/).find(line => line.includes("HYPERLINK"));
   // The dangerous leading "=" is prefixed with an apostrophe, so Excel shows
   // the name as literal text instead of evaluating it as a formula.
@@ -281,7 +297,7 @@ test("a non-teacher cannot rename themselves into the console once openIds are e
     process.env.SESSION_SECRET = "teacher-openid-probe";
     process.env.TEACHER_OPEN_IDS = "enrolled-teacher-openid";
     const { testHelpers } = require(${JSON.stringify(path.join(__dirname, "..", "src", "app"))});
-    const named = testHelpers.canAccessTeacher({ openId: "someone-else", name: "王旭东", identityType: "dingtalk" });
+    const named = testHelpers.canAccessTeacher({ openId: "someone-else", name: "Teacher Alpha", identityType: "dingtalk" });
     const enrolled = testHelpers.canAccessTeacher({ openId: "enrolled-teacher-openid", name: "随便", identityType: "dingtalk" });
     const guest = testHelpers.canAccessTeacher({ openId: "guest:abc", identityType: "guest" }, "B19B59975BC0");
     console.log(JSON.stringify({ named, enrolled, guest }));

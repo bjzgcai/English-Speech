@@ -382,7 +382,8 @@ const GAME_GROUPS = Object.freeze({
   g1: Object.freeze({
     label: "Group 1",
     topicPool: weeklyTopics,
-    topicSchedule: Object.freeze([0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]),
+    // Parallel-class chapter order: 1, 1, 2, 2, 3, 3, 4, 4, 7, 7, 6, 6, 5, 5, 8, 8.
+    topicSchedule: Object.freeze([0, 1, 2, 3, 4, 6, 7, 12, 13, 10, 11, 8, 9, 14, 15]),
     startSlot: 0,
     // One-week, group-specific replacements are keyed by the Monday date that
     // starts the challenge. They leave the shared topic pool and other groups

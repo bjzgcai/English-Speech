@@ -23,6 +23,7 @@ function registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requireP
   // every menu so they are reachable by direct URL.
   app.get("/game/first-lesson", requirePrivateGamePage, sendAppShell);
   app.get("/game/title-abstract", requirePrivateGamePage, sendAppShell);
+  app.get("/game/last-week", requirePrivateGamePage, sendAppShell);
   app.get("/admin", requirePageAuth, (_req, res) =>
     res.sendFile(path.join(rootDir, "views", "admin.html")),
   );

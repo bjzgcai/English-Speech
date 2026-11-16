@@ -40,6 +40,11 @@ OPENROUTER_EVAL_MODEL=deepseek/deepseek-v4.1-flash-1017
 OPENROUTER_TRANSCRIBE_MODEL=qwen/qwen3-asr-1.7b
 ```
 
+The `api.example.com` URLs above are placeholders. Replace them with your
+deployment's OpenAI-compatible gateway endpoints; the transcription endpoint is
+the one used for every audio-to-text stage. Real endpoints and keys belong only
+in the untracked `.env`, `.env.local`, or the production shared `.env.prod`.
+
 Everyone can generate questions, save recordings, and view their own history as a guest. DingTalk login is optional; configure it with:
 
 ```bash
@@ -164,13 +169,14 @@ nine-topic two-minute everyday-English cycle, and has separate IDs such as
 `weekly-2026-10-20-g3` and separate standings. The 山东大学 invitation campaign
 (`1B5190BE4F1F`) automatically signs its learners into `g3`. The public
 leaderboard can display any of the last ten available weeks for the selected
-group, so a past week is answerable only through a private page. There are two,
-each pinned to one challenge and hidden from every menu:
+group, so a past week is answerable only through a private page. There are
+three, each pinned to one challenge and hidden from every menu:
 
-| Page | Pinned challenge | Learners |
+| Page | Pinned challenge | Access |
 | --- | --- | --- |
-| `/game/first-lesson` | group 2 lesson 1, `weekly-2026-09-28-g2` ("Explaining an experimental figure") | 张鳐, 吴衍标 |
-| `/game/title-abstract` | group 1 2026-10-26, `weekly-2026-10-26` ("Writing a paper title and abstract for your research project") | 崔玉帅, 吴衍标 |
+| `/game/first-lesson` | group 2 lesson 1, `weekly-2026-09-28-g2` ("Explaining an experimental figure") | 2 allow-listed learners |
+| `/game/title-abstract` | group 1 2026-10-26, `weekly-2026-10-26` ("Writing a paper title and abstract for your research project") | 2 allow-listed learners |
+| `/game/last-week` | group 1 2026-11-09, `weekly-2026-11-09` ("Explaining an experimental figure") | 2 allow-listed learners |
 
 Each page serves the app shell to its allow-listed session and to anonymous
 visitors. A visitor without a session gets a blank page and the sign-in modal —
@@ -181,10 +187,12 @@ page is still redirected to `/leaderboard`. The lesson paints only once
 is gated on its own.
 
 Access follows the teacher-console contract, with one allow-list per page:
-`CATCHUP_OPEN_IDS` for `/game/first-lesson` and `TITLE_ABSTRACT_OPEN_IDS` for
-`/game/title-abstract` (comma-separated openIds). Each is authoritative once
-non-empty; until then the built-in names grant access and every login logs
-`[catchup-enroll]` or `[title-abstract-enroll]` with the openId to enroll. The
+`CATCHUP_OPEN_IDS` for `/game/first-lesson`, `TITLE_ABSTRACT_OPEN_IDS` for
+`/game/title-abstract`, and `LAST_WEEK_OPEN_IDS` for `/game/last-week`
+(comma-separated openIds). Each is authoritative once non-empty; until then the
+deployment-local `CATCHUP_NAMES`, `TITLE_ABSTRACT_NAMES`, or `LAST_WEEK_NAMES`
+list grants access and every login logs `[catchup-enroll]`,
+`[title-abstract-enroll]`, or `[last-week-enroll]` with the openId to enroll. The
 `challengeId` parameter on `GET /api/game/challenge` and
 `POST /api/game/question` is rejected for every other session and for a session
 trying to reach the other page's week, and each answer is stored under that
@@ -213,8 +221,11 @@ The evaluator therefore uses different evidence for different dimensions:
 
 - Grammar, vocabulary, coherence, and task relevance primarily use the transcript.
 - Fluency and pacing use the transcript plus speaking-rate and pause metrics.
-- Visual delivery uses sampled video frames. It is excluded and reweighted when
-  usable audio exists but no video picture is available.
+- Visual delivery uses sampled video frames as a deliberately lenient presence
+  check: a visible, reasonably centred learner behaving normally scores in the
+  80s, and scores below 70 are reserved for material failures such as the face
+  being absent, obscured, or the camera pointing away. It is excluded and
+  reweighted when usable audio exists but no video picture is available.
 - Pronunciation/intelligibility is currently inferred from transcription
   reliability and intelligibility clues. The scoring model does not receive the
   original audio, so this is not a phoneme-level acoustic pronunciation test.
@@ -533,3 +544,7 @@ in shared `monitor.env`; retain application credentials in the original shared
 environment. The admin dashboard includes monitor health and delivery status.
 See [resource alert operations](docs/resource-alerts.md) and
 [deployment validation](docs/resource-alert-validation.md).
+
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).

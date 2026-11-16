@@ -8,7 +8,8 @@ const crypto = require("node:crypto");
 const data = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-review-"));
 Object.assign(process.env, { NODE_ENV: "test", DATA_DIR: data, QUEUE_ENABLED: "true",
   SESSION_SECRET: "review-test-session", DINGTALK_CLIENT_ID: "test", DINGTALK_CLIENT_SECRET: "test",
-  DINGTALK_CORP_ID: "test", DINGTALK_ALERT_ROBOT_CODE: "", DINGTALK_ALERT_USER_ID: "" });
+  DINGTALK_CORP_ID: "test", DINGTALK_ALERT_ROBOT_CODE: "", DINGTALK_ALERT_USER_ID: "",
+  INVITATION_ADMIN_NAMES: "Admin User,Teacher Beta,Teacher Alpha,Inviter Admin", INVITER_OPEN_IDS: "" });
 const { app, testHelpers } = require("../src/app");
 const config = require("../src/config");
 const { appendJsonLine, readJsonLines } = require("../src/storage");
@@ -173,13 +174,13 @@ test("in-app and existing signed sessions can manage their own invitations", asy
   const manage = owner => fetch(base + "/api/invitation-codes", {
     method: "POST",
     headers: {
-      Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId: owner, name: "王旭东" })}`,
+      Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId: owner, name: "Teacher Alpha" })}`,
       "X-Expected-Owner": owner,
     },
   });
   const listMine = owner => fetch(base + "/api/invitation-codes", {
     headers: {
-      Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId: owner, name: "王旭东" })}`,
+      Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId: owner, name: "Teacher Alpha" })}`,
       "X-Expected-Owner": owner,
     },
   });

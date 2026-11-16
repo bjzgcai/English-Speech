@@ -60,7 +60,7 @@ const dimensionDetails = {
   "Coherence / task relevance":
     "Measures how clearly the answer is organized, whether ideas connect logically, and whether the response directly addresses the question.",
   "Visual delivery":
-    "Measures camera-facing communication cues such as posture, eye contact, facial engagement, and overall professional presence during the spoken answer.",
+    "Checks basic on-camera presence: whether you are visible, reasonably centred, and not materially obstructed. This standard is deliberately lenient; neutral expression, brief glances, and ordinary movement are not penalized.",
 };
 const profileForm = document.querySelector("#profileForm");
 const nameInput = document.querySelector("#name");
@@ -1549,13 +1549,21 @@ const PRIVATE_GAME_ROUTES = Object.freeze({
     label: "Make-up lesson",
     standingsLabel: "View lesson 1 standings",
   }),
-  // Group 1's 2026-10-26 paper title/abstract task, which 崔玉帅 and 吴衍标
-  // play; their scores belong on that board.
+  // Group 1's 2026-10-26 paper title/abstract task, which the allow-listed
+  // learner plays; that score belongs on this board.
   "/game/title-abstract": Object.freeze({
     group: "g1",
     challengeId: "weekly-2026-10-26",
     label: "Special lesson",
     standingsLabel: "View this week's standings",
+  }),
+  // Group 1's 2026-11-09 "Explaining an experimental figure" week, which the
+  // allow-listed learner makes up; that score belongs on this board.
+  "/game/last-week": Object.freeze({
+    group: "g1",
+    challengeId: "weekly-2026-11-09",
+    label: "Make-up lesson",
+    standingsLabel: "View last week's standings",
   }),
 });
 

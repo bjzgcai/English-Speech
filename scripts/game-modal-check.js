@@ -33,6 +33,12 @@ Object.assign(process.env, {
   DINGTALK_CLIENT_SECRET: 'test',
   DINGTALK_CORP_ID: 'test',
   APP_BASE_URL: '',
+  CATCHUP_NAMES: 'Catchup Learner,Admin User',
+  TITLE_ABSTRACT_NAMES: 'Title Learner,Admin User',
+  LAST_WEEK_NAMES: 'Last Week Learner,Admin User',
+  CATCHUP_OPEN_IDS: '',
+  TITLE_ABSTRACT_OPEN_IDS: '',
+  LAST_WEEK_OPEN_IDS: '',
 });
 const { app, testHelpers } = require('../src/app');
 
@@ -70,6 +76,11 @@ const PRIVATE_PAGE_EXPECTATIONS = Object.freeze({
     topic: 'Writing a paper title and abstract for your research project',
     weekLabel: /Special lesson/,
     standingsHref: '/leaderboard?group=g1&challengeId=weekly-2026-10-26',
+  },
+  '/game/last-week': {
+    topic: 'Explaining an experimental figure',
+    weekLabel: /Make-up lesson/,
+    standingsHref: '/leaderboard?group=g1&challengeId=weekly-2026-11-09',
   },
 });
 
@@ -249,9 +260,6 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
     `${label}: the duplicate game-overview question is still rendered`);
   if (route === '/game' || privateExpectation) {
     const expectedPrompt = GROUP_ONE_REQUIREMENT_PROMPTS[structuredQuestion.title];
-    if (route === '/game') {
-      assert.ok(expectedPrompt, `${label}: unexpected current Group 1 task: ${structuredQuestion.title}`);
-    }
     if (expectedPrompt) {
       assert.equal(structuredQuestion.requirementSections, expectedPrompt.sections,
         `${label}: the writing requirements are not split into readable cards`);
@@ -263,6 +271,9 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
         `${label}: the structured paper-writing title is still oversized`);
       assert.equal(structuredQuestion.promptOverflow, false,
         `${label}: the requirement cards overflow their container`);
+    } else if (route === '/game') {
+      assert.equal(structuredQuestion.requirementSections, 0,
+        `${label}: unexpected requirement cards for ${structuredQuestion.title}`);
     }
   }
   if (route === '/game?group=g2') {
@@ -474,13 +485,17 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
       title: document.querySelector('#prepareModalTitle').textContent.trim(),
     }));
     const expectedPrompt = GROUP_ONE_REQUIREMENT_PROMPTS[requirementPrompt.title];
-    assert.ok(expectedPrompt, `${label}: unexpected current Group 1 task: ${requirementPrompt.title}`);
-    assert.equal(requirementPrompt.sections, expectedPrompt.sections,
-      `${label}: the countdown lost the requirement-card structure`);
-    assert.equal(requirementPrompt.items, expectedPrompt.items,
-      `${label}: the countdown lost a current writing requirement`);
-    assert.equal(requirementPrompt.listTag, expectedPrompt.ordered ? 'OL' : 'UL',
-      `${label}: the countdown requirement list type is wrong`);
+    if (expectedPrompt) {
+      assert.equal(requirementPrompt.sections, expectedPrompt.sections,
+        `${label}: the countdown lost the requirement-card structure`);
+      assert.equal(requirementPrompt.items, expectedPrompt.items,
+        `${label}: the countdown lost a current writing requirement`);
+      assert.equal(requirementPrompt.listTag, expectedPrompt.ordered ? 'OL' : 'UL',
+        `${label}: the countdown requirement list type is wrong`);
+    } else {
+      assert.equal(requirementPrompt.sections, 0,
+        `${label}: unexpected countdown requirement cards for ${requirementPrompt.title}`);
+    }
   }
   if (wantCamera) {
     assertVisible('camera preview', countdown.previewWrap);
@@ -529,15 +544,20 @@ async function run(browser, base, route, width, mode, sessionName = 'Modal Teste
   if (route === '/game') {
     const recordingTitle = (await page.locator('#prepareModalTitle').textContent()).trim();
     const expectedPrompt = GROUP_ONE_REQUIREMENT_PROMPTS[recordingTitle];
-    assert.ok(expectedPrompt, `${label}: unexpected current Group 1 task: ${recordingTitle}`);
-    assert.equal(await page.locator('#recorderModalSlot #questionPrompt .prompt-requirement-card').count(), expectedPrompt.sections,
-      `${label}: the recording view lost the requirement-card structure`);
-    assert.deepEqual(
-      await page.locator('#recorderModalSlot #questionPrompt .prompt-requirement-list')
-        .evaluateAll(nodes => nodes.map(node => node.tagName)),
-      Array(expectedPrompt.sections).fill(expectedPrompt.ordered ? 'OL' : 'UL'),
-      `${label}: the recording requirement list type is wrong`,
-    );
+    const recordingCards = await page.locator('#recorderModalSlot #questionPrompt .prompt-requirement-card').count();
+    if (expectedPrompt) {
+      assert.equal(recordingCards, expectedPrompt.sections,
+        `${label}: the recording view lost the requirement-card structure`);
+      assert.deepEqual(
+        await page.locator('#recorderModalSlot #questionPrompt .prompt-requirement-list')
+          .evaluateAll(nodes => nodes.map(node => node.tagName)),
+        Array(expectedPrompt.sections).fill(expectedPrompt.ordered ? 'OL' : 'UL'),
+        `${label}: the recording requirement list type is wrong`,
+      );
+    } else {
+      assert.equal(recordingCards, 0,
+        `${label}: unexpected recording requirement cards for ${recordingTitle}`);
+    }
   }
   assertVisible('question block', recording.recorder.question);
   assertVisible('recorder controls', recording.recorder.actions);
@@ -641,14 +661,16 @@ async function main() {
     await run(browser, base, '/game?group=g2', 928, 'audio', 'Modal Tester', 966);
     // The private pages run the same recorder, but only for the learners they
     // are assigned to (the name fallback each gate honours).
-    for (const learner of ['张鳐', '吴衍标']) {
+    for (const learner of ['Catchup Learner', 'Admin User']) {
       await run(browser, base, '/game/first-lesson', 1440, 'camera', learner);
     }
-    await run(browser, base, '/game/first-lesson', 1440, 'audio', '张鳐');
-    await run(browser, base, '/game/title-abstract', 1440, 'camera', '崔玉帅');
-    await run(browser, base, '/game/title-abstract', 1440, 'audio', '吴衍标');
+    await run(browser, base, '/game/first-lesson', 1440, 'audio', 'Catchup Learner');
+    await run(browser, base, '/game/title-abstract', 1440, 'camera', 'Title Learner');
+    await run(browser, base, '/game/title-abstract', 1440, 'audio', 'Admin User');
+    await run(browser, base, '/game/last-week', 1440, 'camera', 'Last Week Learner');
+    await run(browser, base, '/game/last-week', 1440, 'audio', 'Admin User');
     await checkCameraPreferenceRestoration(browser, base);
-    console.log('\nOK: the prepare modal renders on /game, /examine and both private pages (/game/first-lesson, /game/title-abstract); Groups 1/2 force camera and Group 3 keeps both input modes');
+    console.log('\nOK: the prepare modal renders on /game, /examine and the private pages (/game/first-lesson, /game/title-abstract, /game/last-week); Groups 1/2 force camera and Group 3 keeps both input modes');
   } finally {
     await browser.close();
     server.close();

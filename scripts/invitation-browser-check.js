@@ -5,7 +5,7 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 const { listenForTest } = require('./test-http');
 const data = fs.mkdtempSync(path.join(os.tmpdir(), 'invitation-browser-'));
-Object.assign(process.env, { NODE_ENV: 'test', DATA_DIR: data, QUEUE_ENABLED: 'false', SESSION_SECRET: 'invitation-browser-secret', COOKIE_SECURE: 'false', DINGTALK_CLIENT_ID: 'test', DINGTALK_CLIENT_SECRET: 'test', DINGTALK_CORP_ID: 'test', APP_BASE_URL: '' });
+Object.assign(process.env, { NODE_ENV: 'test', DATA_DIR: data, QUEUE_ENABLED: 'false', SESSION_SECRET: 'invitation-browser-secret', COOKIE_SECURE: 'false', DINGTALK_CLIENT_ID: 'test', DINGTALK_CLIENT_SECRET: 'test', DINGTALK_CORP_ID: 'test', APP_BASE_URL: '', INVITATION_ADMIN_NAMES: 'Admin User,Teacher Beta,Teacher Alpha,Inviter Admin', INVITER_OPEN_IDS: '' });
 const { app, testHelpers } = require('../src/app');
 const occupiedMessage = "Your invitation code is occupied. Ask Beijing zhongguancun Academy's friend for one exclusive invitation code";
 
@@ -82,7 +82,7 @@ async function main() {
 
       // Owner: generate codes, share the QR, and see the name bound to each used code.
       const owner = await open(browser, viewport);
-      await owner.context.addCookies([{ name: 'englisheval_session', value: testHelpers.createSessionToken({ openId: `inviter-${width}`, name: '符积高' }), url: base }]);
+      await owner.context.addCookies([{ name: 'englisheval_session', value: testHelpers.createSessionToken({ openId: `inviter-${width}`, name: 'Inviter Admin' }), url: base }]);
       await owner.page.goto(base + '/invitation-codes');
       const scanned = await createCode(owner.page);
       const spare = await createCode(owner.page, scanned);

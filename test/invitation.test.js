@@ -10,14 +10,14 @@ const data = fs.mkdtempSync(path.join(os.tmpdir(), 'invitation-test-'));
 // The redeem throttle budgets are widened here: these tests exercise claim
 // semantics from a single address and would otherwise trip the limiter
 // mid-suite. test/invitation-throttle.test.js covers the limiter itself.
-Object.assign(process.env, { NODE_ENV: 'test', DATA_DIR: data, QUEUE_ENABLED: 'false', DINGTALK_CLIENT_ID: 'test', DINGTALK_CLIENT_SECRET: 'test', DINGTALK_CORP_ID: 'test', SESSION_SECRET: 'invitation-test-secret', COOKIE_SECURE: 'false', APP_BASE_URL: 'https://english.example.test/service/', INVITATION_REDEEM_IP_LIMIT: '10000', INVITATION_REDEEM_NAME_LIMIT: '10000' });
+Object.assign(process.env, { NODE_ENV: 'test', DATA_DIR: data, QUEUE_ENABLED: 'false', DINGTALK_CLIENT_ID: 'test', DINGTALK_CLIENT_SECRET: 'test', DINGTALK_CORP_ID: 'test', SESSION_SECRET: 'invitation-test-secret', COOKIE_SECURE: 'false', APP_BASE_URL: 'https://english.example.test/service/', INVITATION_REDEEM_IP_LIMIT: '10000', INVITATION_REDEEM_NAME_LIMIT: '10000', INVITATION_ADMIN_NAMES: 'Admin User,Teacher Beta,Teacher Alpha,Inviter Admin', INVITER_OPEN_IDS: '' });
 const { app, testHelpers } = require('../src/app');
 const { invitationsMetadataFile } = require('../src/config');
 const { readJsonLines } = require('../src/storage');
 let server, base;
 test.before(async () => { server = await listenForTest(app); base = `http://127.0.0.1:${server.address().port}`; });
 test.after(async () => { await new Promise(resolve => server.close(resolve)); fs.rmSync(data, { recursive: true, force: true }); });
-function member(owner = 'inviter', name = '王旭东') { return { Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId: owner, name })}`, 'X-Expected-Owner': owner }; }
+function member(owner = 'inviter', name = 'Teacher Alpha') { return { Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId: owner, name })}`, 'X-Expected-Owner': owner }; }
 async function issue() { const response = await fetch(base + '/api/invitation-codes', { method: 'POST', headers: member() }); assert.equal(response.status, 201); return response.json(); }
 function campaignBody(overrides = {}) {
   return {
@@ -204,7 +204,7 @@ test('a campaign owns one reusable QR and only its creator can inspect registrat
   assert.equal((await fetch(base + `/api/invitation-campaigns/${record.id}/accounts`, { headers: member('other') })).status, 404);
 });
 test('only the designated DingTalk administrators may open invitation management', async () => {
-  for (const [index, name] of ['吴衍标', '邹欣', '王旭东', '符积高'].entries()) {
+  for (const [index, name] of ['Admin User', 'Teacher Beta', 'Teacher Alpha', 'Inviter Admin'].entries()) {
     const headers = member(`admin-${index}`, name);
     assert.equal((await fetch(base + '/api/invitation-campaigns', { headers })).status, 200, name);
     assert.equal((await fetch(base + '/invitation-codes', { headers, redirect: 'manual' })).status, 200, name);

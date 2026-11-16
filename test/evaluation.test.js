@@ -118,6 +118,27 @@ test("standalone speech prompt scores consistency instead of task relevance", ()
   assert.match(prompt, /more clearly structured version/);
 });
 
+test("visual delivery prompt is lenient for ordinary on-camera behaviour", () => {
+  const prompt = testHelpers.buildEvaluationPrompt({
+    profile: {},
+    question: { question: "Introduce your research." },
+    transcript: "I study how models behave under distribution shift.",
+    audioMetrics: { durationSeconds: 85 },
+    frameCount: 17,
+    evaluationMode: "question-answer",
+  });
+
+  assert.match(prompt, /sparse still frames, not continuous video/);
+  assert.match(prompt, /default to about 85/);
+  assert.match(prompt, /must score at least 80/);
+  assert.match(prompt, /must not reduce the score below 80/);
+  assert.match(prompt, /Score below 70 only for a material failure/);
+  assert.match(prompt, /looking at the task prompt, task figure, or notes/);
+  assert.match(prompt, /Never state or imply that the learner is reading from a script/);
+  assert.match(prompt, /sparse still frames cannot establish this/);
+  assert.match(prompt, /camera below eye level is a setup issue/);
+});
+
 test("normalizes a transcript-grounded improved answer only for scorable speech", () => {
   const improvedAnswer = [
     "I organize my mornings by preparing the night before.",
@@ -157,6 +178,38 @@ test("audio-only evaluation excludes visual delivery from the weighted total", (
   assert.equal(evaluation.overallScore, 80);
   assert.equal(evaluation.rubric.visualDelivery.score, null);
   assert.equal(evaluation.rubric.visualDelivery.available, false);
+});
+
+test("visual delivery feedback drops inferences the still frames cannot support", () => {
+  const evaluation = testHelpers.normalizeEvaluation({
+    rubric: {
+      visualDelivery: {
+        score: 85,
+        feedback:
+          "You are visible and reasonably centered. Your gaze is directed downwards, suggesting you are reading notes or a script, which impacts engagement. Maintain eye contact with the camera.",
+      },
+    },
+  });
+
+  assert.equal(evaluation.rubric.visualDelivery.score, 85);
+  assert.doesNotMatch(evaluation.rubric.visualDelivery.feedback, /script|reading notes|eye contact/i);
+  assert.match(evaluation.rubric.visualDelivery.feedback, /visible/i);
+});
+
+test("visual delivery keeps neutral framing feedback", () => {
+  const evaluation = testHelpers.normalizeEvaluation({
+    rubric: {
+      visualDelivery: {
+        score: 70,
+        feedback: "You were visible, but the face was partly cut off by the frame.",
+      },
+    },
+  });
+
+  assert.equal(
+    evaluation.rubric.visualDelivery.feedback,
+    "You were visible, but the face was partly cut off by the frame.",
+  );
 });
 
 test("non-verbal or missing speech receives a deterministic zero score", () => {

@@ -591,16 +591,29 @@
       "understaffed、narrowed the scope 这类精准用词还原了真实情况。",
 
     // Methodology — visual delivery examples
-    "Described behaviour: reads from off-camera notes, looks down for most of the answer, and the framing cuts off the top of the head.":
-      "行为描述：照着画面外的稿子念，大部分时间低头，构图还切掉了头顶。",
-    "The audience sees a reader, not a speaker.": "观众看到的是朗读者，不是表达者。",
-    "Described behaviour: finds the camera at the start and the end, but drifts back to the notes and sways through the middle.":
-      "行为描述：开头和结尾看向镜头，中间又回到稿子上，身体来回晃动。",
-    "Contact is intermittent, so presence comes and goes.": "目光接触时有时无，存在感也就断断续续。",
-    "Described behaviour: holds eye contact with the lens, keeps a stable upright frame, and lets facial expression follow the message.":
-      "行为描述：目光稳定看向镜头，坐姿端正，表情跟随内容变化。",
-    "Steady framing and eye contact keep attention on the message.":
-      "稳定的构图与目光接触，让注意力留在信息本身。",
+    "Checks basic on-camera presence: whether you are visible, reasonably centred, and not materially obstructed. This standard is deliberately lenient and is not a test of acting, smiling, or perfect posture.":
+      "检查基本的镜头呈现：是否可见、大致居中、没有被明显遮挡。标准刻意宽松，不考表演、微笑或完美姿势。",
+    "Checks basic on-camera presence: whether you are visible, reasonably centred, and not materially obstructed. This standard is deliberately lenient; neutral expression, brief glances, and ordinary movement are not penalized.":
+      "检查基本的镜头呈现：是否可见、大致居中、没有被明显遮挡。标准刻意宽松；表情平淡、短暂移开视线和普通动作都不会被扣分。",
+    "Your camera checks that you are visible and reasonably framed. Ordinary movement, neutral expression, and brief glances are fine.":
+      "镜头只用来确认你可见且大致在画面中。普通动作、表情平淡、偶尔移开视线都没有问题。",
+    "Visual delivery is only 10% because it is a presence check, not the substance of the answer. Being visible and normally engaged earns a high score; a neutral face, a glance at notes or the prompt, or ordinary movement will not lower it.":
+      "镜头表达只占 10%，因为它是存在感检查，不是回答的实质内容。只要可见并正常参与就能得高分；表情平淡、看一眼笔记或题目、普通动作都不会降低分数。",
+    "Material problem": "明显问题",
+    "Described behaviour: the camera points away from the learner, or the face is out of frame or obscured for most of the answer.":
+      "行为描述：镜头没有对准学习者，或大部分时间里脸不在画面中或被遮挡。",
+    "The speaker cannot be seen, so the presence check cannot be completed.":
+      "看不到说话者，因此无法完成存在感检查。",
+    "Limited presence": "存在感受限",
+    "Described behaviour: the learner is visible, but the face is partly cut off or persistently turned away from the camera.":
+      "行为描述：学习者可见，但脸部被部分裁切，或长时间背向镜头。",
+    "The learner is present, but the framing or gaze noticeably limits the check.":
+      "学习者虽然在画面中，但构图或视线明显影响了检查。",
+    "Normal presence": "正常呈现",
+    "Described behaviour: the learner is visible, reasonably centred, and normally engaged; an occasional glance at notes or the prompt is fine.":
+      "行为描述：学习者可见、大致居中、正常参与；偶尔看一眼笔记或题目没有问题。",
+    "Basic on-camera presence is met, so the score stays high.":
+      "满足基本镜头呈现要求，因此保持高分。",
 
     // Methodology — coherence examples
     "I like sports. Sports is good. Also I have many thing. Yes that's all.":

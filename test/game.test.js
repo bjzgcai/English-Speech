@@ -234,7 +234,7 @@ test("schedule-era legacy challenge ids still appear on their canonical board", 
       {
         id: "legacy-1",
         openId: "user-a",
-        user: { name: "张鳐" },
+        user: { name: "Catchup Learner" },
         finishedAt: "2026-10-11T23:27:48.005Z",
         question: { challengeId: "weekly-2026-10-12-g2" },
         evaluation: { status: "completed", overallScore: 69 },
@@ -244,7 +244,7 @@ test("schedule-era legacy challenge ids still appear on their canonical board", 
     null,
   );
   assert.equal(leaderboard.participantCount, 1);
-  assert.equal(leaderboard.entries[0].name, "张鳐");
+  assert.equal(leaderboard.entries[0].name, "Catchup Learner");
 
   assert.equal(matchesChallengeId(lesson2, "weekly-2026-10-13-g2"), true);
   assert.equal(matchesChallengeId(lesson2, "weekly-2026-10-12-g2"), true);
@@ -396,6 +396,31 @@ test("parallel group 2 walks the same topic pool in the schedule's chapter order
   assert.equal(launch.instructor, "Wang Xudong");
 });
 
+test("group 1 follows the parallel class chapter and teacher order", () => {
+  const rotation = Array.from({ length: 15 }, (_, slot) => challengeForIndex(slot, "g1"));
+  assert.deepEqual(
+    rotation.map((challenge) => challenge.unitNumber),
+    [1, 1, 2, 2, 3, 4, 4, 7, 7, 6, 6, 5, 5, 8, 8],
+  );
+  assert.deepEqual(
+    rotation.map((challenge) => challenge.instructor),
+    [
+      "Liu Junli", "Liu Junli", "Liu Junli", "He Yuan", "He Yuan",
+      "Wang Xudong", "Wang Xudong", "Wang Xudong", "Wang Xudong",
+      "Gao Kun", "Gao Kun", "Hu Chen", "Hu Chen",
+      "Course faculty", "Course faculty",
+    ],
+  );
+
+  // The Chapter 7 pair now precedes Chapter 6 and Chapter 5.
+  assert.equal(challengeForIndex(7, "g1").title, "Three-minute research statement around one figure");
+  assert.equal(challengeForIndex(8, "g1").title, "Handling hard questions");
+  assert.equal(challengeForIndex(9, "g1").title, "Two-minute group-meeting update");
+  assert.equal(challengeForIndex(10, "g1").title, "Title and abstract information structure");
+  assert.equal(challengeForIndex(11, "g1").title, "Stating contributions without overclaiming");
+  assert.equal(challengeForIndex(12, "g1").title, "Managing the boundaries of your results");
+});
+
 test("academic groups permanently omit Nov 9-16 and shift later topics one week earlier", () => {
   const groupOneTitles = Array.from(
     { length: 15 },
@@ -503,8 +528,8 @@ test("the shared three-minute research statement lands in g2 lesson 3", () => {
   assert.equal(challenge.followUp, "What is the one sentence you want remembered?");
 
   // The topic is shared by the parallel course, so group 1 receives it later.
-  assert.equal(challengeForIndex(11, "g1").title, challenge.title);
-  assert.equal(challengeForIndex(11, "g1").requiresFigureUpload, true);
+  assert.equal(challengeForIndex(7, "g1").title, challenge.title);
+  assert.equal(challengeForIndex(7, "g1").requiresFigureUpload, true);
   assert.equal(challengeQuestion(challenge).requiresFigureUpload, true);
 });
 

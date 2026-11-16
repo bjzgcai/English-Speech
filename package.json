@@ -1,5 +1,5 @@
 {
-  "name": "oscanner-eng",
+  "name": "english-speech",
   "version": "1.0.0",
   "description": "OScanner-Eng English evaluation question generator and answer recorder.",
   "main": "server.js",
@@ -14,7 +14,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "type": "commonjs",
   "engines": {
     "node": ">=22.16.0"

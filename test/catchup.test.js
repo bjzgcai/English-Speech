@@ -1,4 +1,4 @@
-// 张鳐 joined the course late and still has to answer group 2's lesson 1, which
+// Catchup Learner joined the course late and still has to answer group 2's lesson 1, which
 // the normal /game page cannot produce because it always serves the current
 // week. These tests pin the private make-up page to that one challenge, prove
 // the gate (openId allow-list with a transitional name fallback), and prove the
@@ -20,6 +20,12 @@ Object.assign(process.env, {
   DINGTALK_CLIENT_ID: "test",
   DINGTALK_CLIENT_SECRET: "test",
   DINGTALK_CORP_ID: "test",
+  CATCHUP_NAMES: "Catchup Learner,Admin User",
+  TITLE_ABSTRACT_NAMES: "Title Learner,Admin User",
+  LAST_WEEK_NAMES: "Last Week Learner,Admin User",
+  CATCHUP_OPEN_IDS: "",
+  TITLE_ABSTRACT_OPEN_IDS: "",
+  LAST_WEEK_OPEN_IDS: "",
 });
 const { app, testHelpers } = require("../src/app");
 const config = require("../src/config");
@@ -27,12 +33,15 @@ const { appendJsonLine, readJsonLines } = require("../src/storage");
 const game = require("../src/game");
 
 const PINNED_ID = "weekly-2026-09-28-g2";
-const LEARNER_NAME = "张鳐";
-// 吴衍标 plays the same make-up lesson, so the page answers to both names.
-const SECOND_LEARNER_NAME = "吴衍标";
+const LEARNER_NAME = "Catchup Learner";
+// Admin User plays the same make-up lesson, so the page answers to both names.
+const SECOND_LEARNER_NAME = "Admin User";
 // The second private page pins group 1's 2026-10-26 paper title/abstract task.
 const TITLE_ABSTRACT_ID = "weekly-2026-10-26";
-const TITLE_ABSTRACT_NAME = "崔玉帅";
+const TITLE_ABSTRACT_NAME = "Title Learner";
+// The third private page pins group 1's week of 2026-11-09 (last week).
+const LAST_WEEK_ID = "weekly-2026-11-09";
+const LAST_WEEK_NAME = "Last Week Learner";
 
 let server;
 let base;
@@ -247,8 +256,8 @@ test("an enrolled openId wins over the display name once CATCHUP_OPEN_IDS is set
     process.env.CATCHUP_OPEN_IDS = "enrolled-catchup-openid";
     const { testHelpers } = require(${JSON.stringify(path.join(__dirname, "..", "src", "app"))});
     console.log(JSON.stringify({
-      renamed: testHelpers.canAccessCatchup({ openId: "someone-else", name: "张鳐", identityType: "dingtalk" }),
-      renamedSecond: testHelpers.canAccessCatchup({ openId: "someone-else", name: "吴衍标", identityType: "dingtalk" }),
+      renamed: testHelpers.canAccessCatchup({ openId: "someone-else", name: "Catchup Learner", identityType: "dingtalk" }),
+      renamedSecond: testHelpers.canAccessCatchup({ openId: "someone-else", name: "Admin User", identityType: "dingtalk" }),
       enrolled: testHelpers.canAccessCatchup({ openId: "enrolled-catchup-openid", name: "随便", identityType: "dingtalk" }),
       anonymous: testHelpers.canAccessCatchup(null),
     }));
@@ -287,7 +296,7 @@ test("the title/abstract page is served to its two learners and redirected for e
   assert.equal(other.status, 302);
   assert.equal(other.headers.get("location"), "/leaderboard");
 
-  for (const name of [TITLE_ABSTRACT_NAME, "吴衍标"]) {
+  for (const name of [TITLE_ABSTRACT_NAME, "Admin User"]) {
     const response = await fetch(`${base}/game/title-abstract`, {
       headers: sessionHeaders(name),
       redirect: "manual",
@@ -322,7 +331,7 @@ test("the title/abstract week is gated per page and cannot be crossed", async ()
 });
 
 test("the title/abstract learners generate questions only for their pinned week", async () => {
-  for (const name of [TITLE_ABSTRACT_NAME, "吴衍标"]) {
+  for (const name of [TITLE_ABSTRACT_NAME, "Admin User"]) {
     const learner = crypto.randomUUID();
     await fetch(`${base}/api/privacy-consent`, {
       method: "POST",
@@ -383,9 +392,13 @@ test("/api/me lists only the private pages a session may open", async () => {
   assert.equal(firstLesson.catchupAccess, true);
 
   const both = await (await fetch(`${base}/api/me`, {
-    headers: sessionHeaders("吴衍标"),
+    headers: sessionHeaders("Admin User"),
   })).json();
-  assert.deepEqual(both.privateGameRoutes, ["/game/first-lesson", "/game/title-abstract"]);
+  assert.deepEqual(both.privateGameRoutes, [
+    "/game/first-lesson",
+    "/game/title-abstract",
+    "/game/last-week",
+  ]);
 
   const other = await (await fetch(`${base}/api/me`, { headers: sessionHeaders("陈云") })).json();
   assert.deepEqual(other.privateGameRoutes, []);
@@ -400,10 +413,10 @@ test("TITLE_ABSTRACT_OPEN_IDS replaces the name fallback once set", async () => 
     process.env.TITLE_ABSTRACT_OPEN_IDS = "enrolled-title-abstract-openid";
     const { testHelpers } = require(${JSON.stringify(path.join(__dirname, "..", "src", "app"))});
     console.log(JSON.stringify({
-      named: testHelpers.canAccessTitleAbstract({ openId: "someone-else", name: "崔玉帅", identityType: "dingtalk" }),
-      namedSecond: testHelpers.canAccessTitleAbstract({ openId: "someone-else", name: "吴衍标", identityType: "dingtalk" }),
+      named: testHelpers.canAccessTitleAbstract({ openId: "someone-else", name: "Title Learner", identityType: "dingtalk" }),
+      namedSecond: testHelpers.canAccessTitleAbstract({ openId: "someone-else", name: "Admin User", identityType: "dingtalk" }),
       enrolled: testHelpers.canAccessTitleAbstract({ openId: "enrolled-title-abstract-openid", name: "随便", identityType: "dingtalk" }),
-      firstLessonGate: testHelpers.canAccessCatchup({ openId: "someone-else", name: "崔玉帅", identityType: "dingtalk" }),
+      firstLessonGate: testHelpers.canAccessCatchup({ openId: "someone-else", name: "Title Learner", identityType: "dingtalk" }),
     }));
   `;
   const stdout = execFileSync("node", ["-e", probe], {
@@ -415,4 +428,125 @@ test("TITLE_ABSTRACT_OPEN_IDS replaces the name fallback once set", async () => 
   assert.equal(verdict.namedSecond, false, "the second name is not a back door once openIds are enrolled");
   assert.equal(verdict.enrolled, true, "the enrolled openId passes regardless of display name");
   assert.equal(verdict.firstLessonGate, false, "the two private pages keep separate allow-lists");
+});
+
+test("the last-week page pins group 1's week of 2026-11-09", () => {
+  const pinned = testHelpers.lastWeekChallenge;
+  assert.equal(pinned.id, LAST_WEEK_ID);
+  assert.equal(pinned.group, "g1");
+  assert.equal(pinned.lessonNumber, 6);
+  assert.equal(pinned.instructor, "Wang Xudong");
+  assert.equal(pinned.title, "Explaining an experimental figure");
+  assert.equal(pinned.requiresCamera, true);
+  assert.equal(game.matchesChallengeId(pinned, LAST_WEEK_ID), true);
+});
+
+test("the last-week page is served to Last Week Learner and Admin User only", async () => {
+  const anonymous = await fetch(`${base}/game/last-week`, { redirect: "manual" });
+  assert.equal(anonymous.status, 200);
+  assert.match(await anonymous.text(), /id="gameTopicTitle"/);
+
+  const other = await fetch(`${base}/game/last-week`, {
+    headers: sessionHeaders("陈云"),
+    redirect: "manual",
+  });
+  assert.equal(other.status, 302);
+  assert.equal(other.headers.get("location"), "/leaderboard");
+
+  for (const name of [LAST_WEEK_NAME, "Admin User"]) {
+    const response = await fetch(`${base}/game/last-week`, {
+      headers: sessionHeaders(name),
+      redirect: "manual",
+    });
+    assert.equal(response.status, 200, name);
+  }
+});
+
+test("the last-week challenge is gated, cannot be crossed, and is stored on its own board", async () => {
+  const pinnedQuery = `group=g1&challengeId=${LAST_WEEK_ID}`;
+  assert.equal((await fetch(`${base}/api/game/challenge?${pinnedQuery}`)).status, 403);
+  assert.equal(
+    (await fetch(`${base}/api/game/challenge?${pinnedQuery}`, { headers: sessionHeaders("陈云") })).status,
+    403,
+  );
+
+  const allowed = await fetch(`${base}/api/game/challenge?${pinnedQuery}`, {
+    headers: sessionHeaders(LAST_WEEK_NAME),
+  });
+  assert.equal(allowed.status, 200);
+  const payload = await allowed.json();
+  assert.equal(payload.challenge.id, LAST_WEEK_ID);
+  assert.equal(payload.group, "g1");
+  assert.equal(payload.challenge.title, "Explaining an experimental figure");
+  assert.deepEqual(payload.challenges.map((challenge) => challenge.id), [LAST_WEEK_ID]);
+
+  // Learners from the other private pages cannot borrow this week.
+  for (const name of [LEARNER_NAME, TITLE_ABSTRACT_NAME]) {
+    const crossed = await fetch(`${base}/api/game/challenge?${pinnedQuery}`, {
+      headers: sessionHeaders(name),
+    });
+    assert.equal(crossed.status, 400, name);
+  }
+
+  const learner = crypto.randomUUID();
+  await fetch(`${base}/api/privacy-consent`, {
+    method: "POST",
+    headers: mutationHeaders(LAST_WEEK_NAME, learner),
+    body: JSON.stringify({ privacyAgreed: true, sensitiveInfoAgreed: true }),
+  });
+
+  const wrongWeek = await fetch(`${base}/api/game/question`, {
+    method: "POST",
+    headers: mutationHeaders(LAST_WEEK_NAME, learner),
+    body: JSON.stringify({ group: "g1", challengeId: "weekly-2026-11-16" }),
+  });
+  assert.equal(wrongWeek.status, 400);
+
+  const created = await fetch(`${base}/api/game/question`, {
+    method: "POST",
+    headers: mutationHeaders(LAST_WEEK_NAME, learner),
+    body: JSON.stringify({ group: "g1", challengeId: LAST_WEEK_ID }),
+  });
+  assert.equal(created.status, 201);
+  const body = await created.json();
+  assert.equal(body.challenge.id, LAST_WEEK_ID);
+  assert.equal(body.question.challengeId, LAST_WEEK_ID);
+  assert.equal(body.user.openId, learner);
+
+  const persisted = readJsonLines(config.questionsMetadataFile).filter((q) => q.openId === learner);
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0].question.challengeId, LAST_WEEK_ID);
+
+  seedAnswer(learner, LAST_WEEK_NAME, 84, LAST_WEEK_ID);
+  const board = await (await fetch(`${base}/api/game/leaderboard?group=g1&challengeId=${LAST_WEEK_ID}`)).json();
+  assert.equal(board.challenge.id, LAST_WEEK_ID);
+  assert.equal(board.entries.length, 1);
+  assert.equal(board.entries[0].name, LAST_WEEK_NAME);
+  assert.equal(board.entries[0].score, 84);
+});
+
+test("LAST_WEEK_OPEN_IDS replaces the name fallback once set", async () => {
+  const { execFileSync } = require("node:child_process");
+  const probe = `
+    process.env.NODE_ENV = "test";
+    process.env.DATA_DIR = ${JSON.stringify(data)};
+    process.env.SESSION_SECRET = "last-week-openid-probe";
+    process.env.LAST_WEEK_OPEN_IDS = "enrolled-last-week-openid";
+    const { testHelpers } = require(${JSON.stringify(path.join(__dirname, "..", "src", "app"))});
+    console.log(JSON.stringify({
+      named: testHelpers.canAccessLastWeek({ openId: "someone-else", name: "Last Week Learner", identityType: "dingtalk" }),
+      namedSecond: testHelpers.canAccessLastWeek({ openId: "someone-else", name: "Admin User", identityType: "dingtalk" }),
+      enrolled: testHelpers.canAccessLastWeek({ openId: "enrolled-last-week-openid", name: "随便", identityType: "dingtalk" }),
+      titleAbstractGate: testHelpers.canAccessTitleAbstract({ openId: "someone-else", name: "Last Week Learner", identityType: "dingtalk" }),
+    }));
+  `;
+  const stdout = execFileSync("node", ["-e", probe], {
+    cwd: path.join(__dirname, ".."),
+    encoding: "utf8",
+  });
+  const verdict = JSON.parse(stdout.trim().split("\n").pop());
+  assert.equal(verdict.named, false, "a renamed profile cannot reach the last-week page");
+  assert.equal(verdict.namedSecond, false, "the second name is not a back door once openIds are enrolled");
+  assert.equal(verdict.enrolled, true, "the enrolled openId passes regardless of display name");
+  assert.equal(verdict.titleAbstractGate, false, "each private page keeps its own allow-list");
 });

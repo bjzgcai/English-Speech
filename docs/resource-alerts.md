@@ -9,7 +9,7 @@ Configuration lives in `/opt/englisheval/shared/monitor.env`. Install from
 labeled smoke-test DINGs have valid receipts. The application credentials stay in
 the existing shared environment files; never copy development credentials.
 
-The recipient is Wu Yanbiao (`<DINGTALK_USER_ID>`). The EnglishEval application and its
+The recipient is the configured on-call administrator (`<DINGTALK_USER_ID>`). The EnglishEval application and its
 configured robot code are `<DINGTALK_ROBOT_CODE>`. Only in-app DING is used.
 
 | Metric | Warning | Critical | Recovery |
