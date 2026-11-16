@@ -26,6 +26,9 @@ Object.assign(process.env, {
   CATCHUP_OPEN_IDS: "",
   TITLE_ABSTRACT_OPEN_IDS: "",
   LAST_WEEK_OPEN_IDS: "",
+  CATCHUP_UNION_IDS: "",
+  TITLE_ABSTRACT_UNION_IDS: "",
+  LAST_WEEK_UNION_IDS: "",
 });
 const { app, testHelpers } = require("../src/app");
 const config = require("../src/config");
@@ -300,6 +303,26 @@ test("a named but unenrolled visitor is denied and logs the openId once", () => 
     1,
     "the openId is logged once for enrollment",
   );
+});
+
+test("an enrolled unionId reaches a private page without the app openId", () => {
+  const { execFileSync } = require("node:child_process");
+  const probe = `
+    process.env.NODE_ENV = "test";
+    process.env.DATA_DIR = ${JSON.stringify(data)};
+    process.env.SESSION_SECRET = "catchup-unionid-probe";
+    process.env.CATCHUP_OPEN_IDS = "enrolled-catchup-openid";
+    process.env.CATCHUP_UNION_IDS = "enrolled-catchup-unionid";
+    const { testHelpers } = require(${JSON.stringify(path.join(__dirname, "..", "src", "app"))});
+    console.log(JSON.stringify({
+      union: testHelpers.canAccessCatchup({ openId: "fresh-app-openid", unionId: "enrolled-catchup-unionid", name: "随便", identityType: "dingtalk" }),
+      stranger: testHelpers.canAccessCatchup({ openId: "fresh-app-openid", unionId: "other-unionid", name: "随便", identityType: "dingtalk" }),
+    }));
+  `;
+  const stdout = execFileSync("node", ["-e", probe], { cwd: path.join(__dirname, ".."), encoding: "utf8" });
+  const verdict = JSON.parse(stdout.trim().split("\n").pop());
+  assert.equal(verdict.union, true, "the enrolled unionId passes the private-page gate");
+  assert.equal(verdict.stranger, false);
 });
 
 test("the second private page pins group 1's paper title and abstract week", () => {

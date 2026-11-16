@@ -2258,17 +2258,41 @@ app.post("/auth/logout", (_req, res) => {
   res.json({ ok: true });
 });
 
+// Allow-lists accept either the app-scoped openId or the developer-account
+// unionId. The unionId is available from both OAuth and in-app logins and can
+// be resolved through the DingTalk directory, so an account can be enrolled
+// before its first login.
+function envIdSet(...names) {
+  const values = new Set();
+  for (const name of names) {
+    for (const id of (process.env[name] || "").split(",")) {
+      const value = id.trim();
+      if (value) values.add(value);
+    }
+  }
+  return values;
+}
+function enrolledIdentityKeys(user) {
+  return [safeText(user?.openId), safeText(user?.unionId)].filter(Boolean);
+}
+function matchesEnrolledIdentity(list, user) {
+  if (!list.size) return false;
+  return enrolledIdentityKeys(user).some((key) => list.has(key));
+}
+function enrollmentIdLabel(openId, unionId) {
+  const parts = [];
+  if (openId) parts.push(`openId ${openId}`);
+  if (unionId) parts.push(`unionId ${unionId}`);
+  return parts.join(" or ");
+}
+
 // Invitation codes grant full learner access without DingTalk, so minting them
-// is restricted to designated DingTalk administrators. Stable openIds from
-// INVITER_OPEN_IDS take precedence when configured; INVITATION_ADMIN_NAMES is
-// an optional, deployment-local fallback for administrators whose openId is not
-// enrolled yet. No administrator names are built into the source.
-const inviterOpenIds = new Set(
-  (process.env.INVITER_OPEN_IDS || "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter(Boolean),
-);
+// is restricted to designated DingTalk administrators. Stable openIds and
+// unionIds from INVITER_OPEN_IDS / INVITER_UNION_IDS take precedence when
+// configured; INVITATION_ADMIN_NAMES is an optional, deployment-local fallback
+// for administrators whose stable ID is not enrolled yet. No administrator
+// names are built into the source.
+const inviterOpenIds = envIdSet("INVITER_OPEN_IDS", "INVITER_UNION_IDS");
 const invitationAdminNames = new Set(
   (process.env.INVITATION_ADMIN_NAMES || "")
     .split(",")
@@ -2276,27 +2300,28 @@ const invitationAdminNames = new Set(
     .filter(Boolean),
 );
 const invitationNameFallbackSeen = new Set();
-function logInvitationEnrollment(kind, name, openId) {
-  const key = `${kind}:${openId}:${name}`;
+function logInvitationEnrollment(kind, name, openId, unionId) {
+  const key = `${kind}:${openId}:${unionId}:${name}`;
   if (invitationNameFallbackSeen.has(key)) return;
   invitationNameFallbackSeen.add(key);
   const detail = kind === "granted" ? "name-fallback access" : "denied access";
-  console.warn(`[inviter-enroll] ${detail} for ${name}: add openId ${openId} to INVITER_OPEN_IDS.`);
+  console.warn(`[inviter-enroll] ${detail} for ${name}: add ${enrollmentIdLabel(openId, unionId)} to INVITER_OPEN_IDS or INVITER_UNION_IDS.`);
 }
 function hasInvitationAdminAccess(user) {
   if (!user || user.identityType !== "dingtalk") return false;
   const openId = safeText(user.openId);
+  const unionId = safeText(user.unionId);
   const name = safeText(user.name).trim();
   if (inviterOpenIds.size) {
-    if (inviterOpenIds.has(openId)) return true;
-    // A named administrator without an enrolled openId is still denied, but
-    // logs the openId once so the operator can add it without opening a
+    if (matchesEnrolledIdentity(inviterOpenIds, user)) return true;
+    // A named administrator without an enrolled stable ID is still denied, but
+    // logs the identifier once so the operator can add it without opening a
     // display-name access window.
-    if (name && invitationAdminNames.has(name)) logInvitationEnrollment("denied", name, openId);
+    if (name && invitationAdminNames.has(name)) logInvitationEnrollment("denied", name, openId, unionId);
     return false;
   }
   if (!name || !invitationAdminNames.has(name)) return false;
-  logInvitationEnrollment("granted", name, openId);
+  logInvitationEnrollment("granted", name, openId, unionId);
   return true;
 }
 function requireZgcMember(req, res, next) {
@@ -3628,14 +3653,9 @@ const TEACHER_NAMES = new Set(
     .filter(Boolean),
 );
 
-// Teacher openIds go here (TEACHER_OPEN_IDS in the environment is a
-// comma-separated override for the same list).
-const TEACHER_OPENIDS = new Set(
-  (process.env.TEACHER_OPEN_IDS || "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter(Boolean),
-);
+// Teacher openIds and unionIds go here. TEACHER_OPEN_IDS and
+// TEACHER_UNION_IDS are comma-separated allow-lists merged into one set.
+const TEACHER_OPENIDS = envIdSet("TEACHER_OPEN_IDS", "TEACHER_UNION_IDS");
 
 // Guests who redeemed one of these invitation codes may also enter. The code
 // is resolved from the invitation record bound to the guest's openId.
@@ -3648,9 +3668,9 @@ function guestInvitationCodeFor(openId) {
   return safeText(record?.code).toUpperCase();
 }
 
-// Server-side enrollment aid: when access is granted via the name fallback, the
-// stable openId is logged once per process so the operator can copy it into
-// TEACHER_OPEN_IDS and retire the name list.
+// Server-side enrollment aid: when access is granted or denied for a named
+// teacher whose stable ID is not enrolled, the openId and unionId are logged
+// once per process so the operator can enroll the account.
 const teacherNameFallbackSeen = new Set();
 function canAccessTeacher(user, guestCode = null) {
   if (!user) return false;
@@ -3659,28 +3679,29 @@ function canAccessTeacher(user, guestCode = null) {
     return TEACHER_INVITATION_CODES.has(code.toUpperCase());
   }
   const openId = safeText(user.openId);
+  const unionId = safeText(user.unionId);
   // The openId is the stable, non-user-controllable key. Once any openId is
   // enrolled, display names no longer grant access at all — otherwise renaming
   // a DingTalk profile into the console would keep working. Until then, the
   // name fallback keeps existing teacher sessions working and logs the
   // openIds the operator should enroll.
   if (TEACHER_OPENIDS.size) {
-    if (TEACHER_OPENIDS.has(openId)) return true;
+    if (matchesEnrolledIdentity(TEACHER_OPENIDS, user)) return true;
     const name = safeText(user.name).trim();
     if (name && TEACHER_NAMES.has(name)) {
-      const key = `denied:${openId}:${name}`;
+      const key = `denied:${openId}:${unionId}:${name}`;
       if (!teacherNameFallbackSeen.has(key)) {
         teacherNameFallbackSeen.add(key);
-        console.warn(`[teacher-enroll] denied access for ${name}: add openId ${openId} to TEACHER_OPEN_IDS.`);
+        console.warn(`[teacher-enroll] denied access for ${name}: add ${enrollmentIdLabel(openId, unionId)} to TEACHER_OPEN_IDS or TEACHER_UNION_IDS.`);
       }
     }
     return false;
   }
   if (TEACHER_NAMES.has(safeText(user.name).trim())) {
-    const key = `granted:${openId}:${safeText(user.name).trim()}`;
+    const key = `granted:${openId}:${unionId}:${safeText(user.name).trim()}`;
     if (!teacherNameFallbackSeen.has(key)) {
       teacherNameFallbackSeen.add(key);
-      console.warn(`[teacher-enroll] name-fallback access for ${safeText(user.name).trim()}: add openId ${openId} to TEACHER_OPEN_IDS.`);
+      console.warn(`[teacher-enroll] name-fallback access for ${safeText(user.name).trim()}: add ${enrollmentIdLabel(openId, unionId)} to TEACHER_OPEN_IDS or TEACHER_UNION_IDS.`);
     }
     return true;
   }
@@ -3704,18 +3725,13 @@ const TITLE_ABSTRACT_CHALLENGE = challengeForIndex(3, "g1");
 // pin cannot drift as the course advances.
 const LAST_WEEK_CHALLENGE = challengeForIndex(5, "g1");
 
-// Same contract as the teacher gate: openIds in the page's env list are the
-// stable, non-user-controllable key, and once that list is non-empty the
+// Same contract as the teacher gate: openIds and unionIds in the page's env
+// lists are the stable, non-user-controllable keys, and once those are non-empty the
 // display names no longer grant access (names are user-changeable in DingTalk).
 // The optional *_NAMES env list keeps an unenrolled account working and logs the
-// openId the operator should add; no learner names are built into the source.
-function privatePageGate({ namesEnv, envName, logTag }) {
-  const openIds = new Set(
-    (process.env[envName] || "")
-      .split(",")
-      .map((id) => id.trim())
-      .filter(Boolean),
-  );
+// identifiers the operator should add; no learner names are built into the source.
+function privatePageGate({ namesEnv, envName, unionEnv, logTag }) {
+  const openIds = envIdSet(envName, unionEnv);
   const names = new Set(
     (process.env[namesEnv] || "")
       .split(",")
@@ -3726,25 +3742,26 @@ function privatePageGate({ namesEnv, envName, logTag }) {
   return function canAccess(user) {
     if (!user) return false;
     const openId = safeText(user.openId);
-    if (!openId) return false;
+    const unionId = safeText(user.unionId);
+    if (!openId && !unionId) return false;
     if (openIds.size) {
-      if (openIds.has(openId)) return true;
+      if (matchesEnrolledIdentity(openIds, user)) return true;
       const deniedName = safeText(user.name).trim();
       if (deniedName && names.has(deniedName)) {
-        const deniedKey = `denied:${openId}:${deniedName}`;
+        const deniedKey = `denied:${openId}:${unionId}:${deniedName}`;
         if (!seen.has(deniedKey)) {
           seen.add(deniedKey);
-          console.warn(`[${logTag}] denied access for ${deniedName}: add openId ${openId} to ${envName}.`);
+          console.warn(`[${logTag}] denied access for ${deniedName}: add ${enrollmentIdLabel(openId, unionId)} to ${envName} or ${unionEnv}.`);
         }
       }
       return false;
     }
     const name = safeText(user.name).trim();
     if (!names.has(name)) return false;
-    const key = `granted:${openId}:${name}`;
+    const key = `granted:${openId}:${unionId}:${name}`;
     if (!seen.has(key)) {
       seen.add(key);
-      console.warn(`[${logTag}] name-fallback access for ${name}: add openId ${openId} to ${envName}.`);
+      console.warn(`[${logTag}] name-fallback access for ${name}: add ${enrollmentIdLabel(openId, unionId)} to ${envName} or ${unionEnv}.`);
     }
     return true;
   };
@@ -3753,16 +3770,19 @@ function privatePageGate({ namesEnv, envName, logTag }) {
 const canAccessCatchup = privatePageGate({
   namesEnv: "CATCHUP_NAMES",
   envName: "CATCHUP_OPEN_IDS",
+  unionEnv: "CATCHUP_UNION_IDS",
   logTag: "catchup-enroll",
 });
 const canAccessTitleAbstract = privatePageGate({
   namesEnv: "TITLE_ABSTRACT_NAMES",
   envName: "TITLE_ABSTRACT_OPEN_IDS",
+  unionEnv: "TITLE_ABSTRACT_UNION_IDS",
   logTag: "title-abstract-enroll",
 });
 const canAccessLastWeek = privatePageGate({
   namesEnv: "LAST_WEEK_NAMES",
   envName: "LAST_WEEK_OPEN_IDS",
+  unionEnv: "LAST_WEEK_UNION_IDS",
   logTag: "last-week-enroll",
 });
 

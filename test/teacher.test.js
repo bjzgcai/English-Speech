@@ -9,7 +9,7 @@ const data = fs.mkdtempSync(path.join(os.tmpdir(), "englisheval-teacher-"));
 Object.assign(process.env, { NODE_ENV: "test", DATA_DIR: data, QUEUE_ENABLED: "false",
   SESSION_SECRET: "teacher-test-session", DINGTALK_CLIENT_ID: "test", DINGTALK_CLIENT_SECRET: "test",
   DINGTALK_CORP_ID: "test", DINGTALK_ALERT_ROBOT_CODE: "", DINGTALK_ALERT_USER_ID: "",
-  TEACHER_NAMES: "Teacher Alpha,Teacher Beta,Admin User,Teacher Gamma,Teacher Delta,Teacher Epsilon,Teacher Zeta,Teacher Eta,Teacher Theta,Teacher Iota", TEACHER_OPEN_IDS: "" });
+  TEACHER_NAMES: "Teacher Alpha,Teacher Beta,Admin User,Teacher Gamma,Teacher Delta,Teacher Epsilon,Teacher Zeta,Teacher Eta,Teacher Theta,Teacher Iota", TEACHER_OPEN_IDS: "", TEACHER_UNION_IDS: "" });
 const { app, testHelpers } = require("../src/app");
 const config = require("../src/config");
 const { appendJsonLine } = require("../src/storage");
@@ -332,4 +332,26 @@ test("a named teacher without an enrolled openId is denied but logged once", () 
     1,
     "the denied teacher openId is logged once for enrollment",
   );
+});
+
+test("an enrolled unionId passes even when the app openId differs", () => {
+  const { execFileSync } = require("node:child_process");
+  const probe = `
+    process.env.NODE_ENV = "test";
+    process.env.DATA_DIR = ${JSON.stringify(data)};
+    process.env.SESSION_SECRET = "teacher-unionid-probe";
+    process.env.TEACHER_OPEN_IDS = "enrolled-teacher-openid";
+    process.env.TEACHER_UNION_IDS = "enrolled-teacher-unionid";
+    const { testHelpers } = require(${JSON.stringify(path.join(__dirname, "..", "src", "app"))});
+    console.log(JSON.stringify({
+      union: testHelpers.canAccessTeacher({ openId: "fresh-app-openid", unionId: "enrolled-teacher-unionid", name: "随便", identityType: "dingtalk" }),
+      open: testHelpers.canAccessTeacher({ openId: "enrolled-teacher-openid", name: "随便", identityType: "dingtalk" }),
+      stranger: testHelpers.canAccessTeacher({ openId: "fresh-app-openid", unionId: "other-unionid", name: "随便", identityType: "dingtalk" }),
+    }));
+  `;
+  const stdout = execFileSync("node", ["-e", probe], { cwd: path.join(__dirname, ".."), encoding: "utf8" });
+  const verdict = JSON.parse(stdout.trim().split("\n").pop());
+  assert.equal(verdict.union, true, "the enrolled unionId passes regardless of the app openId");
+  assert.equal(verdict.open, true, "the enrolled openId still passes");
+  assert.equal(verdict.stranger, false, "an unlisted unionId is rejected");
 });

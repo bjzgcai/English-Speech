@@ -52,7 +52,7 @@
 
 ### Invitation share link
 
-- `/invitation-codes` is limited to DingTalk administrators in `INVITER_OPEN_IDS` when that stable-ID
+- `/invitation-codes` is limited to DingTalk administrators in `INVITER_OPEN_IDS` / `INVITER_UNION_IDS` when those stable-ID
   allow-list is configured; otherwise the deployment-local `INVITATION_ADMIN_NAMES` fallback applies. The page route,
   every management API, and the header link all use the same `hasInvitationAdminAccess` gate. A named
   administrator whose openId is not enrolled is denied, and the first attempt logs `[inviter-enroll]` with
@@ -85,7 +85,7 @@
 ### Teacher console
 
 - `/teacher` (page `public/teacher.html`, route in `src/routes/pages.js`) is limited to an allow-list:
-  teacher openIds in `TEACHER_OPEN_IDS` (env, comma-separated) — plus, until any openId is enrolled, the
+  teacher openIds/unionIds in `TEACHER_OPEN_IDS` / `TEACHER_UNION_IDS` (env, comma-separated) — plus, until any stable ID is enrolled, the
   DingTalk session names in the deployment-local `TEACHER_NAMES` env list
   as a transitional fallback — and guests who redeemed an invitation code in `TEACHER_INVITATION_CODES`
   (`B19B59975BC0`). `canAccessTeacher(user)` in `src/app.js` is the single gate; once `TEACHER_OPEN_IDS`

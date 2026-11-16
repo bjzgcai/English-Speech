@@ -7,6 +7,7 @@ const test = require("node:test");
 process.env.NODE_ENV = "test";
 process.env.TEACHER_NAMES = "Teacher Alpha,Teacher Beta,Admin User,Teacher Gamma,Teacher Delta,Teacher Epsilon,Teacher Zeta,Teacher Eta,Teacher Theta,Teacher Iota";
 process.env.TEACHER_OPEN_IDS = "";
+process.env.TEACHER_UNION_IDS = "";
 
 const { testHelpers } = require("../src/app");
 

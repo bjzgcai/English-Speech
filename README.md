@@ -189,7 +189,9 @@ is gated on its own.
 Access follows the teacher-console contract, with one allow-list per page:
 `CATCHUP_OPEN_IDS` for `/game/first-lesson`, `TITLE_ABSTRACT_OPEN_IDS` for
 `/game/title-abstract`, and `LAST_WEEK_OPEN_IDS` for `/game/last-week`
-(comma-separated openIds). Each is authoritative once non-empty; until then the
+(comma-separated openIds). Each gate also accepts the matching
+`*_UNION_IDS` list, so an account can be enrolled before its first login. Each
+pair is authoritative once non-empty; until then the
 deployment-local `CATCHUP_NAMES`, `TITLE_ABSTRACT_NAMES`, or `LAST_WEEK_NAMES`
 list grants access and every login logs `[catchup-enroll]`,
 `[title-abstract-enroll]`, or `[last-week-enroll]` with the openId to enroll. The

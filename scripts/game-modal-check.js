@@ -39,6 +39,9 @@ Object.assign(process.env, {
   CATCHUP_OPEN_IDS: '',
   TITLE_ABSTRACT_OPEN_IDS: '',
   LAST_WEEK_OPEN_IDS: '',
+  CATCHUP_UNION_IDS: '',
+  TITLE_ABSTRACT_UNION_IDS: '',
+  LAST_WEEK_UNION_IDS: '',
 });
 const { app, testHelpers } = require('../src/app');
 
