@@ -11,8 +11,8 @@ function showHeaderUser(user, canTeach = false, canInvite = false) {
   headerLogin.hidden = hasAccess;
   authChip.hidden = !hasAccess;
   logoutButton.hidden = !hasAccess;
-  // Only designated administrators see the invitation-management entry. The
-  // page route and every API enforce the same allow-list server-side.
+  // Every DingTalk member of the configured organization sees the invitation
+  // entry. The page route and every API enforce the same corp boundary server-side.
   if (invitationLink) invitationLink.hidden = !canInvite;
   // The teacher console link is strictly allow-listed server-side too.
   if (teacherLink) teacherLink.hidden = !canTeach;
@@ -33,7 +33,7 @@ async function checkHeaderAuth() {
     }
 
     const data = await response.json();
-    showHeaderUser(data.user || null, data.teacherAccess === true, data.invitationAdminAccess === true);
+    showHeaderUser(data.user || null, data.teacherAccess === true, data.invitationAccess === true);
   } catch {
     showHeaderUser(null);
   }

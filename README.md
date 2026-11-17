@@ -65,6 +65,11 @@ must still call DingTalk's `requestAuthCode` JSAPI and the server must exchange
 that one-time code. Outside DingTalk, the existing nonce-protected OAuth flow is
 available as an optional sign-in instead.
 
+Every DingTalk user authenticated through the configured `DINGTALK_CORP_ID` may
+open `/invitation-codes` and create invitation codes or QR campaigns. Invited
+guests cannot mint further invitations. No separate inviter allow-list is
+required.
+
 Guest access uses a server-issued signed HttpOnly `englisheval_guest` cookie with
 a renewable 180-day lifetime. Set `SESSION_SECRET` even without DingTalk configuration
 (the existing `DINGTALK_CLIENT_SECRET` fallback remains supported). No IP hash or

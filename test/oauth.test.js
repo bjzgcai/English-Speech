@@ -214,9 +214,15 @@ test("learner pages are available without DingTalk login", async (context) => {
     if (route === "/") assert.equal(response.headers.get("location"), "/leaderboard");
   }
 
-  for (const route of ["/intro", "/architecture", "/methodology", "/prepare"]) {
+  for (const route of ["/intro", "/architecture"]) {
     const response = await fetch(`${baseUrl}${route}`, { redirect: "manual" });
     assert.equal(response.status, 200);
+  }
+
+  for (const [route, destination] of [["/methodology", "/intro#methodology"], ["/prepare", "/intro#prepare"]]) {
+    const response = await fetch(`${baseUrl}${route}`, { redirect: "manual" });
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get("location"), destination);
   }
 });
 

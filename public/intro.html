@@ -5,13 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="中英文了解 OScanner-Eng 的英语口语出题、录制、六维评估和历史复盘流程。"
+      content="OScanner-Eng 的英语口语出题、准备方法、录制、六维评估、视频评估与历史复盘说明。"
     />
-    <title>产品介绍 | OScanner-Eng</title>
+    <title>Intro | OScanner-Eng</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/docs.css" />
+    <link rel="stylesheet" href="/prepare.css" />
+    <link rel="stylesheet" href="/comments.css" />
+    <link rel="stylesheet" href="/queue.css" />
     <link rel="stylesheet" href="/intro.css" />
     <link rel="stylesheet" href="/i18n.css" />
-  <link rel="stylesheet" href="/mobile-nav.css" />
+    <link rel="stylesheet" href="/mobile-nav.css" />
+    <link rel="stylesheet" href="/intro-merged.css" />
   </head>
   <body>
     <a class="skip-link" href="#mainContent">跳至正文 / Skip to content</a>
@@ -27,8 +32,6 @@
           <a href="/game">Game</a>
           <a href="/examine">Examine</a>
           <a href="/history">History</a>
-          <a href="/methodology">Rubric</a>
-          <a href="/prepare">Prepare</a>
           <a href="/intro" aria-current="page">Intro</a>
           <a href="/invitation-codes" data-invitation-link hidden>Invitation</a>
           <a href="/teacher" data-teacher-link hidden>Teacher</a>
@@ -41,18 +44,24 @@
       </div>
     </header>
 
-    <main id="mainContent">
+    <main id="mainContent" class="intro-main">
       <section class="intro-hero" aria-labelledby="introTitle">
         <div class="hero-copy">
           <h1 id="introTitle">练习英语表达，<span>看见下一步。</span></h1>
           <div class="hero-intro">
-            <p>从个性化题目到录制、评估和复盘，一次完成完整的英语口语练习。</p>
-            <p lang="en">Get a tailored prompt, record your response, and turn focused feedback into your next practice goal.</p>
+            <p>从个性化题目到准备、录制、评估和复盘，在一个页面了解完整的英语口语练习方法。</p>
+            <p lang="en">Get a tailored prompt, learn how to prepare, record your response, and turn focused feedback into your next practice goal.</p>
           </div>
-          <a class="primary-link" href="#workflow">
-            了解操作流程
-            <span lang="en">See how it works</span>
-          </a>
+          <div class="intro-hero-actions">
+            <a class="primary-link" href="#workflow">
+              了解操作流程
+              <span lang="en">See how it works</span>
+            </a>
+            <nav class="intro-topic-links" aria-label="Intro sections">
+              <a href="#prepare">Prepare <span lang="en">备考练习</span></a>
+              <a href="#methodology">Rubric <span lang="en">评分方法</span></a>
+            </nav>
+          </div>
         </div>
 
         <figure class="hero-visual">
@@ -70,129 +79,494 @@
         </figure>
       </section>
 
-      <section class="capabilities section-shell" aria-labelledby="capabilitiesTitle">
-        <header class="section-heading">
-          <h2 id="capabilitiesTitle">它能做什么？</h2>
-          <p lang="en">What does OScanner-Eng do?</p>
-        </header>
+      <div id="overview" class="intro-overview">
+        <section class="capabilities section-shell" aria-labelledby="capabilitiesTitle">
+          <header class="section-heading">
+            <h2 id="capabilitiesTitle">它能做什么？</h2>
+            <p lang="en">What does OScanner-Eng do?</p>
+          </header>
 
-        <div class="capability-grid">
-          <article class="capability capability-question">
-            <p class="capability-label">Tailored questions</p>
-            <h3>因人出题</h3>
-            <p>根据你的角色或背景，生成一个有明确表达重点的口语题目。</p>
-            <p lang="en">Receive one focused speaking prompt based on your role or background.</p>
-          </article>
-          <article class="capability capability-record">
-            <p class="capability-label">Camera and microphone</p>
-            <h3>完整录制</h3>
-            <p>在浏览器内完成最长三分三十秒的回答，并检查摄像头和麦克风是否持续工作。</p>
-            <p lang="en">Record up to three minutes thirty seconds while the browser checks that both required tracks stay active.</p>
-          </article>
-          <article class="capability capability-feedback">
-            <p class="capability-label">Six dimensions</p>
-            <h3>结构化反馈</h3>
-            <p>结合转写、语速与停顿指标和抽取画面，输出可读的分项建议。</p>
-            <p lang="en">Review structured feedback informed by the transcript, speaking metrics, and sampled frames.</p>
-          </article>
-          <article class="capability capability-history">
-            <p class="capability-label">Private review</p>
-            <h3>持续复盘</h3>
-            <p>回看属于自己的录像、分数、优势和改进建议，观察表达变化。</p>
-            <p lang="en">Return to your own saved videos and evaluations to track what is changing.</p>
-          </article>
-        </div>
-      </section>
+          <div class="capability-grid">
+            <article class="capability capability-question">
+              <p class="capability-label">Tailored questions</p>
+              <h3>因人出题</h3>
+              <p>根据你的角色或背景，生成一个有明确表达重点的口语题目。</p>
+              <p lang="en">Receive one focused speaking prompt based on your role or background.</p>
+            </article>
+            <article class="capability capability-record">
+              <p class="capability-label">Camera and microphone</p>
+              <h3>完整录制</h3>
+              <p>在浏览器内完成最长三分三十秒的回答，并检查摄像头和麦克风是否持续工作。</p>
+              <p lang="en">Record up to three minutes thirty seconds while the browser checks that both required tracks stay active.</p>
+            </article>
+            <article class="capability capability-feedback">
+              <p class="capability-label">Six dimensions</p>
+              <h3>结构化反馈</h3>
+              <p>结合转写、语速与停顿指标和抽取画面，输出可读的分项建议。</p>
+              <p lang="en">Review structured feedback informed by the transcript, speaking metrics, and sampled frames.</p>
+            </article>
+            <article class="capability capability-history">
+              <p class="capability-label">Private review</p>
+              <h3>持续复盘</h3>
+              <p>回看属于自己的录像、分数、优势和改进建议，观察表达变化。</p>
+              <p lang="en">Return to your own saved videos and evaluations to track what is changing.</p>
+            </article>
+          </div>
+        </section>
 
-      <section class="workflow section-shell" id="workflow" aria-labelledby="workflowTitle">
-        <header class="section-heading">
-          <h2 id="workflowTitle">一次评估，四个动作。</h2>
-          <p lang="en">One evaluation, four clear actions.</p>
-        </header>
+        <section class="workflow section-shell" id="workflow" aria-labelledby="workflowTitle">
+          <header class="section-heading">
+            <h2 id="workflowTitle">一次评估，四个动作。</h2>
+            <p lang="en">One evaluation, four clear actions.</p>
+          </header>
 
-        <div class="workflow-track">
-          <article>
-            <span aria-hidden="true">01</span>
-            <h3>登录并确认隐私</h3>
-            <strong lang="en">Sign in and review privacy</strong>
-            <p>使用钉钉登录，并在首次生成题目前同意当前隐私政策。</p>
-          </article>
-          <article>
-            <span aria-hidden="true">02</span>
-            <h3>填写背景，生成题目</h3>
-            <strong lang="en">Add context and get a prompt</strong>
-            <p>提供简短角色背景，系统生成一条针对性的英语表达题目。</p>
-          </article>
-          <article>
-            <span aria-hidden="true">03</span>
-            <h3>准备并录制回答</h3>
-            <strong lang="en">Prepare and record</strong>
-            <p>确认取景和收音，在两分钟内完成连续的摄像头与麦克风录制。</p>
-          </article>
-          <article>
-            <span aria-hidden="true">04</span>
-            <h3>查看反馈并复盘</h3>
-            <strong lang="en">Review and improve</strong>
-            <p>查看总分、分项反馈、优势和改进方向，并在 History 中再次打开。</p>
-          </article>
-        </div>
-      </section>
+          <div class="workflow-track">
+            <article>
+              <span aria-hidden="true">01</span>
+              <h3>登录并确认隐私</h3>
+              <strong lang="en">Sign in and review privacy</strong>
+              <p>使用钉钉登录，并在首次生成题目前同意当前隐私政策。</p>
+            </article>
+            <article>
+              <span aria-hidden="true">02</span>
+              <h3>填写背景，生成题目</h3>
+              <strong lang="en">Add context and get a prompt</strong>
+              <p>提供简短角色背景，系统生成一条针对性的英语表达题目。</p>
+            </article>
+            <article>
+              <span aria-hidden="true">03</span>
+              <h3>准备并录制回答</h3>
+              <strong lang="en">Prepare and record</strong>
+              <p>确认取景和收音，在两分钟内完成连续的摄像头与麦克风录制。</p>
+            </article>
+            <article>
+              <span aria-hidden="true">04</span>
+              <h3>查看反馈并复盘</h3>
+              <strong lang="en">Review and improve</strong>
+              <p>查看总分、分项反馈、优势和改进方向，并在 History 中再次打开。</p>
+            </article>
+          </div>
+        </section>
 
-      <section class="feedback section-shell" aria-labelledby="feedbackTitle">
-        <figure class="feedback-visual">
-          <img
-            src="/assets/intro-feedback-speaker.png"
-            alt="一位面带微笑、穿着西装的男士"
-            width="320"
-            height="320"
-            loading="lazy"
-            decoding="async"
-          />
-          <figcaption>
-            <span>录制真实表达</span>
-            <span lang="en">Record a real response</span>
-          </figcaption>
-        </figure>
+        <section class="feedback section-shell" aria-labelledby="feedbackTitle">
+          <figure class="feedback-visual">
+            <img
+              src="/assets/intro-feedback-speaker.png"
+              alt="一位面带微笑、穿着西装的男士"
+              width="320"
+              height="320"
+              loading="lazy"
+              decoding="async"
+            />
+            <figcaption>
+              <span>录制真实表达</span>
+              <span lang="en">Record a real response</span>
+            </figcaption>
+          </figure>
 
-        <div class="feedback-copy">
-          <h2 id="feedbackTitle">评分不仅给结果，也告诉你怎么练。</h2>
-          <p class="feedback-lead" lang="en">The score is a summary. The dimension feedback shows what to practise next.</p>
-          <ul class="dimension-list" aria-label="六个评估维度 / Six evaluation dimensions">
-            <li><strong>连贯性</strong><span lang="en">Coherence</span></li>
-            <li><strong>语法</strong><span lang="en">Grammar</span></li>
-            <li><strong>发音可懂度</strong><span lang="en">Pronunciation and intelligibility</span></li>
-            <li><strong>词汇</strong><span lang="en">Vocabulary</span></li>
-            <li><strong>流利度</strong><span lang="en">Fluency</span></li>
-            <li><strong>镜头表达</strong><span lang="en">Visual delivery</span></li>
-          </ul>
-          <p class="accuracy-note">
-            评估结果用于学习和练习参考，不应作为招聘、晋升或其他重大决定的唯一依据。
-            <span lang="en">Results support learning and should not be the sole basis for high-impact decisions.</span>
+          <div class="feedback-copy">
+            <h2 id="feedbackTitle">评分不仅给结果，也告诉你怎么练。</h2>
+            <p class="feedback-lead" lang="en">The score is a summary. The dimension feedback shows what to practise next.</p>
+            <ul class="dimension-list" aria-label="六个评估维度 / Six evaluation dimensions">
+              <li><strong>连贯性</strong><span lang="en">Coherence</span></li>
+              <li><strong>语法</strong><span lang="en">Grammar</span></li>
+              <li><strong>发音可懂度</strong><span lang="en">Pronunciation and intelligibility</span></li>
+              <li><strong>词汇</strong><span lang="en">Vocabulary</span></li>
+              <li><strong>流利度</strong><span lang="en">Fluency</span></li>
+              <li><strong>镜头表达</strong><span lang="en">Visual delivery</span></li>
+            </ul>
+            <p class="accuracy-note">
+              评估结果用于学习和练习参考，不应作为招聘、晋升或其他重大决定的唯一依据。
+              <span lang="en">Results support learning and should not be the sole basis for high-impact decisions.</span>
+            </p>
+          </div>
+        </section>
+
+        <section class="architecture-entry section-shell" aria-labelledby="architectureEntryTitle">
+          <div class="architecture-entry-copy">
+            <p class="capability-label">Inside the system</p>
+            <h2 id="architectureEntryTitle">一条回答，如何变成可信的反馈？</h2>
+            <p lang="en">See the durable, evidence-driven architecture behind capture, evaluation, and private review.</p>
+            <p>从浏览器采集到异步评估，了解系统如何保存回答、组织证据并输出可解释的反馈。</p>
+          </div>
+          <div class="architecture-entry-visual" aria-hidden="true">
+            <span>Capture</span>
+            <i></i>
+            <span>Evaluate</span>
+            <i></i>
+            <span>Explain</span>
+          </div>
+          <a class="primary-link architecture-entry-link" href="/architecture">
+            探索系统架构
+            <span lang="en">Explore the architecture</span>
+          </a>
+        </section>
+      </div>
+
+      <section class="merged-topic merged-topic-prepare" id="prepare" aria-labelledby="prepareTitle">
+        <header class="merged-topic-heading">
+          <p class="section-index">Prepare / 备考练习</p>
+          <h2 id="prepareTitle">Practise speaking with AI.</h2>
+          <p>
+            Three practical ways to speak more often, receive useful corrections, and build a more natural English response.
           </p>
+        </header>
+
+        <div class="prepare-main">
+          <section class="club-invite" aria-labelledby="club-invite-title">
+            <div class="club-invite-copy">
+              <p class="club-invite-label">Practise together</p>
+              <h2 id="club-invite-title">Join the English Communication Club.</h2>
+              <p>
+                Scan with DingTalk to join 英语交流俱乐部 and practise speaking with colleagues.
+              </p>
+              <p class="club-invite-note">
+                This is an internal group for 中关村两院. People outside the organization need to apply for membership first.
+              </p>
+            </div>
+            <div class="club-invite-visuals">
+              <figure class="club-photo">
+                <img
+                  src="/assets/english-club-session.png"
+                  alt="Colleagues gathered around a conference table during an English Communication Club session"
+                  loading="lazy"
+                  width="1280"
+                  height="960"
+                />
+              </figure>
+              <figure class="club-qr">
+                <img
+                  src="/assets/english-club-qr.png"
+                  alt="DingTalk QR code for the English Communication Club"
+                  loading="lazy"
+                  width="390"
+                  height="390"
+                />
+                <figcaption>
+                  <strong>Scan with DingTalk</strong>
+                  <span>Invite valid until 23 July 2027</span>
+                </figcaption>
+              </figure>
+            </div>
+          </section>
+
+          <section class="practice-notes" aria-labelledby="best-practices-title">
+            <div class="notes-heading">
+              <p>Choose your setup</p>
+              <h2 id="best-practices-title">Three ways to practise</h2>
+              <p class="notes-intro">
+                A useful speaking coach should give you time to finish your thought, then help you improve what you said.
+              </p>
+            </div>
+
+            <div class="method-list">
+              <article class="practice-method method-chatgpt method-recommended">
+                <div class="chatgpt-heading">
+                  <div class="method-copy">
+                    <div class="method-meta">
+                      <span class="method-number" aria-hidden="true">01</span>
+                      <p class="method-product">ChatGPT <span class="recommended-badge">Recommended</span></p>
+                    </div>
+                    <h3>Combine Voice with Custom Instructions.</h3>
+                  </div>
+                  <p class="method-summary">
+                    Our top recommendation is ChatGPT. Voice conversations combined with Custom Instructions let you create a consistent coaching routine that waits for your full answer, gives focused feedback, and keeps the practice tailored to your goals.
+                  </p>
+                </div>
+
+                <div class="chatgpt-setup">
+                  <div class="setup-steps">
+                    <h4>Set it up</h4>
+                    <ol>
+                      <li>Open <strong>Settings</strong>.</li>
+                      <li>On web or desktop, choose <strong>Personalization</strong>. On mobile, choose <strong>Customize ChatGPT</strong>.</li>
+                      <li>Turn on customization and paste the coaching prompt.</li>
+                      <li>Start a Voice conversation and answer in English.</li>
+                    </ol>
+                    <div class="official-links">
+                      <a href="https://help.openai.com/en/articles/20001274/" target="_blank" rel="noreferrer">ChatGPT Voice guide</a>
+                      <a href="https://help.openai.com/en/articles/8096356-chatgpt-custom-instructions" target="_blank" rel="noreferrer">Custom Instructions guide</a>
+                    </div>
+                  </div>
+
+                  <div class="prompt-block">
+                    <div class="prompt-label">
+                      <h4>Coaching prompt</h4>
+                      <span>Copy into Custom Instructions</span>
+                    </div>
+                    <blockquote>
+                      You are my English speaking coach. Let me finish my full answer before giving feedback. Wait until I say, “I'm finished.” Then point out the three most important pronunciation, grammar, or word-choice problems. Give me a corrected, natural version of my answer, explain each correction briefly, and ask one follow-up question. Do not interrupt me while I am speaking. Keep the conversation in English unless I ask for Chinese.
+                    </blockquote>
+                  </div>
+                </div>
+              </article>
+
+              <article class="practice-method method-doubao">
+                <div class="method-copy">
+                  <div class="method-meta">
+                    <span class="method-number" aria-hidden="true">02</span>
+                    <p class="method-product">Doubao</p>
+                  </div>
+                  <h3>Use English Practice mode.</h3>
+                  <p class="method-summary">
+                    Our second recommendation is Doubao. Its dedicated English Practice mode lets you finish your response before giving feedback, so you can practise speaking without being interrupted.
+                  </p>
+                  <ol>
+                    <li>Open the voice interface and tap <strong>Select Scenario</strong>.</li>
+                    <li>Choose <strong>English Practice</strong>.</li>
+                    <li>Finish your response, then review the corrections.</li>
+                  </ol>
+                </div>
+                <figure class="method-image">
+                  <img
+                    src="/assets/prepare-doubao.jpg"
+                    alt="Doubao scenario menu with English Practice selected"
+                    loading="lazy"
+                    width="1206"
+                    height="2622"
+                  />
+                  <figcaption>Choose English Practice from Doubao's scenario menu.</figcaption>
+                </figure>
+              </article>
+
+              <article class="practice-method method-yuanbao">
+                <figure class="method-image">
+                  <img
+                    src="/assets/prepare-yuanbao.jpg"
+                    alt="Yuanbao conversation menu showing Oral practice with real-time corrections"
+                    loading="lazy"
+                    width="1206"
+                    height="2622"
+                  />
+                  <figcaption>Select Oral practice in Yuanbao's conversation menu.</figcaption>
+                </figure>
+                <div class="method-copy">
+                  <div class="method-meta">
+                    <span class="method-number" aria-hidden="true">03</span>
+                    <p class="method-product">Yuanbao</p>
+                  </div>
+                  <h3>Select Oral practice.</h3>
+                  <p class="method-summary">
+                    Yuanbao's advantage is its focused pronunciation and grammar scoring. Use its dedicated Oral practice mode when you want targeted scores and corrections during a spoken session.
+                  </p>
+                  <ol>
+                    <li>Start a voice conversation.</li>
+                    <li>Open the conversation-mode menu.</li>
+                    <li>Select <strong>Oral practice</strong> and begin speaking.</li>
+                  </ol>
+                </div>
+              </article>
+            </div>
+          </section>
         </div>
       </section>
 
-      <section class="architecture-entry section-shell" aria-labelledby="architectureEntryTitle">
-        <div class="architecture-entry-copy">
-          <p class="capability-label">Inside the system</p>
-          <h2 id="architectureEntryTitle">一条回答，如何变成可信的反馈？</h2>
-          <p lang="en">See the durable, evidence-driven architecture behind capture, evaluation, and private review.</p>
-          <p>从浏览器采集到异步评估，了解系统如何保存回答、组织证据并输出可解释的反馈。</p>
+      <section class="merged-topic merged-topic-methodology" id="methodology" aria-labelledby="methodologyTitle">
+        <div class="methodology-main">
+          <section class="hero" aria-labelledby="methodologyTitle">
+            <div class="hero-copy reveal">
+              <p class="section-index">Rubric / 评分方法</p>
+              <h2 id="methodologyTitle">More than correct English.</h2>
+              <p class="hero-intro">We measure whether a person can be understood, structure an idea, and deliver it with confidence.</p>
+              <a class="text-link" href="#dimensions">Explore the dimensions <span aria-hidden="true">↘</span></a>
+            </div>
+            <figure class="hero-visual reveal">
+              <img
+                src="/assets/methodology-speaker.png"
+                alt="A smiling professional wearing glasses and a dark suit"
+                width="320"
+                height="320"
+              />
+              <figcaption>
+                <span>Speech</span>
+                <span>Presentation</span>
+                <span>Communication</span>
+              </figcaption>
+            </figure>
+          </section>
+
+          <section class="principle reveal" aria-labelledby="principle-title">
+            <p class="section-index">One evaluation, three connected abilities</p>
+            <h2 id="principle-title">The rubric follows the listener’s experience.</h2>
+            <div class="principle-grid">
+              <article>
+                <span>01</span>
+                <h3>Can I understand you?</h3>
+                <p>Pronunciation, grammar, and vocabulary make the message accessible and precise.</p>
+              </article>
+              <article>
+                <span>02</span>
+                <h3>Can I follow you?</h3>
+                <p>Fluency and coherence show whether the speech maintains a consistent, connected line of thought.</p>
+              </article>
+              <article>
+                <span>03</span>
+                <h3>Do I stay engaged?</h3>
+                <p>Visual delivery shows whether the speaker can carry the message with presence.</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="dimensions" id="dimensions" aria-labelledby="dimensions-title">
+            <div class="dimensions-heading reveal">
+              <p class="section-index">The 100-point model</p>
+              <h2 id="dimensions-title">Every weight reflects its impact on meaning.</h2>
+              <p>Select a dimension to see why it belongs and why it carries that share of the final score.</p>
+            </div>
+
+            <div class="weight-map reveal" role="list" aria-label="Evaluation dimension weights">
+              <button class="weight-segment is-active" style="--weight: 25; --tone: #0f4f3b" data-dimension="coherence" role="listitem" aria-pressed="true">
+                <strong>25%</strong><span>Coherence</span>
+              </button>
+              <button class="weight-segment" style="--weight: 20; --tone: #155945" data-dimension="grammar" role="listitem" aria-pressed="false">
+                <strong>20%</strong><span>Grammar</span>
+              </button>
+              <button class="weight-segment" style="--weight: 20; --tone: #1a634f" data-dimension="pronunciation" role="listitem" aria-pressed="false">
+                <strong>20%</strong><span>Pronunciation</span>
+              </button>
+              <button class="weight-segment" style="--weight: 15; --tone: #206d58" data-dimension="vocabulary" role="listitem" aria-pressed="false">
+                <strong>15%</strong><span>Vocabulary</span>
+              </button>
+              <button class="weight-segment" style="--weight: 10; --tone: #257762" data-dimension="fluency" role="listitem" aria-pressed="false">
+                <strong>10%</strong><span>Fluency</span>
+              </button>
+              <button class="weight-segment" style="--weight: 10; --tone: #2b816c" data-dimension="visual" role="listitem" aria-pressed="false">
+                <strong>10%</strong><span>Visual delivery</span>
+              </button>
+            </div>
+
+            <article class="dimension-detail reveal" aria-live="polite">
+              <div class="detail-score">
+                <span id="detailWeight">25%</span>
+                <small>of the final score</small>
+              </div>
+              <div class="detail-copy">
+                <p id="detailCategory">Message structure</p>
+                <h3 id="detailTitle">Coherence and speech consistency</h3>
+                <p id="detailDescription">Measures whether ideas connect logically, the speaker remains internally consistent, and the listener can follow the main point.</p>
+              </div>
+              <div class="detail-reason">
+                <h4>Why this weight</h4>
+                <p id="detailReason">It has the largest share because effective speech needs a stable main point, consistent claims, and ideas connected in an order the listener can follow.</p>
+              </div>
+              <div class="detail-examples">
+                <div class="detail-examples-heading">
+                  <h4>The same idea at three levels.</h4>
+                  <p>Three responses to the same question, from a score near 40 to a score near 85.</p>
+                </div>
+                <div class="detail-examples-grid" id="detailExamples"></div>
+              </div>
+            </article>
+          </section>
+
+          <section class="balance reveal" aria-labelledby="balance-title">
+            <div class="balance-title">
+              <p class="section-index">Why the balance matters</p>
+              <h2 id="balance-title">No single strength can carry the whole score.</h2>
+            </div>
+            <div class="balance-copy">
+              <p>A fluent speaker with unclear pronunciation is difficult to follow. A grammatically accurate speaker with no structure is difficult to trust. A polished presenter with weak language control is difficult to understand.</p>
+              <p>The weights reward clear language first, then the fluency and presence that turn language into effective communication.</p>
+            </div>
+          </section>
+
+          <section class="calculation reveal" aria-labelledby="calculation-title">
+            <div class="calculation-copy">
+              <h2 id="calculation-title">How the final score is calculated</h2>
+              <p>Each dimension receives a score from 0 to 100. We multiply it by its weight, then add the six results.</p>
+            </div>
+            <div class="formula" aria-label="Weighted score formula">
+              <div><span>Dimension score</span><strong>82</strong></div>
+              <span class="operator" aria-hidden="true">×</span>
+              <div><span>Dimension weight</span><strong>25%</strong></div>
+              <span class="operator" aria-hidden="true">=</span>
+              <div class="formula-result"><span>Score contribution</span><strong>20.5</strong></div>
+            </div>
+            <p class="calculation-note">The overall score is a weighted summary, not a label. Dimension feedback shows where improvement will have the greatest effect.</p>
+          </section>
+
+          <section class="video-evaluator" aria-labelledby="video-evaluator-title">
+            <div class="evaluator-heading reveal">
+              <p class="section-index">Evaluate an existing recording</p>
+              <h2 id="video-evaluator-title">Bring a video.<br />Get a speech evaluation.</h2>
+              <p>
+                Upload a video file. We validate the media, extract its speech, and apply the same
+                evaluation engine used in Examine.
+              </p>
+              <p class="speaker-assumption">
+                <strong>Working assumption:</strong> the video contains one main speaker. If several people or
+                voices appear, the evaluation still treats the speech as one person’s performance.
+              </p>
+            </div>
+
+            <form class="video-evaluator-form reveal" id="videoEvaluatorForm">
+              <div class="source-field">
+                <label class="upload-drop" for="evaluationVideo">
+                  <span>Choose a video</span>
+                  <small>MP4, WebM, Ogg, MOV or MKV · up to 250 MB</small>
+                  <input id="evaluationVideo" name="video" type="file" accept="video/mp4,video/webm,video/ogg,video/quicktime,video/x-matroska,.mkv" required />
+                </label>
+                <p class="selected-file" id="selectedVideoName">No file selected</p>
+              </div>
+
+              <div class="validation-notes" aria-label="Media validation rules">
+                <p><span aria-hidden="true">01</span> The file must be readable and use a supported video format.</p>
+                <p><span aria-hidden="true">02</span> Spoken audio is required; silent or picture-only video cannot be evaluated.</p>
+                <p><span aria-hidden="true">03</span> Audio with no picture will pass, but visual delivery will not be scored.</p>
+                <p><span aria-hidden="true">04</span> For videos longer than two minutes, only the first two minutes are evaluated.</p>
+              </div>
+
+              <label class="public-share-choice" id="publicShareChoice" hidden>
+                <input type="checkbox" id="publiclyShareVideo" />
+                <span>I agree to make this video, its title, scores and feedback publicly viewable.</span>
+              </label>
+              <div class="evaluator-submit-row">
+                <button type="submit" id="evaluateVideoButton">Validate and evaluate</button>
+                <p id="videoEvaluatorStatus" role="status" aria-live="polite"></p>
+              </div>
+            </form>
+
+            <section class="video-evaluation-result" id="videoEvaluationResult" aria-live="polite" hidden></section>
+          </section>
+
+          <section class="public-evaluations" aria-labelledby="public-evaluations-title">
+            <div class="public-evaluations-heading reveal">
+              <div>
+                <p class="section-index">Shared evaluations</p>
+                <h2 id="public-evaluations-title">Watch the frame.<br />Read the feedback.</h2>
+              </div>
+              <p>
+                Public video evaluations appear here. Open a title or poster to inspect the
+                scores and coaching across every dimension.
+              </p>
+            </div>
+            <p class="evaluation-gallery-status" id="evaluationGalleryStatus" role="status" aria-live="polite">Loading shared evaluations…</p>
+            <div class="evaluation-gallery" id="evaluationGallery" aria-busy="true"></div>
+          </section>
         </div>
-        <div class="architecture-entry-visual" aria-hidden="true">
-          <span>Capture</span>
-          <i></i>
-          <span>Evaluate</span>
-          <i></i>
-          <span>Explain</span>
-        </div>
-        <a class="primary-link architecture-entry-link" href="/architecture">
-          探索系统架构
-          <span lang="en">Explore the architecture</span>
-        </a>
       </section>
 
-      <section class="closing section-shell" aria-labelledby="closingTitle">
+      <section class="comments-section" id="comments" data-comments-pages="prepare,methodology" aria-labelledby="comments-title">
+        <div class="comments-heading">
+          <h2 id="comments-title">Share what you noticed.</h2>
+          <p>Choose a topic, leave a useful tip, or reply to another learner.</p>
+        </div>
+        <div class="comment-page-switcher" role="group" aria-label="Comment topic">
+          <button type="button" data-comments-page-target="prepare" aria-pressed="true">Preparation tips</button>
+          <button type="button" data-comments-page-target="methodology" aria-pressed="false">Rubric notes</button>
+        </div>
+        <form class="comment-form" data-comment-form>
+          <p class="reply-context" data-reply-context hidden>Replying to <strong data-reply-name></strong><button type="button" data-cancel-reply>Cancel</button></p>
+          <label for="introComment">Your comment</label>
+          <textarea id="introComment" maxlength="1000" required data-comment-input></textarea>
+          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple data-comment-images aria-label="Attach images" />
+          <div class="comment-image-previews" data-comment-previews></div>
+          <div class="comment-form-row"><p class="comment-feedback" role="status" data-comment-feedback></p><button class="comment-submit" type="submit" data-comment-submit>Comment</button></div>
+        </form>
+        <div class="comment-list" data-comment-list aria-live="polite"><p class="comments-empty">Loading comments...</p></div>
+      </section>
+
+      <section class="intro-closing section-shell" aria-labelledby="closingTitle">
         <div>
           <h2 id="closingTitle">准备好说一段了吗？</h2>
           <p lang="en">Ready to turn your next answer into useful practice?</p>
@@ -204,6 +578,28 @@
       </section>
     </main>
 
+    <dialog class="evaluation-modal" id="evaluationModal" aria-labelledby="evaluationModalTitle">
+      <div class="evaluation-modal-shell">
+        <button class="evaluation-modal-close" id="closeEvaluationModal" type="button" aria-label="Close evaluation">Close</button>
+        <div class="evaluation-modal-poster">
+          <video id="evaluationModalVideo" controls playsinline preload="metadata" hidden></video>
+          <img id="evaluationModalPoster" alt="" hidden />
+          <div class="evaluation-modal-poster-fallback" id="evaluationModalPosterFallback" hidden aria-hidden="true"><span>E</span></div>
+        </div>
+        <section class="evaluation-modal-content">
+          <div class="evaluation-modal-heading">
+            <div>
+              <p id="evaluationModalDate"></p>
+              <h2 id="evaluationModalTitle"></h2>
+            </div>
+            <strong id="evaluationModalScore"></strong>
+          </div>
+          <p class="evaluation-modal-summary" id="evaluationModalSummary"></p>
+          <div class="evaluation-modal-dimensions" id="evaluationModalDimensions"></div>
+        </section>
+      </div>
+    </dialog>
+
     <footer class="intro-footer">
       <a class="brand" href="/intro">
         <span class="brand-mark" aria-hidden="true"><span>E</span></span>
@@ -213,9 +609,20 @@
       <a href="/privacy">隐私政策 / Privacy</a>
     </footer>
 
+    <a class="comment-fab" href="#comments" data-comment-fab aria-label="Go to the comment form">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5.25 5.25h13.5v10.5H10l-4.75 3v-3.75Z" />
+      </svg>
+      <span>Comment</span>
+    </a>
+
     <script src="/mobile-nav.js"></script>
     <script src="/i18n.js"></script>
     <script src="/visitor-session.js"></script>
     <script src="/header-auth.js"></script>
+    <script src="/evaluation-share.js"></script>
+    <script src="/queue-client.js"></script>
+    <script src="/docs.js"></script>
+    <script src="/comments.js"></script>
   </body>
 </html>

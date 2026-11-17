@@ -10,14 +10,19 @@ const data = fs.mkdtempSync(path.join(os.tmpdir(), 'invitation-test-'));
 // The redeem throttle budgets are widened here: these tests exercise claim
 // semantics from a single address and would otherwise trip the limiter
 // mid-suite. test/invitation-throttle.test.js covers the limiter itself.
-Object.assign(process.env, { NODE_ENV: 'test', DATA_DIR: data, QUEUE_ENABLED: 'false', DINGTALK_CLIENT_ID: 'test', DINGTALK_CLIENT_SECRET: 'test', DINGTALK_CORP_ID: 'test', SESSION_SECRET: 'invitation-test-secret', COOKIE_SECURE: 'false', APP_BASE_URL: 'https://english.example.test/service/', INVITATION_REDEEM_IP_LIMIT: '10000', INVITATION_REDEEM_NAME_LIMIT: '10000', INVITATION_ADMIN_NAMES: 'Admin User,Teacher Beta,Teacher Alpha,Inviter Admin', INVITER_OPEN_IDS: '', INVITER_UNION_IDS: '' });
+Object.assign(process.env, { NODE_ENV: 'test', DATA_DIR: data, QUEUE_ENABLED: 'false', DINGTALK_CLIENT_ID: 'test', DINGTALK_CLIENT_SECRET: 'test', DINGTALK_CORP_ID: 'test', SESSION_SECRET: 'invitation-test-secret', COOKIE_SECURE: 'false', APP_BASE_URL: 'https://english.example.test/service/', INVITATION_REDEEM_IP_LIMIT: '10000', INVITATION_REDEEM_NAME_LIMIT: '10000' });
 const { app, testHelpers } = require('../src/app');
 const { invitationsMetadataFile } = require('../src/config');
 const { readJsonLines } = require('../src/storage');
 let server, base;
 test.before(async () => { server = await listenForTest(app); base = `http://127.0.0.1:${server.address().port}`; });
 test.after(async () => { await new Promise(resolve => server.close(resolve)); fs.rmSync(data, { recursive: true, force: true }); });
-function member(owner = 'inviter', name = 'Teacher Alpha') { return { Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId: owner, name })}`, 'X-Expected-Owner': owner }; }
+function member(owner = 'inviter', name = 'Teacher Alpha', dingtalkCorpId = '') {
+  return {
+    Cookie: `englisheval_session=${testHelpers.createSessionToken({ openId: owner, name, dingtalkCorpId })}`,
+    'X-Expected-Owner': owner,
+  };
+}
 async function issue() { const response = await fetch(base + '/api/invitation-codes', { method: 'POST', headers: member() }); assert.equal(response.status, 201); return response.json(); }
 function campaignBody(overrides = {}) {
   return {
@@ -203,42 +208,49 @@ test('a campaign owns one reusable QR and only its creator can inspect registrat
   assert.equal(hidden.campaigns.some(entry => entry.id === record.id), false);
   assert.equal((await fetch(base + `/api/invitation-campaigns/${record.id}/accounts`, { headers: member('other') })).status, 404);
 });
-test('only the designated DingTalk administrators may open invitation management', async () => {
-  for (const [index, name] of ['Admin User', 'Teacher Beta', 'Teacher Alpha', 'Inviter Admin'].entries()) {
-    const headers = member(`admin-${index}`, name);
+test('every DingTalk member in the configured corp may open invitation management', async () => {
+  for (const [index, name] of ['Admin User', 'Teacher Beta', 'Teacher Alpha', '普通成员'].entries()) {
+    const headers = member(`member-${index}`, name, 'test');
     assert.equal((await fetch(base + '/api/invitation-campaigns', { headers })).status, 200, name);
     assert.equal((await fetch(base + '/invitation-codes', { headers, redirect: 'manual' })).status, 200, name);
   }
-  const denied = member('unexpected-member', '普通成员');
-  assert.equal((await fetch(base + '/api/invitation-campaigns', { headers: denied })).status, 403);
-  const page = await fetch(base + '/invitation-codes', { headers: denied, redirect: 'manual' });
+  const me = await (await fetch(base + '/api/me', { headers: member('ordinary-member', '普通成员') })).json();
+  assert.equal(me.invitationAccess, true);
+});
+test('guests and sessions bound to another DingTalk corp cannot manage invitations', async () => {
+  const { code } = await issue();
+  const guest = await redeem(code, 'Invited Guest');
+  const guestCookie = cookies(guest);
+  assert.equal((await fetch(base + '/api/invitation-campaigns', { headers: { Cookie: guestCookie } })).status, 401);
+  const guestPage = await fetch(base + '/invitation-codes', { headers: { Cookie: guestCookie }, redirect: 'manual' });
+  assert.equal(guestPage.status, 302);
+  assert.match(guestPage.headers.get('location'), /^\/auth\/dingtalk/);
+
+  const foreign = member('foreign-member', 'Outside Member', 'other-corp');
+  assert.equal((await fetch(base + '/api/invitation-campaigns', { headers: foreign })).status, 403);
+  const page = await fetch(base + '/invitation-codes', { headers: foreign, redirect: 'manual' });
   assert.equal(page.status, 302);
   assert.equal(page.headers.get('location'), '/leaderboard');
 });
-test('a named administrator without an enrolled openId is denied but logged once', () => {
+test('legacy DingTalk sessions without a recorded corp remain valid', () => {
   const { spawnSync } = require('node:child_process');
   const probe = `
     process.env.NODE_ENV = 'test';
     process.env.DATA_DIR = ${JSON.stringify(data)};
     process.env.SESSION_SECRET = 'invitation-denied-probe';
-    process.env.INVITER_OPEN_IDS = 'enrolled-inviter';
-    process.env.INVITATION_ADMIN_NAMES = 'Inviter Admin';
+    process.env.DINGTALK_CORP_ID = 'test';
     const { testHelpers } = require(${JSON.stringify(path.join(__dirname, '..', 'src', 'app'))});
-    const user = { openId: 'unenrolled-inviter', name: 'Inviter Admin', identityType: 'dingtalk' };
+    const legacy = { openId: 'legacy-inviter', name: 'Legacy Member', identityType: 'dingtalk' };
+    const foreign = { ...legacy, dingtalkCorpId: 'other-corp' };
     console.log(JSON.stringify({
-      first: testHelpers.hasInvitationAdminAccess(user),
-      second: testHelpers.hasInvitationAdminAccess(user),
+      legacy: testHelpers.hasInvitationAccess(legacy),
+      foreign: testHelpers.hasInvitationAccess(foreign),
     }));
   `;
   const run = spawnSync('node', ['-e', probe], { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
   const verdict = JSON.parse(run.stdout.trim().split('\n').pop());
-  assert.equal(verdict.first, false);
-  assert.equal(verdict.second, false);
-  assert.equal(
-    (run.stderr.match(/add openId unenrolled-inviter to INVITER_OPEN_IDS/g) || []).length,
-    1,
-    'the denied administrator openId is logged once for enrollment',
-  );
+  assert.equal(verdict.legacy, true);
+  assert.equal(verdict.foreign, false);
 });
 test('campaign creation validates its name, seat count, and registration window', async () => {
   const create = body => fetch(base + '/api/invitation-campaigns', {

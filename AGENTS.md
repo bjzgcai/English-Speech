@@ -52,11 +52,9 @@
 
 ### Invitation share link
 
-- `/invitation-codes` is limited to DingTalk administrators in `INVITER_OPEN_IDS` / `INVITER_UNION_IDS` when those stable-ID
-  allow-list is configured; otherwise the deployment-local `INVITATION_ADMIN_NAMES` fallback applies. The page route,
-  every management API, and the header link all use the same `hasInvitationAdminAccess` gate. A named
-  administrator whose openId is not enrolled is denied, and the first attempt logs `[inviter-enroll]` with
-  the openId to add to `INVITER_OPEN_IDS`.
+- `/invitation-codes` is available to every DingTalk user in the organization configured by `DINGTALK_CORP_ID`.
+  Guests and sessions explicitly bound to another corp are denied. The page route, every management API, and
+  the header link use the same `hasInvitationAccess` gate. There is no inviter openId/unionId allow-list.
 - A legacy single-use code creates one account. A shared QR campaign creates one stable campaign code and up
   to the administrator-selected `max_uses` (maximum 9,999) independent `campaign-account` records, each with
   its own personal code. Duplicate names are allowed; the personal code is the account key. Campaign seat

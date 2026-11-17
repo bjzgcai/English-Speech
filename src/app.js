@@ -1475,6 +1475,7 @@ function normalizeDingTalkUser(rawUser, organizationUser = null) {
     avatarUrl: safeText(rawUser?.avatarUrl),
     mobile: safeText(rawUser?.mobile),
     isZgcMember: safeText(process.env.DINGTALK_CORP_ID) === ZGC_CORP_ID,
+    dingtalkCorpId: safeText(process.env.DINGTALK_CORP_ID),
     identityType: "dingtalk",
   };
 }
@@ -1524,6 +1525,7 @@ function normalizeDingTalkInAppUser(rawUser, organizationUser = null) {
     name: safeText(organizationUser?.name || rawUser?.name, "DingTalk user"),
     avatarUrl: safeText(organizationUser?.avatarUrl || organizationUser?.avatar),
     mobile: safeText(organizationUser?.mobile),
+    dingtalkCorpId: safeText(process.env.DINGTALK_CORP_ID),
     identitySource: "dingtalk-in-app",
   };
   user.openId = inAppOwnerOpenId(user);
@@ -2287,58 +2289,31 @@ function enrollmentIdLabel(openId, unionId) {
 }
 
 // Invitation codes grant full learner access without DingTalk, so minting them
-// is restricted to designated DingTalk administrators. Stable openIds and
-// unionIds from INVITER_OPEN_IDS / INVITER_UNION_IDS take precedence when
-// configured; INVITATION_ADMIN_NAMES is an optional, deployment-local fallback
-// for administrators whose stable ID is not enrolled yet. No administrator
-// names are built into the source.
-const inviterOpenIds = envIdSet("INVITER_OPEN_IDS", "INVITER_UNION_IDS");
-const invitationAdminNames = new Set(
-  (process.env.INVITATION_ADMIN_NAMES || "")
-    .split(",")
-    .map((name) => name.trim())
-    .filter(Boolean),
-);
-const invitationNameFallbackSeen = new Set();
-function logInvitationEnrollment(kind, name, openId, unionId) {
-  const key = `${kind}:${openId}:${unionId}:${name}`;
-  if (invitationNameFallbackSeen.has(key)) return;
-  invitationNameFallbackSeen.add(key);
-  const detail = kind === "granted" ? "name-fallback access" : "denied access";
-  console.warn(`[inviter-enroll] ${detail} for ${name}: add ${enrollmentIdLabel(openId, unionId)} to INVITER_OPEN_IDS or INVITER_UNION_IDS.`);
-}
-function hasInvitationAdminAccess(user) {
+// stays inside the organization configured for this deployment. Every DingTalk
+// user in DINGTALK_CORP_ID may create invitations; guests cannot. Sessions
+// issued before corp binding was recorded remain valid, while a session that
+// explicitly names another corp is rejected.
+function hasInvitationAccess(user) {
   if (!user || user.identityType !== "dingtalk") return false;
-  const openId = safeText(user.openId);
-  const unionId = safeText(user.unionId);
-  const name = safeText(user.name).trim();
-  if (inviterOpenIds.size) {
-    if (matchesEnrolledIdentity(inviterOpenIds, user)) return true;
-    // A named administrator without an enrolled stable ID is still denied, but
-    // logs the identifier once so the operator can add it without opening a
-    // display-name access window.
-    if (name && invitationAdminNames.has(name)) logInvitationEnrollment("denied", name, openId, unionId);
-    return false;
-  }
-  if (!name || !invitationAdminNames.has(name)) return false;
-  logInvitationEnrollment("granted", name, openId, unionId);
-  return true;
+  const configuredCorpId = safeText(process.env.DINGTALK_CORP_ID);
+  if (!configuredCorpId) return false;
+  const sessionCorpId = safeText(user.dingtalkCorpId);
+  return !sessionCorpId || sessionCorpId === configuredCorpId;
 }
-function requireZgcMember(req, res, next) {
-  if (req.user?.identityType !== "dingtalk") return res.status(403).json({ error: "Only 中关村学院 DingTalk users may manage invitation codes." });
-  if (!hasInvitationAdminAccess(req.user)) {
-    return res.status(403).json({ error: "Invitation codes are managed by designated administrators." });
+function requireInvitationAccess(req, res, next) {
+  if (!hasInvitationAccess(req.user)) {
+    return res.status(403).json({ error: "Invitation management is available only to members of the configured DingTalk organization." });
   }
   next();
 }
-function requireInvitationAdminPage(req, res, next) {
+function requireInvitationAccessPage(req, res, next) {
   const user = readSession(req);
   if (!safeText(user?.openId)) {
     const redirectPath = normalizeRedirectPath(req.originalUrl || req.url);
     return res.redirect(302, `/auth/dingtalk?redirect=${encodeURIComponent(redirectPath)}`);
   }
   const normalized = { ...user, identityType: "dingtalk" };
-  if (!hasInvitationAdminAccess(normalized)) return res.redirect(302, "/leaderboard");
+  if (!hasInvitationAccess(normalized)) return res.redirect(302, "/leaderboard");
   req.user = normalized;
   return next();
 }
@@ -2444,7 +2419,7 @@ function invitationQuotaFor(openId) {
   ).length;
   return { issued, limit: MAX_INVITATION_CODES_PER_INVITER, remaining: Math.max(0, MAX_INVITATION_CODES_PER_INVITER - issued) };
 }
-app.get("/api/invitation-campaigns", requireAuth, requireZgcMember, (req, res) => {
+app.get("/api/invitation-campaigns", requireAuth, requireInvitationAccess, (req, res) => {
   const records = invitationRecords();
   res.json({
     campaigns: records
@@ -2452,7 +2427,7 @@ app.get("/api/invitation-campaigns", requireAuth, requireZgcMember, (req, res) =
       .map((record) => campaignPayload(req, record, records)),
   });
 });
-app.post("/api/invitation-campaigns", requireAuth, requireZgcMember, (req, res) => {
+app.post("/api/invitation-campaigns", requireAuth, requireInvitationAccess, (req, res) => {
   const name = safeText(req.body?.name).trim();
   if (!name) {
     return res.status(400).json({ code: "CAMPAIGN_NAME_REQUIRED", error: "A campaign name is required." });
@@ -2498,7 +2473,7 @@ app.post("/api/invitation-campaigns", requireAuth, requireZgcMember, (req, res) 
   const created = [...records, record];
   res.status(201).json({ record: campaignPayload(req, record, created) });
 });
-app.get("/api/invitation-campaigns/:id/accounts", requireAuth, requireZgcMember, (req, res) => {
+app.get("/api/invitation-campaigns/:id/accounts", requireAuth, requireInvitationAccess, (req, res) => {
   const records = invitationRecords();
   const campaign = records.find((record) =>
     record.id === req.params.id && record.kind === "campaign" &&
@@ -2514,7 +2489,7 @@ app.get("/api/invitation-campaigns/:id/accounts", requireAuth, requireZgcMember,
     })),
   });
 });
-app.get("/api/invitation-campaigns/:id/qr", requireAuth, requireZgcMember, async (req, res, next) => {
+app.get("/api/invitation-campaigns/:id/qr", requireAuth, requireInvitationAccess, async (req, res, next) => {
   const record = invitationRecords().find((item) =>
     item.id === req.params.id && item.kind === "campaign" &&
     item.inviterOpenId === req.user.openId && !item.deletedAt
@@ -2530,7 +2505,7 @@ app.get("/api/invitation-campaigns/:id/qr", requireAuth, requireZgcMember, async
     res.set({ "Content-Type": "image/png", "Cache-Control": "no-store" }).send(png);
   } catch (error) { next(error); }
 });
-app.get("/api/invitation-codes", requireAuth, requireZgcMember, (req, res) => {
+app.get("/api/invitation-codes", requireAuth, requireInvitationAccess, (req, res) => {
   res.json({
     codes: invitationRecords()
       .filter(x => x.inviterOpenId === req.user.openId && !x.deletedAt && x.kind !== "campaign" && x.kind !== "campaign-account")
@@ -2541,7 +2516,7 @@ app.get("/api/invitation-codes", requireAuth, requireZgcMember, (req, res) => {
     quota: invitationQuotaFor(req.user.openId),
   });
 });
-app.post("/api/invitation-codes", requireAuth, requireZgcMember, (req, res) => {
+app.post("/api/invitation-codes", requireAuth, requireInvitationAccess, (req, res) => {
   const quota = invitationQuotaFor(req.user.openId);
   if (quota.remaining <= 0) {
     return res.status(429).json({
@@ -2555,7 +2530,7 @@ app.post("/api/invitation-codes", requireAuth, requireZgcMember, (req, res) => {
   appendJsonLine(invitationsMetadataFile, record);
   res.status(201).json({ code, record: { ...record, hash: undefined, shareUrl: invitationShareUrl(req, code) } });
 });
-app.get("/api/invitation-codes/:id/qr", requireAuth, requireZgcMember, async (req, res, next) => {
+app.get("/api/invitation-codes/:id/qr", requireAuth, requireInvitationAccess, async (req, res, next) => {
   const record = invitationRecords().find(x => x.id === req.params.id && x.inviterOpenId === req.user.openId && !x.deletedAt);
   if (!record?.code) return res.status(404).json({ error: "Invitation code not found." });
   try {
@@ -2563,7 +2538,7 @@ app.get("/api/invitation-codes/:id/qr", requireAuth, requireZgcMember, async (re
     res.set({ "Content-Type": "image/png", "Cache-Control": "no-store" }).send(png);
   } catch (error) { next(error); }
 });
-app.delete("/api/invitation-codes/:id", requireAuth, requireZgcMember, (req, res) => {
+app.delete("/api/invitation-codes/:id", requireAuth, requireInvitationAccess, (req, res) => {
   const record = invitationRecords().find(x => x.id === req.params.id && x.inviterOpenId === req.user.openId && !x.deletedAt);
   if (!record) return res.status(404).json({ error: "Invitation code not found." });
   if (record.usedAt) return res.status(409).json({ error: "Used invitation codes cannot be deleted." });
@@ -2781,7 +2756,9 @@ app.get("/api/me", (req, res) => {
     gameGroup: hasAccess ? invitationGameGroupForUser(user) : null,
     identityType: user?.identityType || null,
     isZgcMember: user?.isZgcMember === true,
-    invitationAdminAccess: hasAccess && hasInvitationAdminAccess(user),
+    invitationAccess: hasAccess && hasInvitationAccess(user),
+    // Retained for clients deployed before invitation access became corp-wide.
+    invitationAdminAccess: hasAccess && hasInvitationAccess(user),
     teacherAccess: hasAccess && canAccessTeacher(user),
     catchupAccess: hasAccess && canAccessCatchup(user),
     // Private game pages this session may open (each is pinned to one past
@@ -4149,7 +4126,7 @@ app.get("/api/user-figures/:name", requireVisitor, (req, res) => {
   res.sendFile(figurePath);
 });
 
-registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requirePrivateGamePage, requireInvitationAdminPage });
+registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requirePrivateGamePage, requireInvitationAccessPage });
 
 app.use((error, _req, res, next) => {
   if (error instanceof multer.MulterError) {
@@ -4248,7 +4225,8 @@ module.exports = {
     canAccessCatchup,
     canAccessTitleAbstract,
     canAccessLastWeek,
-    hasInvitationAdminAccess,
+    hasInvitationAccess,
+    hasInvitationAdminAccess: hasInvitationAccess,
     catchupChallenge: FIRST_LESSON_CHALLENGE,
     titleAbstractChallenge: TITLE_ABSTRACT_CHALLENGE,
     lastWeekChallenge: LAST_WEEK_CHALLENGE,

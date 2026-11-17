@@ -1,8 +1,13 @@
 (() => {
-  const section = document.querySelector("[data-comments-page]");
+  const section = document.querySelector("[data-comments-page], [data-comments-pages]");
   if (!section) return;
 
-  const page = section.dataset.commentsPage;
+  const pageOptions = String(section.dataset.commentsPages || section.dataset.commentsPage || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const requestedPage = new URLSearchParams(window.location.search).get("comments");
+  let page = pageOptions.includes(requestedPage) ? requestedPage : pageOptions[0];
   const list = section.querySelector("[data-comment-list]");
   const form = section.querySelector("[data-comment-form]");
   const textarea = section.querySelector("[data-comment-input]");
@@ -14,9 +19,11 @@
   const cancelReply = section.querySelector("[data-cancel-reply]");
   const feedback = section.querySelector("[data-comment-feedback]");
   const floatingButton = document.querySelector("[data-comment-fab]");
+  const pageButtons = [...section.querySelectorAll("[data-comments-page-target]")];
   let authUser = null;
   let comments = [];
   let parentId = null;
+  let loadSequence = 0;
 
   const escapeHtml = (value) => String(value)
     .replaceAll("&", "&amp;")
@@ -58,6 +65,7 @@
   }
 
   async function load() {
+    const requestId = ++loadSequence;
     list.setAttribute("aria-busy", "true");
     try {
       const [commentsResponse, authResponse] = await Promise.all([
@@ -67,22 +75,49 @@
       if (!commentsResponse.ok) throw new Error("Unable to load comments.");
       comments = (await commentsResponse.json()).comments || [];
       authUser = authResponse.ok ? (await authResponse.json()).user : null;
+      if (requestId !== loadSequence) return;
       textarea.placeholder = authUser ? "Share a thought or useful tip" : "Sign in to join the conversation";
       textarea.disabled = !authUser;
       submitButton.textContent = authUser ? "Comment" : "Sign in to comment";
       render();
     } catch (error) {
+      if (requestId !== loadSequence) return;
       list.innerHTML = `<p class="comments-error">${escapeHtml(error.message)}</p>`;
     } finally {
-      list.removeAttribute("aria-busy");
+      if (requestId === loadSequence) list.removeAttribute("aria-busy");
     }
+  }
+
+  function selectPage(nextPage) {
+    if (!pageOptions.includes(nextPage) || nextPage === page) return;
+    page = nextPage;
+    pageButtons.forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.commentsPageTarget === page));
+    });
+    comments = [];
+    clearReply();
+    feedback.textContent = "";
+    list.innerHTML = '<p class="comments-empty">Loading comments...</p>';
+    void load();
+  }
+
+  pageButtons.forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.commentsPageTarget === page));
+    button.addEventListener("click", () => selectPage(button.dataset.commentsPageTarget));
+  });
+
+  function commentsReturnUrl() {
+    const url = new URL(window.location.href);
+    url.searchParams.set("comments", page);
+    url.hash = "comments";
+    return `${url.pathname}${url.search}${url.hash}`;
   }
 
   list.addEventListener("click", (event) => {
     const button = event.target.closest("[data-reply-id]");
     if (!button) return;
     if (!authUser) {
-      window.location.href = `/auth/dingtalk?redirect=${encodeURIComponent(window.location.pathname + "#comments")}`;
+      window.location.href = `/auth/dingtalk?redirect=${encodeURIComponent(commentsReturnUrl())}`;
       return;
     }
     const target = comments.find((comment) => comment.id === button.dataset.replyId);
@@ -101,7 +136,7 @@
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!authUser) {
-      window.location.href = `/auth/dingtalk?redirect=${encodeURIComponent(window.location.pathname + "#comments")}`;
+      window.location.href = `/auth/dingtalk?redirect=${encodeURIComponent(commentsReturnUrl())}`;
       return;
     }
     const content = textarea.value.trim();

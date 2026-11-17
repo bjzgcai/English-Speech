@@ -18,7 +18,7 @@ const state = {
   wakeLock: null,
   authUser: null,
   authReady: false,
-  invitationAdminAccess: false,
+  invitationAccess: false,
   teacherAccess: false,
   // The private game page this route represents ({ route, group, challengeId,
   // label, standingsLabel }) or null on every ordinary page.
@@ -680,7 +680,7 @@ function updateAuthView() {
   window.VisitorSession.renderIdentityName(authUserName, state.authUser?.name, {
     activate: canCopyLoginLink ? window.VisitorSession.copyLoginLink : null,
   });
-  if (invitationLink) invitationLink.hidden = !state.invitationAdminAccess;
+  if (invitationLink) invitationLink.hidden = !state.invitationAccess;
   // Strictly allow-listed server-side; the flag comes from /api/me.
   if (teacherLink) teacherLink.hidden = !state.teacherAccess;
   nameInput.value = state.authUser?.name || "";
@@ -769,7 +769,7 @@ async function checkAuth() {
     const data = await response.json();
     state.authUser = data.user || null;
     state.authReady = true;
-    state.invitationAdminAccess = data.invitationAdminAccess === true;
+    state.invitationAccess = data.invitationAccess === true;
     state.teacherAccess = data.teacherAccess === true;
     state.privateGameRoutes = Array.isArray(data.privateGameRoutes) ? data.privateGameRoutes : [];
     state.dingTalkConfigured = data.configured;
@@ -808,7 +808,7 @@ async function refreshAccessFlags() {
   try {
     const response = await window.VisitorSession.fetch("/api/me", { cache: "no-store" });
     const data = await response.json();
-    state.invitationAdminAccess = data.invitationAdminAccess === true;
+    state.invitationAccess = data.invitationAccess === true;
     state.teacherAccess = data.teacherAccess === true;
     state.privateGameRoutes = Array.isArray(data.privateGameRoutes) ? data.privateGameRoutes : [];
   } catch {

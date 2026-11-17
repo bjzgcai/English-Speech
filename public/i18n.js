@@ -426,6 +426,10 @@
     "and begin speaking.": "并开始说。",
     "Share what works for you.": "分享对你有效的方法。",
     "Leave a preparation tip or reply to another learner.": "留下你的备考技巧，或回复其他学习者。",
+    "Preparation tips": "备考技巧",
+    "Rubric notes": "评分方法讨论",
+    "Choose a topic, leave a useful tip, or reply to another learner.":
+      "选择一个话题，留下有帮助的技巧，或回复其他学习者。",
     "Prepare clearly. Speak confidently.": "清晰准备，自信开口。",
 
     // Invitation codes page

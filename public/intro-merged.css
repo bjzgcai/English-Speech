@@ -1,0 +1,180 @@
+/* The public introduction is the single home for the former Intro, Prepare,
+   and Rubric pages. These rules only coordinate those page-level sections;
+   each source stylesheet keeps its original component styling. */
+
+.intro-main {
+  overflow: hidden;
+}
+
+#overview,
+#prepare,
+#methodology,
+#dimensions,
+#comments,
+#workflow {
+  scroll-margin-top: 104px;
+}
+
+.intro-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px 24px;
+}
+
+.intro-topic-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 32px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  padding: 5px;
+}
+
+.intro-topic-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 9px 13px;
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.intro-topic-links a:hover,
+.intro-topic-links a:focus-visible {
+  background: var(--surface-soft);
+}
+
+.intro-topic-links span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.merged-topic {
+  width: var(--page);
+  margin: 0 auto;
+  border-top: 2px solid var(--line);
+  scroll-margin-top: 92px;
+}
+
+.merged-topic-heading {
+  max-width: 980px;
+  padding: clamp(84px, 10vw, 132px) 0 clamp(56px, 7vw, 82px);
+}
+
+.merged-topic-heading h2 {
+  font-size: clamp(46px, 6.4vw, 86px);
+  line-height: 0.94;
+  letter-spacing: -0.055em;
+  text-wrap: balance;
+}
+
+.merged-topic-heading > p:last-child {
+  max-width: 720px;
+  margin-top: 26px;
+  color: var(--muted);
+  font-size: clamp(17px, 1.6vw, 21px);
+  line-height: 1.58;
+}
+
+.merged-topic .prepare-main {
+  width: 100%;
+}
+
+.merged-topic-prepare .club-invite {
+  margin-bottom: clamp(72px, 9vw, 118px);
+}
+
+.merged-topic-prepare .practice-notes {
+  border-bottom: 0;
+}
+
+.merged-topic-methodology .hero {
+  min-height: auto;
+  padding-top: clamp(76px, 9vw, 116px);
+}
+
+.merged-topic-methodology .principle {
+  border-top: 0;
+}
+
+.comment-page-switcher {
+  display: inline-flex;
+  gap: 4px;
+  margin-top: 34px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 4px;
+}
+
+.comment-page-switcher button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.comment-page-switcher button:hover {
+  color: var(--accent-strong);
+}
+
+.comment-page-switcher button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 3px 0 var(--accent-strong);
+}
+
+.comment-page-switcher button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 38%, transparent);
+  outline-offset: 2px;
+}
+
+.intro-closing {
+  border-top: 2px solid var(--line);
+  margin-top: 0;
+}
+
+@media (max-width: 760px) {
+  .intro-hero-actions,
+  .intro-topic-links {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .intro-topic-links {
+    border-radius: 18px;
+  }
+
+  .intro-topic-links a {
+    justify-content: space-between;
+    border-radius: 13px;
+  }
+
+  .merged-topic-heading {
+    padding-top: 72px;
+  }
+
+  .comment-page-switcher {
+    display: flex;
+  }
+
+  .comment-page-switcher button {
+    flex: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

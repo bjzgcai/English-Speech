@@ -68,13 +68,22 @@ test("the public architecture source contains no operational identifiers", async
   }
 });
 
-test("architecture is linked from Intro only and page views are tracked", async () => {
+test("architecture is linked from Intro, legacy guide pages redirect there, and page views are tracked", async () => {
   const intro = await (await fetch(`${base}/intro`)).text();
-  const methodology = await (await fetch(`${base}/methodology`)).text();
   const introHeader = intro.match(/<header class="docs-nav">[\s\S]*?<\/header>/)?.[0] || "";
   assert.match(intro, /href="\/architecture"/);
   assert.doesNotMatch(introHeader, /href="\/architecture"/);
-  assert.doesNotMatch(methodology, /href="\/architecture"/);
+  assert.match(introHeader, /href="\/intro" aria-current="page">Intro<\/a>/);
+  assert.doesNotMatch(introHeader, /href="\/(methodology|prepare)"/);
+  assert.match(intro, /id="prepare"/);
+  assert.match(intro, /id="methodology"/);
+
+  const legacyLinks = [["/methodology", "/intro#methodology"], ["/prepare", "/intro#prepare"]];
+  for (const [route, destination] of legacyLinks) {
+    const response = await fetch(`${base}${route}`, { redirect: "manual" });
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get("location"), destination);
+  }
 
   const response = await fetch(`${base}/architecture`, {
     headers: { "User-Agent": "Architecture route test" },

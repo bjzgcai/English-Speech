@@ -259,12 +259,12 @@ h3 {
   padding: clamp(52px, 7vw, 92px) 0;
 }
 
-.hero-copy {
+.intro-hero .hero-copy {
   max-width: 600px;
 }
 
 
-.hero-copy h1 {
+.intro-hero .hero-copy h1 {
   max-width: 620px;
   font-size: clamp(49px, 5.4vw, 76px);
   line-height: 0.98;
@@ -272,23 +272,23 @@ h3 {
   text-wrap: balance;
 }
 
-.hero-copy h1 span {
+.intro-hero .hero-copy h1 span {
   display: block;
   color: var(--accent);
 }
 
-.hero-intro {
+.intro-hero .hero-intro {
   max-width: 54ch;
   margin-top: 26px;
 }
 
-.hero-intro p {
+.intro-hero .hero-intro p {
   color: var(--muted);
   font-size: 17px;
   line-height: 1.55;
 }
 
-.hero-intro p[lang="en"] {
+.intro-hero .hero-intro p[lang="en"] {
   margin-top: 8px;
   font-size: 15px;
 }
@@ -329,7 +329,7 @@ h3 {
   box-shadow: 0 2px 0 var(--accent-strong);
 }
 
-.hero-visual {
+.intro-hero .hero-visual {
   display: grid;
   grid-template-rows: auto auto;
   overflow: hidden;
@@ -341,7 +341,7 @@ h3 {
   box-shadow: 0 8px 0 color-mix(in srgb, var(--line) 85%, transparent), var(--shadow);
 }
 
-.hero-visual img {
+.intro-hero .hero-visual img {
   width: 100%;
   height: auto;
   aspect-ratio: 1;
@@ -354,7 +354,7 @@ h3 {
   object-position: center;
 }
 
-.hero-visual figcaption,
+.intro-hero .hero-visual figcaption,
 .feedback-visual figcaption {
   display: flex;
   justify-content: space-between;
@@ -366,7 +366,7 @@ h3 {
   line-height: 1.4;
 }
 
-.hero-visual figcaption strong {
+.intro-hero .hero-visual figcaption strong {
   color: var(--ink);
 }
 
@@ -380,7 +380,7 @@ h3 {
 
 .section-heading h2,
 .feedback-copy h2,
-.closing h2 {
+.intro-closing h2 {
   font-size: clamp(38px, 4.7vw, 62px);
   line-height: 1.02;
   letter-spacing: -0.045em;
@@ -687,7 +687,7 @@ h3 {
   margin-top: 4px;
 }
 
-.closing {
+.intro-closing {
   display: flex;
   min-height: 300px;
   align-items: center;
@@ -701,7 +701,7 @@ h3 {
   padding: clamp(34px, 5vw, 66px);
 }
 
-.closing p {
+.intro-closing p {
   margin-top: 12px;
   color: var(--muted);
   font-size: 16px;
@@ -742,7 +742,7 @@ h3 {
     min-height: auto;
   }
 
-  .hero-copy {
+  .intro-hero .hero-copy {
     max-width: 740px;
   }
 
@@ -824,15 +824,15 @@ h3 {
     padding: 48px 0 70px;
   }
 
-  .hero-copy h1 {
+  .intro-hero .hero-copy h1 {
     font-size: clamp(44px, 13vw, 62px);
   }
 
-  .hero-intro p {
+  .intro-hero .hero-intro p {
     font-size: 15px;
   }
 
-  .hero-visual figcaption,
+  .intro-hero .hero-visual figcaption,
   .feedback-visual figcaption {
     display: grid;
   }
@@ -880,7 +880,7 @@ h3 {
     grid-template-columns: 1fr;
   }
 
-  .closing {
+  .intro-closing {
     display: grid;
     min-height: auto;
     margin-bottom: 64px;

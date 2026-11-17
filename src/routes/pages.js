@@ -1,7 +1,7 @@
 const path = require("path");
 const { openApiFile, publicDir, rootDir } = require("../config");
 
-function registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requirePrivateGamePage, requireInvitationAdminPage }) {
+function registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requirePrivateGamePage, requireInvitationAccessPage }) {
   app.get("/openapi.yaml", (_req, res) => {
     res.type("application/yaml").sendFile(openApiFile);
   });
@@ -27,7 +27,7 @@ function registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requireP
   app.get("/admin", requirePageAuth, (_req, res) =>
     res.sendFile(path.join(rootDir, "views", "admin.html")),
   );
-  app.get("/invitation-codes", requireInvitationAdminPage, (_req, res) =>
+  app.get("/invitation-codes", requireInvitationAccessPage, (_req, res) =>
     res.sendFile(path.join(publicDir, "invitation-codes.html")),
   );
   app.get("/teacher", requireTeacherPage, (_req, res) =>
@@ -41,8 +41,8 @@ function registerPageRoutes(app, { requirePageAuth, requireTeacherPage, requireP
   // Public page whitelist: these routes intentionally remain available without a session.
   app.get("/intro", (_req, res) => res.sendFile(path.join(publicDir, "intro.html")));
   app.get("/architecture", (_req, res) => res.sendFile(path.join(publicDir, "architecture.html")));
-  app.get("/methodology", (_req, res) => res.sendFile(path.join(publicDir, "docs.html")));
-  app.get("/prepare", (_req, res) => res.sendFile(path.join(publicDir, "prepare.html")));
+  app.get("/methodology", (_req, res) => res.redirect(302, "/intro#methodology"));
+  app.get("/prepare", (_req, res) => res.redirect(302, "/intro#prepare"));
   app.get(["/privacy", "/policy"], (_req, res) =>
     res.sendFile(path.join(publicDir, "privacy.html")),
   );

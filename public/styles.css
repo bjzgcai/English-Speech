@@ -3343,15 +3343,6 @@ video {
 }
 
 @media (min-width: 821px) and (max-width: 1100px) {
-  /* Keep the primary task routes legible on compact laptop/tablet widths.
-     The secondary reference pages remain available from the footer and direct
-     links, while the header gets enough room for the auth controls. */
-  .main-nav a[href="/methodology"],
-  .main-nav a[href="/prepare"],
-  .main-nav a[href="/intro"] {
-    display: none;
-  }
-
   .leaderboard-identity-form,
   .post-evaluation-identity .leaderboard-identity-form {
     grid-template-columns: 1fr 1fr;
@@ -3538,12 +3529,6 @@ video {
     flex: none;
     padding: 9px 10px;
     font-size: 12px;
-  }
-
-  .main-nav a[href="/intro"],
-  .main-nav a[href="/methodology"],
-  .main-nav a[href="/prepare"] {
-    display: none;
   }
 
   .auth-chip,
@@ -3778,10 +3763,6 @@ video {
   .main-nav a {
     padding: 8px 4px;
     font-size: 10px;
-  }
-
-  .main-nav a[href="/prepare"] {
-    display: none;
   }
 
   .auth-chip,
